@@ -5082,7 +5082,7 @@ dis_a64_supports_flags(int flags)
 {
 	int archflags = flags & DIS_ARCH_MASK;
 
-	return (archflags == DIS_ARMV8);
+	return (archflags == DIS_AARCH64);
 }
 
 /*ARGSUSED*/

@@ -214,7 +214,7 @@ extern size_t strlcat(char *, const char *, size_t);
 #define	ARM_CDSP_RM_MASK	0x0000000f
 
 #define	ARM_CDSP_STATUS_RBIT	0x00400000
-#define	ARM_CDSP_MRS_MASK	0x00300000	/* Ditinguish MRS and MSR */
+#define	ARM_CDSP_MRS_MASK	0x00300000	/* Distinguish MRS and MSR */
 #define	ARM_CDSP_MRS_TARG	0x00000000
 #define	ARM_CDSP_MSR_F_MASK	0x000f0000
 #define	ARM_CDSP_MSR_F_SHIFT	16
@@ -341,7 +341,7 @@ extern size_t strlcat(char *, const char *, size_t);
 #define	ARM_MEDIA_SEL_MASK	0x008000e0	/* Select bytes */
 #define	ARM_MEDIA_SEL_TARG	0x000000a0
 #define	ARM_MEDIA_SZE_MASK	0x000000e0	/* Sign/zero extend */
-#define	ARM_MEDIA_SZE_TARG	0x00000030
+#define	ARM_MEDIA_SZE_TARG	0x00000060
 
 #define	ARM_MEDIA_HPACK_OP_MASK	0x00000040
 #define	ARM_MEDIA_HPACK_SHIFT_MASK	0x00000f80
@@ -2274,7 +2274,7 @@ arm_dis_media(uint32_t in, char *buf, size_t buflen)
 			 * LSL 0. However if we get ASR 0, that means ASR #32.
 			 * An ARM_MEDIA_SAT_STYPE_MASK of 0 is LSL, 1 is ASR.
 			 */
-			if (op2 != 0 || (in & ARM_MEDIA_SAT_STYPE_MASK) == 1) {
+			if (op2 != 0 || (in & ARM_MEDIA_SAT_STYPE_MASK)) {
 				if (op2 == 0)
 					op2 = 32;
 				if (snprintf(buf + len, buflen - len,
@@ -2615,7 +2615,7 @@ dis_arm_supports_flags(int flags)
 {
 	int archflags = flags & DIS_ARCH_MASK;
 
-	return (archflags == DIS_ARM_32);
+	return (archflags == DIS_AARCH32);
 }
 
 /*ARGSUSED*/

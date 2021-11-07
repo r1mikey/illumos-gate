@@ -60,8 +60,8 @@ SRCS_sparc=		$(COMDIR)/dis_sparc.c \
 			$(COMDIR)/dis_sparc_instr.c
 SRCS_s390x=		$(COMDIR)/dis_s390x.c
 SRCS_riscv=		$(COMDIR)/dis_riscv.c
-SRCS_arm=		$(COMDIR)/dis_arm_32.c \
-			$(COMDIR)/dis_arm_64.c
+SRCS_arm=		$(COMDIR)/dis_aarch32.c \
+			$(COMDIR)/dis_aarch64.c
 
 OBJECTS_i386=		dis_i386.o \
 			dis_tables.o
@@ -70,8 +70,8 @@ OBJECTS_sparc=		dis_sparc.o \
 			dis_sparc_instr.o
 OBJECTS_s390x=		dis_s390x.o
 OBJECTS_riscv=		dis_riscv.o
-OBJECTS_arm=		dis_arm_32.o \
-			dis_arm_64.o
+OBJECTS_arm=		dis_aarch32.o \
+			dis_aarch64.o
 
 #
 # We build the regular shared library with support for all architectures.

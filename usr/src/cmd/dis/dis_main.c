@@ -604,11 +604,11 @@ dis_file(const char *filename)
 			break;
 
 		case EM_ARM:
-			g_flags |= DIS_ARM_32;
+			g_flags |= DIS_AARCH32;
 			break;
 
 		case EM_AARCH64:
-			g_flags |= DIS_ARM_64;
+			g_flags |= DIS_AARCH64;
 			break;
 
 		default:
