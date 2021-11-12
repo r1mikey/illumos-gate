@@ -37,6 +37,11 @@ extern size_t strlcat(char *, const char *, size_t);
 /*
  * First level of decoding, aka bits 25-27.
  */
+#define AARCH32_L1_OP0_MASK	0x0e000000
+#define AARCH32_L1_OP0_SHIFT	25
+#define AARCH32_L1_OP1_MASK	0x00000010
+#define AARCH32_L1_OP1_SHIFT	4
+
 #define	ARM_L1_DEC_MASK	0x0e000000
 #define	ARM_L1_DEC_SHIFT	25
 
@@ -505,6 +510,7 @@ static const char *arm_coproc_names[] = {
 	"p15"
 };
 
+#if 0
 /*
  * These are the opcodes for the instructions which are considered data
  * processing instructions.
@@ -527,6 +533,7 @@ static const char *arm_dpi_opnames[] = {
 	"bic",	/* Bit clear */
 	"mvn"	/* Move not */
 };
+#endif
 
 typedef enum arm_dpi_opcode {
 	DPI_OP_AND,	/* Logical AND */
@@ -635,6 +642,7 @@ static const char *arm_lsm_mode_names[] = {
 	"ib"
 };
 
+#if 0
 /*
  * The MSR field has a four bit field mask. Each bit correspons to a letter.
  * From high to low, f, s, x, c. At least one must be specified, hence 0 is
@@ -658,7 +666,9 @@ static const char *arm_cdsp_msr_field_names[] = {
 	"sxf",	/* 1110 */
 	"csxf"	/* 1111 */
 };
+#endif
 
+#if 0
 /*
  * Names for specific saturating add and subtraction instructions from the
  * extended control and dsp instructino section.
@@ -669,7 +679,9 @@ static const char *arm_cdsp_sat_opnames[] = {
 	"dadd",
 	"dsub"
 };
+#endif
 
+#if 0
 static const char *arm_padd_p_names[] = {
 	NULL,	/* 000 */
 	"s",	/* 001 */
@@ -680,7 +692,9 @@ static const char *arm_padd_p_names[] = {
 	"uq",	/* 110 */
 	"uh",	/* 111 */
 };
+#endif
 
+#if 0
 static const char *arm_padd_i_names[] = {
 	"add16",	/* 000 */
 	"addsubx",	/* 001 */
@@ -691,14 +705,18 @@ static const char *arm_padd_i_names[] = {
 	NULL,		/* 110 */
 	"sub8",		/* 111 */
 };
+#endif
 
+#if 0
 static const char *arm_extend_rot_names[] = {
 	"",		/* 0b00, ROR #0 */
 	", ror #8",	/* 0b01 */
 	", ror #16",	/* 0b10 */
 	", ror #24"	/* 0b11 */
 };
+#endif
 
+#if 0
 /*
  * There are sixteen data processing instructions (dpi). They come in a few
  * different forms which are based on whether immediate values are used and
@@ -884,7 +902,9 @@ arm_dis_dpi(uint32_t in, arm_cond_code_t cond, char *buf, size_t buflen)
 
 	return (len < buflen ? 0 : -1);
 }
+#endif
 
+#if 0
 /*
  * This handles the byte and word size loads and stores. It does not handle the
  * multi-register loads or the 'extra' ones. The instruction has the generic
@@ -1022,6 +1042,7 @@ arm_dis_ldstr(uint32_t in, char *buf, size_t buflen)
 
 	return (len < buflen ? 0 : -1);
 }
+#endif
 
 static void
 print_range(char **bufp, size_t *buflenp, uint16_t regs, uint16_t precede)
@@ -1130,7 +1151,7 @@ print_reg_list(char *buf, size_t buflen, uint16_t regs)
  * routine.
  */
 static int
-arm_dis_ldstr_multi(uint32_t in, char *buf, size_t buflen)
+a32_dis_ldstr_multi(uint32_t in, char *buf, size_t buflen)
 {
 	int sbit, wbit, lbit;
 	uint16_t regs, addr_mode;
@@ -1165,6 +1186,7 @@ arm_dis_ldstr_multi(uint32_t in, char *buf, size_t buflen)
 	return (len >= buflen ? -1 : 0);
 }
 
+#if 0
 /*
  * Here we need to handle miscellaneous loads and stores. This is used to load
  * and store signed and unsigned half words. To load a signed byte. And to load
@@ -1278,7 +1300,9 @@ arm_dis_els(uint32_t in, char *buf, size_t buflen)
 
 	return (len >= buflen ? -1 : 0);
 }
+#endif
 
+#if 0
 /*
  * Handle SWP and SWPB out of the extra loads/stores extensions.
  */
@@ -1302,7 +1326,9 @@ arm_dis_swap(uint32_t in, char *buf, size_t buflen)
 
 	return (0);
 }
+#endif
 
+#if 0
 /*
  * Handle LDREX and STREX out of the extra loads/stores extensions.
  */
@@ -1358,7 +1384,9 @@ arm_dis_lsexcl(uint32_t in, char *buf, size_t buflen)
 		    arm_reg_names[rz], arm_reg_names[rx]);
 	return (len >= buflen ? -1 : 0);
 }
+#endif
 
+#if 0
 /*
  * This is designed to handle the multiplication instruction extension space.
  * Note that this doesn't actually cover all of the multiplication instructions
@@ -1438,7 +1466,9 @@ arm_dis_extmul(uint32_t in, char *buf, size_t buflen)
 	}
 	return (len >= buflen ? -1 : 0);
 }
+#endif
 
+#if 0
 /*
  * Here we handle the three different cases of moving to and from the various
  * status registers in both register mode and in immediate mode.
@@ -1483,7 +1513,9 @@ arm_dis_status_regs(uint32_t in, char *buf, size_t buflen)
 
 	return (len >= buflen ? -1 : 0);
 }
+#endif
 
+#if 0
 /*
  * Here we need to handle the Control And DSP instruction extension space. This
  * consists of several different instructions. Unlike other extension spaces
@@ -1645,6 +1677,7 @@ arm_dis_cdsp_ext(uint32_t in, char *buf, size_t buflen)
 	 */
 	return (-1);
 }
+#endif
 
 /*
  * Coprocessor double register transfers
@@ -1971,33 +2004,6 @@ arm_dis_uncond_insn(uint32_t in, char *buf, size_t buflen)
 		return (0);
 	}
 
-	/*
-	 * This is a special case of STM, but it works across chip modes.
-	 */
-	if ((in & ARM_UNI_SRS_MASK) == ARM_UNI_SRS_TARG) {
-		imm = (in & ARM_LSM_ADDR_MASK) >> ARM_LSM_ADDR_SHIFT;
-		if (snprintf(buf, buflen, "srs%s #%d%s",
-		    arm_lsm_mode_names[imm],
-		    in & ARM_UNI_SRS_MODE_MASK,
-		    (in & ARM_UNI_SRS_WBIT_MASK) != 0 ? "!" : "") >= buflen)
-			return (-1);
-		return (0);
-	}
-
-	/*
-	 * RFE is a return from exception instruction that is similar to the LDM
-	 * and STM, but a bit different.
-	 */
-	if ((in & ARM_UNI_RFE_MASK) == ARM_UNI_RFE_TARG) {
-		imm = (in & ARM_LSM_ADDR_MASK) >> ARM_LSM_ADDR_SHIFT;
-		rn = (in & ARM_LS_RN_MASK) >> ARM_LS_RN_SHIFT;
-		if (snprintf(buf, buflen, "rfe%s %s%s", arm_lsm_mode_names[imm],
-		    arm_reg_names[rn],
-		    (in & ARM_UNI_RFE_WBIT_MASK) != 0 ? "!" : "") >= buflen)
-			return (-1);
-		return (0);
-	}
-
 	if ((in & ARM_UNI_BLX_MASK) == ARM_UNI_BLX_TARG) {
 		if (snprintf(buf, buflen, "blx %d",
 		    in & ARM_UNI_BLX_IMM_MASK) >= buflen)
@@ -2057,9 +2063,20 @@ arm_dis_uncond_insn(uint32_t in, char *buf, size_t buflen)
  * bits and then shifted over two bits. This is then added to the PC + 8. So,
  * instead of dispalying an absolute address, we're going to display the delta
  * that the instruction has instead.
+ *
+ * Page 4523
+ *
+ * B{<c>}{<q>} <label> <<< conditional, H bit == 0
+ *   imm32 = SignExtend(imm24:'00', 32);
+ * BL{<c>}{<q>} <label> <<< conditional
+ *   imm32 = SignExtend(imm24:'00', 32); targetInstrSet = InstrSet_A32;
+ * BLX{<c>}{<q>} <label> <<< unconditional, H bit
+ *   imm32 = SignExtend(imm24:H:'0', 32); targetInstrSet = InstrSet_T32;
+ *
+ * I think this needs to handle blx for Thumb?
  */
 static int
-arm_dis_branch(dis_handle_t *dhp, uint32_t in, char *buf, size_t buflen)
+a32_dis_b_bl_imm(dis_handle_t *dhp, uint32_t in, char *buf, size_t buflen)
 {
 	uint32_t addr;
 	arm_cond_code_t cc;
@@ -2091,6 +2108,74 @@ arm_dis_branch(dis_handle_t *dhp, uint32_t in, char *buf, size_t buflen)
 	return (0);
 }
 
+/*
+ * Exception Save/Restore on page F4-4522
+ */
+static int
+a32_dis_ex_sr(dis_handle_t *dhp, uint32_t in, char *buf, size_t buflen)
+{
+	int imm;
+	arm_reg_t rn;
+
+	/*
+	 * This is a special case of STM, but it works across chip modes.
+	 */
+	if ((in & ARM_UNI_SRS_MASK) == ARM_UNI_SRS_TARG) {
+		imm = (in & ARM_LSM_ADDR_MASK) >> ARM_LSM_ADDR_SHIFT;
+		if (snprintf(buf, buflen, "srs%s #%d%s",
+		    arm_lsm_mode_names[imm],
+		    in & ARM_UNI_SRS_MODE_MASK,
+		    (in & ARM_UNI_SRS_WBIT_MASK) != 0 ? "!" : "") >= buflen)
+			return (-1);
+		return (0);
+	}
+
+	/*
+	 * RFE is a return from exception instruction that is similar to the LDM
+	 * and STM, but a bit different.
+	 */
+	if ((in & ARM_UNI_RFE_MASK) == ARM_UNI_RFE_TARG) {
+		imm = (in & ARM_LSM_ADDR_MASK) >> ARM_LSM_ADDR_SHIFT;
+		rn = (in & ARM_LS_RN_MASK) >> ARM_LS_RN_SHIFT;
+		if (snprintf(buf, buflen, "rfe%s %s%s", arm_lsm_mode_names[imm],
+		    arm_reg_names[rn],
+		    (in & ARM_UNI_RFE_WBIT_MASK) != 0 ? "!" : "") >= buflen)
+			return (-1);
+		return (0);
+	}
+
+	return (-1);
+}
+
+/*
+ * F4.1.11 Branch, branch with link, and block data transfer
+ *
+ * Page 4521.
+ */
+static int
+a32_dis_b_bl_bdt(dis_handle_t *dhp, uint32_t in, char *buf, size_t buflen)
+{
+	uint8_t op0;
+	arm_cond_code_t cc;
+
+	op0 = (in & 0x02000000) >> 25;
+
+	if (op0 == 0) {
+		cc = (in & ARM_CC_MASK) >> ARM_CC_SHIFT;
+
+		/* Exception Save/Restore on page F4-4522 */
+		if (cc == ARM_COND_NACC)
+			return (a32_dis_ex_sr(dhp, in, buf, buflen));
+
+		/* Load/Store Multiple on page F4-4522 */
+		return (a32_dis_ldstr_multi(in, buf, buflen));
+	}
+
+	/* Branch (immediate) on page F4-4523 */
+	return (a32_dis_b_bl_imm(dhp, in, buf, buflen));
+}
+
+#if 0
 /*
  * There are six instructions that are covered here: ADD16, ADDSUBX, SUBADDX,
  * SUB16, ADD8, and SUB8. They can hae the following variations: S, Q, SH, U,
@@ -2136,7 +2221,9 @@ arm_dis_padd(uint32_t in, char *buf, size_t buflen)
 		return (-1);
 	return (0);
 }
+#endif
 
+#if 0
 /*
  * Disassemble the extend instructions from ARMv6. There are six instructions:
  *
@@ -2207,7 +2294,9 @@ arm_dis_extend(uint32_t in, char *buf, size_t buflen)
 		return (-1);
 	return (0);
 }
+#endif
 
+#if 0
 /*
  * The media instructions and extensions can be divided into different groups of
  * instructions. We first use bits 23 and 24 to figure out where to send it. We
@@ -2428,6 +2517,7 @@ arm_dis_media(uint32_t in, char *buf, size_t buflen)
 		return (-1);
 	}
 }
+#endif
 
 /*
  * Each instruction in the ARM instruction set is a uint32_t and in our case is
@@ -2440,8 +2530,56 @@ arm_dis_media(uint32_t in, char *buf, size_t buflen)
  * instruction groupings that we care about.
  */
 static int
-arm_dis(dis_handle_t *dhp, uint32_t in, char *buf, size_t buflen)
+a32_dis(dis_handle_t *dhp, uint32_t in, char *buf, size_t buflen)
 {
+	uint8_t op0, op1;
+	arm_cond_code_t cc;
+
+	/*
+	 * See F4.1 A32 instruction set encoding (page 4494)
+	 */
+	op0 = (in & AARCH32_L1_OP0_MASK) >> AARCH32_L1_OP0_SHIFT;
+
+	/*
+	 * Branch, branch with link, and block data transfer on page F4-4521
+	 */
+	if ((op0 & 0x4) == 0x4)
+		return (a32_dis_b_bl_bdt(dhp, in, buf, buflen));
+
+	if ((op0 & 0x6) == 0x6) {
+		/* System register access, Advanced SIMD, floating-point, and Supervisor call on page F4-4523 */
+		return (-1);
+	}
+
+	cc = (in & ARM_CC_MASK) >> ARM_CC_SHIFT;
+
+	if (cc == ARM_COND_NACC)
+		return (arm_dis_uncond_insn(in, buf, buflen));
+
+	if ((op0 & 0x6) == 0x0) {
+		/* Data-processing and miscellaneous instructions on page F4-4494 */
+		return (-1);
+	}
+
+	if ((op0 & 0x2) == 0x2) {
+		/* Load/Store Word, Unsigned Byte (immediate, literal) on page F4-4512 */
+		return (-1);
+	}
+
+	if ((op0 & 0x3) == 0x3) {
+		op1 = (in & AARCH32_L1_OP1_MASK) >> AARCH32_L1_OP1_SHIFT;
+
+		if (op1 == 0x1) {
+			/* Media instructions on page F4-4514 */
+			return (-1);
+		}
+
+		/* Load/Store Word, Unsigned Byte (register) on page F4-4513 */
+		return (-1);
+	}
+
+	return (-1);
+#if 0
 	uint8_t op0;
 	arm_cond_code_t cc;
 
@@ -2565,7 +2703,7 @@ arm_dis(dis_handle_t *dhp, uint32_t in, char *buf, size_t buflen)
 		break;
 	case 0x4:
 		/* Load/store multiple */
-		return (arm_dis_ldstr_multi(in, buf, buflen));
+		return (a32_dis_ldstr_multi(in, buf, buflen));
 		break;
 	case 0x5:
 		/* Branch and Branch with link */
@@ -2606,8 +2744,7 @@ arm_dis(dis_handle_t *dhp, uint32_t in, char *buf, size_t buflen)
 		}
 		break;
 	}
-
-	return (-1);
+#endif
 }
 
 static int
@@ -2632,7 +2769,7 @@ dis_arm_handle_detach(dis_handle_t *dhp)
 }
 
 static int
-dis_arm_disassemble(dis_handle_t *dhp, uint64_t addr, char *buf, size_t buflen)
+dis_a32_disassemble(dis_handle_t *dhp, uint64_t addr, char *buf, size_t buflen)
 {
 	uint32_t in;
 
@@ -2645,7 +2782,7 @@ dis_arm_disassemble(dis_handle_t *dhp, uint64_t addr, char *buf, size_t buflen)
 	/* Translate in case we're on sparc? */
 	in = LE_32(in);
 
-	return (arm_dis(dhp, in, buf, buflen));
+	return (a32_dis(dhp, in, buf, buflen));
 }
 
 /*
@@ -2691,11 +2828,11 @@ dis_arm_instrlen(dis_handle_t *dhp, uint64_t pc)
 	return (4);
 }
 
-dis_arch_t dis_arch_arm_32 = {
+dis_arch_t dis_arch_a32 = {
 	dis_arm_supports_flags,
 	dis_arm_handle_attach,
 	dis_arm_handle_detach,
-	dis_arm_disassemble,
+	dis_a32_disassemble,
 	dis_arm_previnstr,
 	dis_arm_min_instrlen,
 	dis_arm_max_instrlen,
