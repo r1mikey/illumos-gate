@@ -905,6 +905,7 @@ cexp_ident_init(void)
 	    MSG_ORIG(MSG_STR_UELF32) : MSG_ORIG(MSG_STR_UELF64)) == 0)
 		return (FALSE);
 
+	/* XXXAARCH64: add aarch64 here */
 	/* Machine */
 	switch (ld_targ.t_m.m_mach) {
 	case EM_386:

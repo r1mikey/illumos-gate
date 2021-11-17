@@ -100,6 +100,7 @@ new target. To do so, examine the common header files:
 
    and the existing relocation engines:
 
+	usr/src/uts/aarch64/krtld/doreloc.c
 	usr/src/uts/intel/amd64/krtld/doreloc.c
 	usr/src/uts/intel/ia32/krtld/doreloc.c
 	usr/src/uts/sparc/krtld/doreloc.c

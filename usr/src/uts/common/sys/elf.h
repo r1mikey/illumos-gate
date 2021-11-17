@@ -1021,4 +1021,8 @@ int	elfheadcheck(unsigned char, Elf32_Half, Elf32_Word);
 #include <sys/elf_amd64.h>
 #endif
 
+#if defined(ELF_TARGET_ALL) || defined(ELF_TARGET_AARCH64)
+#include <sys/elf_aarch64.h>
+#endif
+
 #endif	/* _SYS_ELF_H */

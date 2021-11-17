@@ -29,6 +29,7 @@
 # Copyright 2020 Joyent, Inc.
 # Copyright 2019 Peter Tribble.
 # Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2022 Michael van der Westhuizen
 #
 
 set name=pkg.fmri value=pkg:/system/header@$(PKGVERS)
@@ -854,6 +855,7 @@ file path=usr/include/sys/efi_partition.h
 file path=usr/include/sys/elf.h
 file path=usr/include/sys/elf_386.h
 file path=usr/include/sys/elf_SPARC.h
+file path=usr/include/sys/elf_aarch64.h
 file path=usr/include/sys/elf_amd64.h
 file path=usr/include/sys/elf_notes.h
 file path=usr/include/sys/elftypes.h

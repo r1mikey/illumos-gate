@@ -22,6 +22,8 @@
 #
 # Copyright (c) 1996, 2010, Oracle and/or its affiliates. All rights reserved.
 #
+# Copyright 2022 Michael van der Westhuizen
+#
 
 @ _START_
 
@@ -68,3 +70,4 @@
 
 @ MSG_TARG_SPARC	"sparc"
 @ MSG_TARG_X86		"x86"
+@ MSG_TARG_AARCH64	"aarch64"

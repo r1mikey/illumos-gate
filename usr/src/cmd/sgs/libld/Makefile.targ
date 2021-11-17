@@ -24,6 +24,7 @@
 #
 # Copyright 2016 RackTop Systems.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2022 Michael van der Westhuizen
 #
 
 pics/%.o:	$(SRCDIR)/common/%.c
@@ -84,6 +85,14 @@ pics/%_sparc_32.o: $(KRTLD_SPARC)/%.c
 
 pics/%_sparc_64.o: \
 		$(KRTLD_SPARC)/%.c
+		$(COMPILE.c) -o $@ -D_ELF64 -DDO_RELOC_LIBLD $<
+		$(POST_PROCESS_O)
+
+pics/%_aarch64_32.o: $(KRTLD_AARCH64)/%.c
+		$(COMPILE.c) -o $@ -DDO_RELOC_LIBLD $<
+		$(POST_PROCESS_O)
+
+pics/%_aarch64_64.o: $(KRTLD_AARCH64)/%.c
 		$(COMPILE.c) -o $@ -D_ELF64 -DDO_RELOC_LIBLD $<
 		$(POST_PROCESS_O)
 

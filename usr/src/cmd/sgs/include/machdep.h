@@ -22,7 +22,13 @@
 /*
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- *
+ */
+
+/*
+ * Copyright 2022 Michael van der Westhuizen
+ */
+
+/*
  * Global include file for all sgs machine dependent macros, constants
  * and declarations applicable to the current system. This header is
  * to be used for code that supports the native system only. Code that
@@ -43,6 +49,10 @@
 #elif defined(__i386) || defined(__amd64)
 
 #include <i386/machdep_x86.h>
+
+#elif defined(__aarch64__)
+
+#include <aarch64/machdep_aarch64.h>
 
 #else
 

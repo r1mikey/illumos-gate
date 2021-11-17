@@ -23,6 +23,7 @@
 # Copyright (c) 1994, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2018 Joyent, Inc.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2022 Michael van der Westhuizen
 #
 
 LIBRARY =	libconv.a
@@ -47,11 +48,11 @@ COMOBJS=	arch.o			audit.o \
 		lddstub.o		map.o \
 		phdr.o			relocate.o \
 		relocate_i386.o		relocate_amd64.o \
-		relocate_sparc.o	sections.o \
-		segments.o		strproc.o \
-		symbols.o		syminfo.o \
-		tokens.o		time.o \
-		version.o
+		relocate_sparc.o	relocate_aarch64.o \
+		sections.o		segments.o \
+		strproc.o		symbols.o \
+		syminfo.o		tokens.o \
+		time.o			version.o
 
 ELFCAP_OBJS=	elfcap.o
 
@@ -67,12 +68,12 @@ BLTOBJS=	arch_msg.o		audit_msg.o \
 		elf_msg.o		entry_msg.o \
 		globals_msg.o		group_msg.o \
 		map_msg.o		lddstub_msg.o \
-		phdr_msg.o		relocate_amd64_msg.o \
-		relocate_i386_msg.o	relocate_sparc_msg.o \
-		sections_msg.o		segments_msg.o \
-		symbols_msg.o		symbols_sparc_msg.o \
-		syminfo_msg.o		time_msg.o \
-		version_msg.o
+		phdr_msg.o		relocate_aarch64_msg.o \
+		relocate_amd64_msg.o	relocate_i386_msg.o \
+		relocate_sparc_msg.o	sections_msg.o \
+		segments_msg.o		symbols_msg.o \
+		symbols_sparc_msg.o	syminfo_msg.o \
+		time_msg.o		version_msg.o
 
 
 OBJECTS =	$(COMOBJS) $(COMOBJS32) $(COMOBJS64) $(ELFCAP_OBJS) \

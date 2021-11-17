@@ -29,6 +29,7 @@
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2019 Peter Tribble.
 # Copyright 2015, Joyent, Inc. All rights reserved.
+# Copyright 2022 Michael van der Westhuizen
 #
 
 include $(SRC)/uts/Makefile.uts
@@ -219,6 +220,7 @@ CHKHDRS=			\
 	elf_SPARC.h		\
 	elf_notes.h		\
 	elf_amd64.h		\
+	elf_aarch64.h		\
 	elftypes.h		\
 	emul64.h		\
 	emul64cmd.h		\
