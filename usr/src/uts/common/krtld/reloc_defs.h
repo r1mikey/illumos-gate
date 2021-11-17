@@ -73,6 +73,8 @@ typedef struct {
 						/*    a REGISTER by OLO10 */
 #define	FLG_RE_SIZE		0x00002000	/* symbol size required */
 
+#define	FLG_RE_PAGEPC		0x00004000	/* page PC relocation */
+
 #define	FLG_RE_NOTSUP		0x00010000	/* relocation not supported */
 
 #define	FLG_RE_SEGREL		0x00040000	/* segment relative */
@@ -154,6 +156,9 @@ typedef struct {
 
 #define	RELTAB_IS_SIZE(X, _reltab) \
 	((_reltab[(X)].re_flags & FLG_RE_SIZE) != 0)
+
+#define	RELTAB_IS_PAGEPC(X, _reltab) \
+	((_reltab[(X)].re_flags & FLG_RE_PAGEPC) != 0)
 
 #ifdef	__cplusplus
 }

@@ -30,6 +30,7 @@
  * set-up for relocations
  */
 
+#define	ELF_TARGET_AARCH64
 #define	ELF_TARGET_AMD64
 #define	ELF_TARGET_SPARC
 
@@ -70,6 +71,7 @@
 #define	IS_TLS_LE(X)	RELTAB_IS_TLS_LE(X, ld_targ.t_mr.mr_reloc_table)
 #define	IS_LOCALBND(X)	RELTAB_IS_LOCALBND(X, ld_targ.t_mr.mr_reloc_table)
 #define	IS_SIZE(X)	RELTAB_IS_SIZE(X, ld_targ.t_mr.mr_reloc_table)
+#define	IS_PAGEPC(X)	RELTAB_IS_PAGEPC(X, ld_targ.t_mr.mr_reloc_table)
 
 /*
  * Structure to hold copy relocation items.
@@ -1327,12 +1329,12 @@ reloc_relobj(Boolean local, Rel_desc *rsp, Ofl_desc *ofl)
 	 * Determine if we can do any relocations at this point.  We can if:
 	 *
 	 *	this is local_symbol and a non-GOT relocation, and
-	 *	the relocation is pc-relative, and
+	 *	the relocation is pc-relative, and not page-pc, and
 	 *	the relocation is against a symbol in same section
 	 */
 	if (local && !IS_GOT_RELATIVE(rtype) &&
 	    !IS_GOT_BASED(rtype) && !IS_GOT_PC(rtype) &&
-	    IS_PC_RELATIVE(rtype) &&
+	    (IS_PC_RELATIVE(rtype) && !IS_PAGEPC(rtype)) &&
 	    ((sdp->sd_isc) && (sdp->sd_isc->is_osdesc == isp->is_osdesc)))
 		return (ld_add_actrel(0, rsp, ofl));
 

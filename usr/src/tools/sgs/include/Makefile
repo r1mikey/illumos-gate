@@ -10,6 +10,7 @@
 #
 
 # Copyright 2019, Richard Lowe.
+# Copyright 2022 Michael van der Westhuizen
 
 include ../../../Makefile.master
 
@@ -38,6 +39,7 @@ SYSHDRS=	sys/elf.h \
 		sys/elf_SPARC.h \
 		sys/elf_notes.h \
 		sys/elf_amd64.h \
+		sys/elf_aarch64.h \
 		sys/elftypes.h \
 		sys/auxv.h \
 		sys/auxv_SPARC.h \

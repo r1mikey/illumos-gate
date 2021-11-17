@@ -25,6 +25,8 @@
 #
 # Copyright 2019 Joyent, Inc.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2022 Michael van der Westhuizen
+#
 
 LIBRARY =	libld.a
 VERS =		.4
@@ -52,8 +54,8 @@ SGSCOMMONOBJ =	alist.o		assfail.o	findprime.o	string_table.o \
 AVLOBJ =	avl.o
 
 # Relocation engine objects.
-G_MACHOBJS32 =	doreloc_sparc_32.o doreloc_x86_32.o
-G_MACHOBJS64 =	doreloc_sparc_64.o doreloc_x86_64.o
+G_MACHOBJS32 =	doreloc_sparc_32.o doreloc_x86_32.o doreloc_aarch64_32.o
+G_MACHOBJS64 =	doreloc_sparc_64.o doreloc_x86_64.o doreloc_aarch64_64.o
 
 # Target specific objects (sparc/sparcv9)
 L_SPARC_MACHOBJS32 =	machrel.sparc32.o	machsym.sparc32.o
@@ -64,13 +66,20 @@ E_X86_COMMONOBJ =	leb128.o
 L_X86_MACHOBJS32 =	machrel.intel32.o
 L_X86_MACHOBJS64 =	machrel.amd64.o
 
+# Target specific objects (aarch64)
+L_AARCH64_MACHOBJS32 =	machrel.aarch6432.o
+L_AARCH64_MACHOBJS64 =	machrel.aarch6464.o
+
 # All target specific objects rolled together
 E_COMMONOBJ =	$(E_SPARC_COMMONOBJ) \
-	$(E_X86_COMMONOBJ)
+	$(E_X86_COMMONOBJ) \
+	$(E_AARCH64_COMMONOBJ)
 L_MACHOBJS32 =	$(L_SPARC_MACHOBJS32) \
-	$(L_X86_MACHOBJS32)
+	$(L_X86_MACHOBJS32) \
+	$(L_AARCH64_MACHOBJS32)
 L_MACHOBJS64 =	$(L_SPARC_MACHOBJS64) \
-	$(L_X86_MACHOBJS64)
+	$(L_X86_MACHOBJS64) \
+	$(L_AARCH64_MACHOBJS64)
 
 
 BLTOBJ =	msg.o
@@ -102,6 +111,7 @@ SMOFF += no_if_block
 KRTLD_I386 = $(SRC)/uts/$(VAR_PLAT_i386)/krtld
 KRTLD_AMD64 = $(SRC)/uts/$(VAR_PLAT_amd64)/krtld
 KRTLD_SPARC = $(SRC)/uts/$(VAR_PLAT_sparc)/krtld
+KRTLD_AARCH64 = $(SRC)/uts/$(VAR_PLAT_aarch64)/krtld
 
 
 CPPFLAGS +=	-DUSE_LIBLD_MALLOC -I$(SRC)/lib/libc/inc \
@@ -129,8 +139,9 @@ BLTFILES =	$(BLTDEFS) $(BLTDATA) $(BLTMESG)
 SGSMSGCOM =	$(SRCDIR)/common/libld.msg
 SGSMSGSPARC =	$(SRCDIR)/common/libld.sparc.msg
 SGSMSGINTEL =	$(SRCDIR)/common/libld.intel.msg
-SGSMSGTARG =	$(SGSMSGCOM) $(SGSMSGSPARC) $(SGSMSGINTEL)
-SGSMSGALL =	$(SGSMSGCOM) $(SGSMSGSPARC) $(SGSMSGINTEL)
+SGSMSGAARCH64 =	$(SRCDIR)/common/libld.aarch64.msg
+SGSMSGTARG =	$(SGSMSGCOM) $(SGSMSGSPARC) $(SGSMSGINTEL) $(SGSMSGAARCH64)
+SGSMSGALL =	$(SGSMSGCOM) $(SGSMSGSPARC) $(SGSMSGINTEL) $(SGSMSGAARCH64)
 
 SGSMSGFLAGS1 =	$(SGSMSGFLAGS) -m $(BLTMESG)
 SGSMSGFLAGS2 =	$(SGSMSGFLAGS) -h $(BLTDEFS) -d $(BLTDATA) -n libld_msg
@@ -141,7 +152,8 @@ CHKSRCS =	$(SRC)/uts/common/krtld/reloc.h \
 		$(L_MACHOBJS64:%64.o=$(SRCDIR)/common/%.c) \
 		$(KRTLD_I386)/doreloc.c \
 		$(KRTLD_AMD64)/doreloc.c \
-		$(KRTLD_SPARC)/doreloc.c
+		$(KRTLD_SPARC)/doreloc.c \
+		$(KRTLD_AARCH64)/doreloc.c
 
 LIBSRCS =	$(SGSCOMMONOBJ:%.o=$(SGSCOMMON)/%.c) \
 		$(SGSCOMMONOBJ:%.o=$(SGSCOMMON)/%.c) \

@@ -22,6 +22,7 @@
 #
 # Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2022 Michael van der Westhuizen
 #
 
 # The link-editor related source files and Makefile files have at times been
@@ -54,6 +55,7 @@
 VAR_PLAT_sparc=		sparc
 VAR_PLAT_i386=		intel/ia32
 VAR_PLAT_amd64=		intel/amd64
+VAR_PLAT_aarch64=	aarch64
 
 #
 # VAR_AVLDIR - directory to find avl.c in.

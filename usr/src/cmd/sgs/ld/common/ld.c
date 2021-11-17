@@ -23,6 +23,10 @@
  * Copyright (c) 1997, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 
+/*
+ * Copyright 2022 Michael van der Westhuizen
+ */
+
 #include	<stdio.h>
 #include	<stdlib.h>
 #include	<unistd.h>
@@ -334,6 +338,10 @@ getmore:
 				    MSG_ORIG(MSG_TARG_X86)) == 0) {
 					mach32 = EM_386;
 					mach64 = EM_AMD64;
+				} else if (strcasecmp(pstr,
+				    MSG_ORIG(MSG_TARG_AARCH64)) == 0) {
+					mach32 = EM_AARCH64;
+					mach64 = EM_AARCH64;
 				} else {
 					eprintf(0, ERR_FATAL,
 					    MSG_INTL(MSG_ERR_BADTARG), pstr);

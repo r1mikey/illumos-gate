@@ -28,6 +28,7 @@
  * Copyright (c) 2018, Joyent, Inc.
  * Copyright 2016 RackTop Systems.
  * Copyright 2021 Oxide Computer Company
+ * Copyright 2022 Michael van der Westhuizen
  */
 
 #ifndef	_CONV_H
@@ -920,6 +921,8 @@ extern	const char	*conv_reloc_386_type(Word, Conv_fmt_flags_t,
 extern	const char	*conv_reloc_amd64_type(Word, Conv_fmt_flags_t,
 			    Conv_inv_buf_t *);
 extern	const char	*conv_reloc_SPARC_type(Word, Conv_fmt_flags_t,
+			    Conv_inv_buf_t *);
+extern	const char	*conv_reloc_aarch64_type(Word, Conv_fmt_flags_t,
 			    Conv_inv_buf_t *);
 extern	const char	*conv_sec_type(uchar_t, Half, Word, Conv_fmt_flags_t,
 			    Conv_inv_buf_t *);

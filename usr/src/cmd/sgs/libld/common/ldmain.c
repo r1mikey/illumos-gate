@@ -26,6 +26,7 @@
  * Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
  *
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2022 Michael van der Westhuizen
  */
 
 /*
@@ -121,6 +122,10 @@ ld_init_target(Lm_list *lml, Half mach)
 	case EM_SPARC32PLUS:
 	case EM_SPARCV9:
 		ld_targ = *ld_targ_init_sparc();
+		break;
+
+	case EM_AARCH64:
+		ld_targ = *ld_targ_init_aarch64();
 		break;
 
 	default:

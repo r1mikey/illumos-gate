@@ -20,32 +20,30 @@
 #
 
 #
-# Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
+# Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+
+@ _START_
 #
-
-include		../Makefile.com
-include		$(SGSHOME)/libconv/Makefile.com
-include		../../Makefile.tools
-
-CPPFLAGS =	 $(NATIVE_CPPFLAGS) -I$(SRC)/lib/libc/inc -I$(ELFCAP) \
-	-I$(SRC)/common/sgsrtcid \
-	-I$(SRC)/lib/libdemangle/common
-CERRWARN +=	-_gnu=-Wno-switch
-CFLAGS =	$(NATIVE_CFLAGS)
-AS_CPPFLAGS=	-P -D_ASM $(CPPFLAGS)
-CW_LINKER =
-
+## Message file for cmd/sgs/libld - aarch64 specific.
 #
-# Tell bld_vernote that we need to use the native build.
+#@ MSG_REL_BADTLSINS	"relocation error: %s: file %s: symbol %s: section %s: \
+#			 offset 0x%llx, relocation against unknown TLS \
+#			 instruction sequence"
 #
-BLDVERNOTE_TARGET_ARGS= -n
-
-.PARALLEL:	$(PICS)
-.KEEP_STATE:
-
-install all:	$(LIBRARY)
-
-include		$(SGSHOME)/libconv/Makefile.targ
-
+#@ MSG_PLT_PLT0FAIL	"creation of PLT entry plt0 failed"
+#@ MSG_PLT_PLTNFAIL	"creation of PLT[%d] for symbol '%s' failed"
+#
+#@ MSG_UNW_BADCIEVERS	"unwind table: file %s: section %s: \
+#			 bad cie version %d: offset 0x%llx\n"
+#
+@ _END_
+#
+#@ MSG_SYM_PLTENT	"<pltentry>"
+#
+#@ MSG_SPECFIL_PLTENT    "<output_file>"
+#
+#@ MSG_SCN_UNWINDHDR	".eh_frame_hdr"
+#
+@ MSG_PTH_RTLD_AARCH64	"/usr/lib/aarch64/ld.so.1"

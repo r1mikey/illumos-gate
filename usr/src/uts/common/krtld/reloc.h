@@ -22,7 +22,9 @@
 /*
  * Copyright (c) 1995, 2010, Oracle and/or its affiliates. All rights reserved.
  *
+ * Copyright 2017 Hayashi Naoyuki
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2022 Michael van der Westhuizen
  */
 
 #ifndef	_RELOC_DOT_H
@@ -80,6 +82,17 @@ extern "C" {
 #define	reloc_table		reloc32_table_sparc
 #endif
 
+#elif	defined(DO_RELOC_LIBLD_AARCH64)
+
+#define	DO_RELOC_LIBLD
+#if	defined(_ELF64)
+#define	do_reloc_ld		do64_reloc_ld_aarch64
+#define	reloc_table		reloc64_table_aarch64
+#else
+#define	do_reloc_ld		do32_reloc_ld_aarch64
+#define	reloc_table		reloc32_table_aarch64
+#endif
+
 #else				/* rtld */
 
 #if	defined(_ELF64)
@@ -120,6 +133,7 @@ extern	const Rel_entry	reloc_table[];
 #define	IS_TLS_LE(X)		RELTAB_IS_TLS_LE(X, reloc_table)
 #define	IS_LOCALBND(X)		RELTAB_IS_LOCALBND(X, reloc_table)
 #define	IS_SIZE(X)		RELTAB_IS_SIZE(X, reloc_table)
+#define	IS_PAGEPC(X)		RELTAB_IS_PAGEPC(X, reloc_table)
 
 /*
  * Relocation engine.
@@ -173,7 +187,7 @@ extern	const Rel_entry	reloc_table[];
  * conditionalize any code not used by all three versions.
  */
 #if defined(_KERNEL)
-extern	int	do_reloc_krtld(uchar_t, uchar_t *, Xword *, const char *,
+extern	int	do_reloc_krtld(Word, uchar_t *, Xword *, const char *,
 		    const char *);
 #elif defined(DO_RELOC_LIBLD)
 extern	int	do_reloc_ld(Rel_desc *, uchar_t *, Xword *,
@@ -228,6 +242,11 @@ extern const char	*conv_reloc_386_type(Word);
 
 extern const char	*conv_reloc_SPARC_type(Word);
 #define	CONV_RELOC_TYPE	conv_reloc_SPARC_type
+
+#elif defined(__aarch64__)
+
+extern const char	*conv_reloc_aarch64_type(Word);
+#define	CONV_RELOC_TYPE	conv_reloc_aarch64_type
 
 #else
 #error platform not defined!
