@@ -17,7 +17,9 @@
 
 include $(SRC)/Makefile.master
 
-INSTDIRS = i386 efi
+i386_INSTDIRS = i386
+aarch64_INSTDIRS =
+INSTDIRS = $($(MACH)_INSTDIRS) efi
 SUBDIRS = libstand libficl $(INSTDIRS)
 
 all	:=	TARGET = all

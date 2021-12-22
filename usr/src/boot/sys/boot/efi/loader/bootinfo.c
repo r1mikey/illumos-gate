@@ -47,6 +47,8 @@
 
 #if defined(__amd64__)
 #include <machine/specialreg.h>
+#endif
+#if defined(__amd64__) || defined(__aarch64__)
 #include "framebuffer.h"
 #endif
 
@@ -246,7 +248,7 @@ bi_load_efi_data(struct preloaded_file *kfp)
 	UINT32 mmver;
 	struct efi_map_header *efihdr;
 
-#if defined(__amd64__)
+#if defined(__amd64__) || defined(__aarch64__)
 	struct efi_fb efifb;
 
 	if (efi_find_framebuffer(&efifb) == 0) {

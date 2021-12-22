@@ -192,6 +192,12 @@ efi_loadaddr(uint_t type, void *data, vm_offset_t addr)
 
 	status = BS->AllocatePages(AllocateMaxAddress, EfiLoaderData,
 	    pages, &paddr);
+#if defined(__aarch64__)
+	if (status != EFI_SUCCESS) {
+		status = BS->AllocatePages(AllocateAnyPages, EfiLoaderData,
+			pages, &paddr);
+	}
+#endif
 
 	if (EFI_ERROR(status)) {
 		printf("failed to allocate %zu bytes for staging area: %lu\n",
@@ -217,7 +223,7 @@ efi_translate(vm_offset_t ptr)
 ssize_t
 efi_copyin(const void *src, vm_offset_t dest, const size_t len)
 {
-	if (dest + len >= dest && (uint64_t)dest + len <= UINT32_MAX) {
+	if (dest + len >= dest/* && (uint64_t)dest + len <= UINT32_MAX*/) {
 		bcopy(src, (void *)(uintptr_t)dest, len);
 		return (len);
 	} else {
@@ -229,7 +235,7 @@ efi_copyin(const void *src, vm_offset_t dest, const size_t len)
 ssize_t
 efi_copyout(const vm_offset_t src, void *dest, const size_t len)
 {
-	if (src + len >= src && (uint64_t)src + len <= UINT32_MAX) {
+	if (src + len >= src/* && (uint64_t)src + len <= UINT32_MAX*/) {
 		bcopy((void *)(uintptr_t)src, dest, len);
 		return (len);
 	} else {
@@ -242,7 +248,7 @@ efi_copyout(const vm_offset_t src, void *dest, const size_t len)
 ssize_t
 efi_readin(const int fd, vm_offset_t dest, const size_t len)
 {
-	if (dest + len >= dest && (uint64_t)dest + len <= UINT32_MAX) {
+	if (dest + len >= dest/* && (uint64_t)dest + len <= UINT32_MAX*/) {
 		return (read(fd, (void *)dest, len));
 	} else {
 		errno = EFBIG;

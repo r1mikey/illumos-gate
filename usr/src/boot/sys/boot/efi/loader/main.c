@@ -63,7 +63,9 @@ EFI_GUID smbios3 = SMBIOS3_TABLE_GUID;
 EFI_GUID inputid = SIMPLE_TEXT_INPUT_PROTOCOL;
 
 extern void acpi_detect(void);
+#if defined(__i386) || defined(__amd64)
 extern void efi_getsmap(void);
+#endif
 
 static EFI_LOADED_IMAGE *img;
 
@@ -533,7 +535,9 @@ main(int argc, CHAR16 *argv[])
 	 * printf() etc. once this is done.
 	 */
 	cons_probe();
+#if defined(__i386) || defined(__amd64)
 	efi_getsmap();
+#endif
 
 	/*
 	 * Initialise the block cache. Set the upper limit.
@@ -733,7 +737,11 @@ main(int argc, CHAR16 *argv[])
 
 	autoload_font(false);		/* Set up the font list for console. */
 	efi_init_environment();
+#if defined(__aarch64__)
+	setenv("ISADIR", "aarch64", 1);	/* we only build 64bit */
+#elif defined(__i386) || defined(__amd64)
 	setenv("ISADIR", "amd64", 1);	/* we only build 64bit */
+#endif
 	bi_isadir();			/* set ISADIR */
 	acpi_detect();
 

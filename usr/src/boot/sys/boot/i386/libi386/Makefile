@@ -48,12 +48,10 @@ SRCS=	\
 	linux.c \
 	multiboot.c \
 	multiboot_tramp.S \
-	nullconsole.c \
 	pxe.c \
 	pxetramp.s \
 	relocater_tramp.S \
 	smbios.c \
-	spinconsole.c \
 	time.c \
 	vbe.c \
 	vgasubr.c \
@@ -81,12 +79,10 @@ OBJS=	\
 	linux.o \
 	multiboot.o \
 	multiboot_tramp.o \
-	nullconsole.o \
 	pxe.o \
 	pxetramp.o \
 	relocater_tramp.o \
 	smbios.o \
-	spinconsole.o \
 	time.o \
 	vbe.o \
 	vgasubr.o \
@@ -95,8 +91,16 @@ OBJS=	\
 COMMON=  ../../common
 VGASUBR=$(SRC)/common/vga
 CPPFLAGS += -I$(PNGLITE)
-SRCS +=	$(COMMON)/gfx_fb.c $(PNGLITE)/pnglite.c
-OBJS +=	gfx_fb.o pnglite.o
+SRCS +=	\
+	$(COMMON)/gfx_fb.c \
+	$(PNGLITE)/pnglite.c \
+	$(COMMON)/nullconsole.c \
+	$(COMMON)/spinconsole.c
+OBJS +=	\
+	gfx_fb.o \
+	pnglite.o \
+	nullconsole.o \
+	spinconsole.o
 
 gfx_fb.o := CPPFLAGS += $(DEFAULT_CONSOLE_COLOR) -I$(LZ4)
 pnglite.o := CPPFLAGS += -I$(ZLIB)

@@ -41,6 +41,13 @@ __FBSDID("$FreeBSD$");
 
 #include "bootstrap.h"
 
+/*
+ * XXXAARCH64
+ * ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS
+ * ehdr->e_machine != EM_AARCH64
+ * ^^ this could just be like FreeBSD
+ */
+#define ILLUMOS_LOADER
 #define COPYOUT(s,d,l)	archsw.arch_copyout((vm_offset_t)(s), d, l)
 
 #if defined(__i386__) && __ELF_WORD_SIZE == 64
@@ -73,7 +80,9 @@ typedef struct elf_file {
 } *elf_file_t;
 
 static int __elfN(loadimage)(struct preloaded_file *mp, elf_file_t ef, u_int64_t loadaddr);
+#if defined(__aarch64__) && !defined(ILLUMOS_LOADER)
 static int __elfN(lookup_symbol)(struct preloaded_file *mp, elf_file_t ef, const char* name, Elf_Sym* sym);
+#endif
 static int __elfN(reloc_ptr)(struct preloaded_file *mp, elf_file_t ef,
     Elf_Addr p, void *val, size_t len);
 static int __elfN(parse_modmetadata)(struct preloaded_file *mp, elf_file_t ef,
@@ -319,8 +328,10 @@ __elfN(loadimage)(struct preloaded_file *fp, elf_file_t ef, u_int64_t off)
     int		symtabindex;
     Elf_Size	size;
     u_int	fpcopy;
+#if defined(__aarch64__) && !defined(ILLUMOS_LOADER)
     Elf_Sym	sym;
     Elf_Addr	p_start, p_end;
+#endif
 
     dp = NULL;
     shdr = NULL;
@@ -328,7 +339,7 @@ __elfN(loadimage)(struct preloaded_file *fp, elf_file_t ef, u_int64_t off)
     firstaddr = lastaddr = 0;
     ehdr = ef->ehdr;
     if (ehdr->e_type == ET_EXEC) {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(__i386__) || defined(__amd64__) || defined(__aarch64__)
 #if __ELF_WORD_SIZE == 64
 	off = - (off & 0xffffffffff000000ull);/* x86_64 relocates after locore */
 #else
@@ -383,9 +394,10 @@ __elfN(loadimage)(struct preloaded_file *fp, elf_file_t ef, u_int64_t off)
 	off = 0;		/* other archs use direct mapped kernels */
 #endif
     }
+    /* XXXAARCH64: offset malarkey (above) could help... */
     ef->off = off;
 
-    if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS) {
+    if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS && ehdr->e_machine != EM_AARCH64) {
 	/* use entry address from header */
 	fp->f_addr = ehdr->e_entry;
     }
@@ -405,7 +417,7 @@ __elfN(loadimage)(struct preloaded_file *fp, elf_file_t ef, u_int64_t off)
 	    continue;
 
 #ifdef ELF_VERBOSE
-	if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS) {
+	if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS && ehdr->e_machine != EM_AARCH64) {
 	    printf("Segment: 0x%lx@0x%lx -> 0x%lx-0x%lx",
 		(long)phdr[i].p_filesz, (long)phdr[i].p_offset,
 		(long)(phdr[i].p_paddr + off),
@@ -429,7 +441,7 @@ __elfN(loadimage)(struct preloaded_file *fp, elf_file_t ef, u_int64_t off)
 	fpcopy = 0;
 	if (ef->firstlen > phdr[i].p_offset) {
 	    fpcopy = ef->firstlen - phdr[i].p_offset;
-	    if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS) {
+	    if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS && ehdr->e_machine != EM_AARCH64) {
 		archsw.arch_copyin(ef->firstpage + phdr[i].p_offset,
 		    phdr[i].p_paddr + off, fpcopy);
 	    } else {
@@ -438,7 +450,7 @@ __elfN(loadimage)(struct preloaded_file *fp, elf_file_t ef, u_int64_t off)
 	    }
 	}
 	if (phdr[i].p_filesz > fpcopy) {
-	    if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS) {
+	    if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS && ehdr->e_machine != EM_AARCH64) {
 		if (kern_pread(ef->fd, phdr[i].p_paddr + off + fpcopy,
 		    phdr[i].p_filesz - fpcopy,
 		    phdr[i].p_offset + fpcopy) != 0) {
@@ -459,7 +471,7 @@ __elfN(loadimage)(struct preloaded_file *fp, elf_file_t ef, u_int64_t off)
 	/* clear space from oversized segments; eg: bss */
 	if (phdr[i].p_filesz < phdr[i].p_memsz) {
 #ifdef ELF_VERBOSE
-	    if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS) {
+	    if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS && ehdr->e_machine != EM_AARCH64) {
 		printf(" (bss: 0x%lx-0x%lx)",
 		    (long)(phdr[i].p_paddr + off + phdr[i].p_filesz),
 		    (long)(phdr[i].p_paddr + off + phdr[i].p_memsz - 1));
@@ -470,7 +482,7 @@ __elfN(loadimage)(struct preloaded_file *fp, elf_file_t ef, u_int64_t off)
 	    }
 #endif
 
-	    if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS) {
+	    if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS && ehdr->e_machine != EM_AARCH64) {
 		kern_bzero(phdr[i].p_paddr + off + phdr[i].p_filesz,
 		    phdr[i].p_memsz - phdr[i].p_filesz);
 	    } else {
@@ -485,7 +497,7 @@ __elfN(loadimage)(struct preloaded_file *fp, elf_file_t ef, u_int64_t off)
 	if (archsw.arch_loadseg != NULL)
 	    archsw.arch_loadseg(ehdr, phdr + i, off);
 
-	if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS) {
+	if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS && ehdr->e_machine != EM_AARCH64) {
 		if (firstaddr == 0 || firstaddr > (phdr[i].p_paddr + off))
 		    firstaddr = phdr[i].p_paddr + off;
 		if (lastaddr == 0 ||
@@ -641,7 +653,7 @@ nosyms:
     printf("\n");
 
     ret = lastaddr - firstaddr;
-    if (ehdr->e_ident[EI_OSABI] != ELFOSABI_SOLARIS)
+    if (ehdr->e_ident[EI_OSABI] != ELFOSABI_SOLARIS || (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS && ehdr->e_machine == EM_AARCH64))
 	fp->f_addr = firstaddr;
 
     php = NULL;
@@ -663,8 +675,8 @@ nosyms:
     dp = malloc(php->p_filesz);
     if (dp == NULL)
 	goto out;
-    if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS)
-	archsw.arch_copyout(php->p_paddr + off, dp, php->p_filesz);
+    if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS && ehdr->e_machine != EM_AARCH64)
+	archsw.arch_copyout(php->p_vaddr + off, dp, php->p_filesz);
     else
 	archsw.arch_copyout(php->p_vaddr + off, dp, php->p_filesz);
 
@@ -709,6 +721,7 @@ nosyms:
     ef->buckets = ef->hashtab + 2;
     ef->chains = ef->buckets + ef->nbuckets;
 
+#if defined(__aarch64__) && !defined(ILLUMOS_LOADER)
     if (__elfN(lookup_symbol)(fp, ef, "__start_set_modmetadata_set", &sym) != 0)
 	return 0;
     p_start = sym.st_value + ef->off;
@@ -718,6 +731,13 @@ nosyms:
 
     if (__elfN(parse_modmetadata)(fp, ef, p_start, p_end) == 0)
 	goto out;
+#else
+    {
+	char *s = fake_modname(fp->f_name);
+	file_addmodule(fp, s, 1, NULL);
+	free(s);
+    }
+#endif
 
     if (ef->kernel)			/* kernel must not depend on anything */
 	goto out;
@@ -984,6 +1004,7 @@ __elfN(parse_modmetadata)(struct preloaded_file *fp, elf_file_t ef,
     return 0;
 }
 
+#if defined(__aarch64__) && !defined(ILLUMOS_LOADER)
 static unsigned long
 elf_hash(const char *name)
 {
@@ -999,7 +1020,9 @@ elf_hash(const char *name)
     }
     return h;
 }
+#endif
 
+#if defined(__aarch64__) && !defined(ILLUMOS_LOADER)
 static const char __elfN(bad_symtable)[] = "elf" __XSTRING(__ELF_WORD_SIZE) "_lookup_symbol: corrupt symbol table\n";
 int
 __elfN(lookup_symbol)(struct preloaded_file *fp __unused, elf_file_t ef,
@@ -1041,7 +1064,7 @@ __elfN(lookup_symbol)(struct preloaded_file *fp __unused, elf_file_t ef,
     }
     return ENOENT;
 }
-
+#endif
 /*
  * Apply any intra-module relocations to the value. p is the load address
  * of the value and val/len is the value to be modified. This does NOT modify

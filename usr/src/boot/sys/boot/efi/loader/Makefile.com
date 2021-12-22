@@ -18,6 +18,11 @@ include $(SRC)/boot/sys/boot/Makefile.inc
 
 PROG=		loader.sym
 
+i386_SRCS=
+i386_OBJS=
+aarch64_SRCS=
+aarch64_OBJS=
+
 # architecture-specific loader code
 SRCS=	\
 	acpi.c \
@@ -30,9 +35,7 @@ SRCS=	\
 	$(FONT).c \
 	framebuffer.c \
 	main.c \
-	memmap.c \
 	mb_header.S \
-	multiboot2.c \
 	nvstore.c \
 	self_reloc.c \
 	smbios.c \
@@ -50,18 +53,22 @@ OBJS=	\
 	$(FONT).o \
 	framebuffer.o \
 	main.o \
-	memmap.o \
 	mb_header.o \
-	multiboot2.o \
 	nvstore.o \
 	self_reloc.o \
 	smbios.o \
 	tem.o \
 	vers.o
 
+i386_SRCS +=	memmap.c \
+		multiboot2.c
+i386_OBJS +=	memmap.o \
+		multiboot2.o
+
 module.o := CPPFLAGS += -I$(CRYPTOSRC)
 tem.o := CPPFLAGS += $(DEFAULT_CONSOLE_COLOR)
 main.o := CPPFLAGS += -I$(SRC)/uts/common/fs/zfs
+mb_header.o := CCASFLAGS += $(C_BIGPICFLAGS)
 
 CPPFLAGS += -I../../../../../include -I../../..../
 CPPFLAGS += -I../../../../../lib/libstand
@@ -74,7 +81,6 @@ CPPFLAGS +=	-I. -I..
 CPPFLAGS +=	-I../../include
 CPPFLAGS +=	-I../../include/$(MACHINE)
 CPPFLAGS +=	-I../../../..
-CPPFLAGS +=	-I../../../i386/libi386
 CPPFLAGS +=	-I$(ZFSSRC)
 CPPFLAGS +=	-I../../../../cddl/boot/zfs
 CPPFLAGS +=	-I$(SRC)/uts/intel/sys/acpi
@@ -108,11 +114,11 @@ OBJS += boot.o commands.o console.o devopen.o interp.o \
 	interp_backslash.o interp_parse.o ls.o misc.o \
 	module.o linenoise.o zfs_cmd.o
 
-SRCS +=	load_elf32.c load_elf32_obj.c reloc_elf32.c
+i386_SRCS +=	load_elf32.c load_elf32_obj.c reloc_elf32.c
 SRCS +=	load_elf64.c load_elf64_obj.c reloc_elf64.c
 
-OBJS += load_elf32.o load_elf32_obj.o reloc_elf32.o \
-	load_elf64.o load_elf64_obj.o reloc_elf64.o
+i386_OBJS += load_elf32.o load_elf32_obj.o reloc_elf32.o
+OBJS += load_elf64.o load_elf64_obj.o reloc_elf64.o
 
 SRCS +=	disk.c part.c dev_net.c vdisk.c
 OBJS += disk.o part.o dev_net.o vdisk.o
@@ -130,8 +136,16 @@ SRCS +=	interp_forth.c
 OBJS +=	interp_forth.o
 CPPFLAGS +=	-I../../../common
 
+i386_CPPFLAGS +=	-I../../../i386/libi386
+aarch64_CPPFLAGS +=
+
+CPPFLAGS +=	$($(MACH)_CPPFLAGS)
+
 # For multiboot2.h, must be last, to avoid conflicts
 CPPFLAGS +=	-I$(SRC)/uts/common
+
+SRCS +=		$($(MACH)_SRCS)
+OBJS +=		$($(MACH)_OBJS)
 
 FILES=		$(EFIPROG)
 FILEMODE=	0555
@@ -142,6 +156,11 @@ LDSCRIPT=	../arch/$(MACHINE)/ldscript.$(MACHINE)
 LDFLAGS =	-nostdlib --eh-frame-hdr
 LDFLAGS +=	-shared --hash-style=both --enable-new-dtags
 LDFLAGS +=	-T$(LDSCRIPT) -Bsymbolic
+
+i386_LDFLAGS +=
+aarch64_LDFLAGS +=
+
+LDFLAGS +=	$($(MACH)_LDFLAGS)
 
 CLEANFILES=	$(EFIPROG) loader.sym loader.bin
 CLEANFILES +=	$(FONT).c vers.c

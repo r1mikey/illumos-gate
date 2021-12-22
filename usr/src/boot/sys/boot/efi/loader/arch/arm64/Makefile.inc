@@ -1,24 +1,20 @@
-# $FreeBSD$
 
-LOADER_FDT_SUPPORT=yes
-SRCS+=	exec.c \
+SRCS += cache.c \
+	exec.c \
+	isadir.c \
 	start.S
 
-.PATH:	${.CURDIR}/../../arm64/libarm64
-CFLAGS+=-I${.CURDIR}/../../arm64/libarm64
-SRCS+=	cache.c
+OBJS += cache.o \
+	exec.o \
+	isadir.o \
+	start.o
 
-CFLAGS+=	-msoft-float -mgeneral-regs-only
+SRCS +=	nullconsole.c \
+	spinconsole.c \
+	efiserialio.c
 
-CLEANFILES+=	loader.help
+OBJS += nullconsole.o \
+	spinconsole.o \
+	efiserialio.o
 
-loader.help: help.common
-	cat ${.ALLSRC} | \
-	    awk -f ${.CURDIR}/../../common/merge_help.awk > ${.TARGET}
-
-.if !defined(LOADER_ONLY)
-.PATH: ${.CURDIR}/../../forth
-.include	"${.CURDIR}/../../forth/Makefile.inc"
-
-FILES+=	loader.rc
-.endif
+start.o := CCASFLAGS += $(C_BIGPICFLAGS)

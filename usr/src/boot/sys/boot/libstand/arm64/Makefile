@@ -11,27 +11,29 @@
 
 #
 # Copyright 2016 Toomas Soome <tsoome@me.com>
+# Copyright 2016 RackTop Systems.
 #
-
-.KEEP_STATE:
 
 include $(SRC)/Makefile.master
 
-i386_SUBDIRS = $(MACH) $(MACH64)
-aarch64_SUBDIRS = arm64
-SUBDIRS = $($(MACH)_SUBDIRS)
+MACHINE=	arm64
+DYNLIB=		libstand_pics.a
 
-all	:=	TARGET = all
-clean	:=	TARGET = clean
-clobber	:=	TARGET = clobber
-install	:=	TARGET = install
+all install:    $(DYNLIB)
 
-all clean clobber: $(SUBDIRS)
+include ../Makefile.com
 
-install: all
+ASFLAGS =	$(aarch64_AS_XARCH) -I$(SRC)/uts/common -D_ASM
+CFLAGS +=	-m64 $(CFLAGS64)
+CCASFLAGS +=	-m64
 
-.PARALLEL:
-$(SUBDIRS): FRC
-	@cd $@; pwd; $(MAKE) $(TARGET)
+# _setjmp/_longjmp
+SRCS += $(SASRC)/arm64/_setjmp.S
+OBJECTS += _setjmp.o
+
+pics/%.o: $(SASRC)/arm64/%.S
+	$(COMPILE.S) -o $@ $<
+
+include $(SRC)/boot/sys/boot/Makefile.lib
 
 FRC:

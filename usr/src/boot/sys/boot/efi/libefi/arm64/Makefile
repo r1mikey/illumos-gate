@@ -11,27 +11,18 @@
 
 #
 # Copyright 2016 Toomas Soome <tsoome@me.com>
+# Copyright 2016 RackTop Systems.
 #
 
-.KEEP_STATE:
+MACHINE=	arm64
 
-include $(SRC)/Makefile.master
+all:		libefi.a
 
-i386_SUBDIRS = $(MACH) $(MACH64)
-aarch64_SUBDIRS = arm64
-SUBDIRS = $($(MACH)_SUBDIRS)
+SRCS=	time_$(MACHINE).c
+include ../Makefile.com
 
-all	:=	TARGET = all
-clean	:=	TARGET = clean
-clobber	:=	TARGET = clobber
-install	:=	TARGET = install
+CFLAGS +=	-m64 $(CFLAGS64)
 
-all clean clobber: $(SUBDIRS)
+CLEANFILES +=	machine x86
 
-install: all
-
-.PARALLEL:
-$(SUBDIRS): FRC
-	@cd $@; pwd; $(MAKE) $(TARGET)
-
-FRC:
+$(OBJS): machine x86

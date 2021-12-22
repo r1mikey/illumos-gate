@@ -26,6 +26,9 @@
  * $FreeBSD$
  */
 
+#define LOADER_USE_HANDCRAFTED_PE_COFF_HEADER
+
+#if defined(LOADER_USE_HANDCRAFTED_PE_COFF_HEADER)
 /*
  * We need to be a PE32+ file for EFI. On some architectures we can use
  * objcopy to create the correct file, however on arm64 we need to do
@@ -40,7 +43,7 @@
 #define	IMAGE_SCN_MEM_EXECUTE		0x20000000
 #define	IMAGE_SCN_MEM_READ		0x40000000
 
-	.section .peheader
+	.section .peheader,"a"
 efi_start:
 	/* The MS-DOS Stub, only used to get the offset of the COFF header */
 	.ascii	"MZ"
@@ -135,6 +138,7 @@ section_table:
 	.long	(IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | \
 		 IMAGE_SCN_MEM_READ)		/* Characteristics */
 _end_header:
+#endif
 
 	.text
 	.globl	_start
@@ -142,8 +146,10 @@ _start:
 	/* Save the boot params to the stack */
 	stp	x0, x1, [sp, #-16]!
 
-	adr	x0, __bss_start
-	adr	x1, __bss_end
+	adrp	x0, __bss_start
+	add	x0, x0, :lo12:__bss_start
+	adrp	x1, __bss_end
+	add	x1, x1, :lo12:__bss_end
 
 	b 2f
 
@@ -153,13 +159,41 @@ _start:
 	cmp	x0, x1
 	b.lo	1b
 
-	adr	x0, ImageBase
-	adr	x1, _DYNAMIC
+	adrp	x0, ImageBase
+	add	x0, x0, :lo12:ImageBase
+	adrp	x1, _DYNAMIC
+	add	x1, x1, :lo12:_DYNAMIC
 
 	bl	self_reloc
 
 	ldp	x0, x1, [sp], #16
 
+	/*
+	 * Load the stack to use. The default stack may be too small for
+	 * the ficl interpreter.
+	 */
+	adrp	x2, initstack_end
+	add	x2, x2, :lo12:initstack_end
+	mov	sp, x2
+
 	bl	efi_main
 
 1:	b	1b
+
+#if !defined(LOADER_USE_HANDCRAFTED_PE_COFF_HEADER)
+	/*
+	 * hand-craft a dummy .reloc section so EFI knows it's a relocatable
+	 * executable:
+	 */
+.data
+	.section .reloc, "a"
+	.long	0
+	.long	10
+	.word	0
+#endif
+
+.bss
+	.align	4
+initstack:
+	.space	(64 * 1024)
+initstack_end:

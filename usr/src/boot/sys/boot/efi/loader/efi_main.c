@@ -89,8 +89,12 @@ efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_table)
 	heap = 0x0000000100000000;
 	status = BS->AllocatePages(AllocateMaxAddress, EfiLoaderData,
 	    EFI_SIZE_TO_PAGES(heapsize), &heap);
-	if (status != EFI_SUCCESS)
-		BS->Exit(IH, status, 0, NULL);
+	if (status != EFI_SUCCESS) {
+		status = BS->AllocatePages(AllocateAnyPages, EfiLoaderData,
+			EFI_SIZE_TO_PAGES(heapsize), &heap);
+		if (status != EFI_SUCCESS)
+			BS->Exit(IH, status, 0, NULL);
+	}
 
 	setheap((void *)(uintptr_t)heap, (void *)(uintptr_t)(heap + heapsize));
 

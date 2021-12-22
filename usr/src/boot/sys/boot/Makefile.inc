@@ -22,8 +22,9 @@ OBJCOPY=	$(GNU_ROOT)/bin/gobjcopy
 OBJDUMP=	$(GNU_ROOT)/bin/gobjdump
 GSTRIP=		$(GNU_ROOT)/bin/gstrip
 
-GLDTARGET=	-melf_i386_sol2
-LDFLAGS	+=	$(GLDTARGET)
+i386_GLDTARGET=		-melf_i386_sol2
+aarch64_GLDTARGET=	-maarch64elf
+LDFLAGS	+=		$($(MACH)_GLDTARGET)
 
 # Default Console font setup.
 # We want it to be the same as kernel.
@@ -47,17 +48,25 @@ LZ4=		$(SRC)/common/lz4
 # set standard values
 AS_CPPFLAGS=
 CPPFLAGS=	-D_STANDALONE -_gcc=-nostdinc
-CFLAGS64=	-_gcc=-mno-red-zone
+i386_CFLAGS64=	-_gcc=-mno-red-zone
+aarch64_CFLAGS64=-_gcc=-mgeneral-regs-only
+CFLAGS64=	$($(MACH)_CFLAGS64)
 
+i386_CFLAGS=	-_gcc=-mno-mmx -_gcc=-mno-3dnow -_gcc=-mno-sse -_gcc=-mno-sse2
+i386_CFLAGS +=	-_gcc=-mno-sse3 -_gcc=-msoft-float
+i386_CFLAGS +=	-_gcc=-mno-avx -_gcc=-mno-aes
+aarch64_CFLAGS=	-_gcc=-mgeneral-regs-only
 CFLAGS=		-_gcc=-Os -_gcc=-ffreestanding -_gcc=-fno-builtin
 CFLAGS +=	-_gcc=-ffunction-sections -_gcc=-fdata-sections
-CFLAGS +=	-_gcc=-mno-mmx -_gcc=-mno-3dnow -_gcc=-mno-sse -_gcc=-mno-sse2
-CFLAGS +=	-_gcc=-mno-sse3 -_gcc=-msoft-float
-CFLAGS +=	-_gcc=-mno-avx -_gcc=-mno-aes
+CFLAGS +=	$($(MACH)_CFLAGS)
 CFLAGS +=	-_gcc=-Wall
 CFLAGS +=	$(CCNOAUTOINLINE) $(CCNOREORDER) $(CSTD_GNU99)
-CCASFLAGS=	-Wa,--divide
-ASFLAGS=	--divide
+i386_CCASFLAGS=	-Wa,--divide
+aarch64_CCASFLAGS=
+CCASFLAGS=	$($(MACH)_CCASFLAGS)
+i386_ASFLAGS=	--divide
+aarch64_ASFLAGS=
+ASFLAGS=	$($(MACH)_ASFLAGS)
 
 SMATCH_ =
 SMATCH_on =

@@ -42,6 +42,7 @@ include Targetdirs
 COMMON_SUBDIRS=	data uts lib cmd ucblib ucbcmd man test
 sparc_SUBDIRS= psm stand
 i386_SUBDIRS= grub boot
+aarch64_SUBDIRS= boot
 
 #
 # sparc needs to build stand before psm

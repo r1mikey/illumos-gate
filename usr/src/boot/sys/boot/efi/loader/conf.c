@@ -65,22 +65,26 @@ struct netif_driver *netif_drivers[] = {
 };
 
 extern struct console efi_console;
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__) || defined(__i386__) || defined(__aarch64__)
 extern struct console ttya;
 extern struct console ttyb;
 extern struct console ttyc;
 extern struct console ttyd;
+#endif
+#if defined(__amd64__) || defined(__i386__)
 extern struct console nullconsole;
 extern struct console spinconsole;
 #endif
 
 struct console *consoles[] = {
-#if defined(__amd64__) || defined(__i386__)
+#if defined(__amd64__) || defined(__i386__) || defined(__aarch64__)
 	&efi_console,
 	&ttya,
 	&ttyb,
 	&ttyc,
 	&ttyd,
+#endif
+#if defined(__amd64__) || defined(__i386__)
 	&nullconsole,
 	&spinconsole,
 #endif
@@ -89,11 +93,15 @@ struct console *consoles[] = {
 
 #if defined(__amd64__) || defined(__i386__)
 extern struct file_format multiboot2;
+#elif defined(__aarch64__)
+extern struct file_format arm64_elf;
 #endif
 
 struct file_format *file_formats[] = {
 #if defined(__amd64__) || defined(__i386__)
 	&multiboot2,
+#elif defined(__aarch64__)
+	&arm64_elf,
 #endif
 	NULL
 };

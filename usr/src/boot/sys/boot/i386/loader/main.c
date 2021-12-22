@@ -46,7 +46,7 @@
 #include "bootstrap.h"
 #include "common/bootargs.h"
 #include "libi386/libi386.h"
-#include "libi386/smbios.h"
+#include "smbios.h"
 #include "btxv86.h"
 #include "libzfs.h"
 
