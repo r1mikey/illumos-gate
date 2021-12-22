@@ -26,7 +26,6 @@
 #
 
 include		../Makefile.com
-include		../../Makefile.tools
 include		$(SGSHOME)/libld/Makefile.com
 include		$(SRC)/Makefile.master.64
 
@@ -50,6 +49,17 @@ NATIVE_LIBS +=	libc.so
 DYNFLAGS +=	$(VERSREF) '-R$$ORIGIN'
 CFLAGS = $(NATIVE_CFLAGS)
 
+CERRWARN += -_gcc=-Wno-unused-value
+CERRWARN += -_gcc=-Wno-parentheses
+CERRWARN += $(CNOWARN_UNINIT)
+CERRWARN += -_gcc=-Wno-switch
+CERRWARN += -_gcc=-Wno-char-subscripts
+CERRWARN += -_gcc=-Wno-type-limits
+CERRWARN += -_gcc=-Wno-unused-but-set-variable
+$(RELEASE_BUILD)CERRWARN += -_gcc=-Wno-unused
+
+CSTD_GNU89 =    $(CSTD_GNU99)
+
 all:		$(DYNLIB) $(LIBLINKS)
 
 install:	all $(ROOTONBLDLIBMACH64)/$(DYNLIB) $(ROOTONBLDLIBMACH64)/$(LIBLINKS)
@@ -63,3 +73,7 @@ $(ROOTONBLDLIBMACH64)/$(LIBLINKS): $(ROOTONBLDLIBMACH64)/$(DYNLIB)
 		$(SYMLINK) $(DYNLIB) $(ROOTONBLDLIBMACH64)/$(LIBLINKS)
 
 include		$(SGSHOME)/libld/Makefile.targ
+
+# We can't create CTF in the tools build because of a bootstrap bug with the new CTF
+$(DYNLIB) := CTFMERGE_POST= :
+CTFCONVERT_O= :

@@ -27,7 +27,7 @@
 
 usage()
 {
-	echo "usage: bld_vernote -R <revision> -r <release> -o <outfile.s>"
+	echo "usage: bld_vernote [-n] -R <revision> -r <release> -o <outfile.s>"
 }
 
 pad_notestring()
@@ -108,7 +108,7 @@ notefile=""
 release=""
 revision=""
 
-while getopts R:o:r: c
+while getopts R:o:r:n c
 do
 	case $c in
 	o)
@@ -119,6 +119,9 @@ do
 		;;
 	R)
 		revision=$OPTARG
+		;;
+	n)
+		MACH=$NATIVE_MACH
 		;;
 	\?)
 		usage

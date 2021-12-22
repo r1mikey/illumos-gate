@@ -91,12 +91,25 @@ RELEASE_BUILD=				$(POUND_SIGN)
 $(RELEASE_BUILD)NOT_RELEASE_BUILD=	$(POUND_SIGN)
 PATCH_BUILD=				$(POUND_SIGN)
 
+# NATIVE_MACH defaults to MACH and can be overridden in the environment for
+# cross-builds.
+NATIVE_MACH=				$(MACH)
+
 # SPARC_BLD is '#' for an Intel build.
 # INTEL_BLD is '#' for a Sparc build.
-SPARC_BLD_1=    $(MACH:i386=$(POUND_SIGN))
-SPARC_BLD=      $(SPARC_BLD_1:sparc=)
-INTEL_BLD_1=    $(MACH:sparc=$(POUND_SIGN))
-INTEL_BLD=      $(INTEL_BLD_1:i386=)
+sparc_SPARC_BLD=
+i386_SPARC_BLD=	$(POUND_SIGN)
+SPARC_BLD=	$($(MACH)_SPARC_BLD)
+sparc_INTEL_BLD=$(POUND_SIGN)
+i386_INTEL_BLD=
+INTEL_BLD=	$($(MACH)_INTEL_BLD)
+
+# CROSS_BLD is "#" if NATIVE_MACH and MACH are the same, and the empty string
+# otherwise. NATIVE_BLD is the opposite.
+CROSS_BLD_1=		$(NATIVE_MACH:$(MACH)=$(POUND_SIGN))
+CROSS_BLD=		$(CROSS_BLD_1:$(NATIVE_MACH)=)
+NATIVE_BLD=
+$(CROSS_BLD)NATIVE_BLD=	$(POUND_SIGN)
 
 # The variables below control the compilers used during the build.
 # There are a number of permutations.
@@ -138,18 +151,21 @@ JAVA_ROOT=	/usr/java
 # string in the environment to override.
 BLD_JAVA_11=	$(POUND_SIGN)
 
-GNUC_ROOT=	/usr/gcc/7
-GCCLIBDIR=	$(GNUC_ROOT)/lib
-GCCLIBDIR64=	$(GNUC_ROOT)/lib/$(MACH64)
+i386_GNUC_ROOT=		/usr/gcc/7
+sparc_GNUC_ROOT=	/usr/gcc/7
+NATIVE_GNUC_ROOT=	$($(NATIVE_MACH)_GNUC_ROOT)
+GNUC_ROOT=		$($(MACH)_GNUC_ROOT)
+GCCLIBDIR=		$(GNUC_ROOT)/lib
+GCCLIBDIR64=		$(GNUC_ROOT)/lib/$(MACH64)
 
 DOCBOOK_XSL_ROOT=	/usr/share/sgml/docbook/xsl-stylesheets
 
-RPCGEN=		$(ONBLD_TOOLS)/bin/$(MACH)/rpcgen
-STABS=		$(ONBLD_TOOLS)/bin/$(MACH)/stabs
-ELFEXTRACT=	$(ONBLD_TOOLS)/bin/$(MACH)/elfextract
-MBH_PATCH=	$(ONBLD_TOOLS)/bin/$(MACH)/mbh_patch
-BTXLD=		$(ONBLD_TOOLS)/bin/$(MACH)/btxld
-VTFONTCVT=	$(ONBLD_TOOLS)/bin/$(MACH)/vtfontcvt
+RPCGEN=		$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/rpcgen
+STABS=		$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/stabs
+ELFEXTRACT=	$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/elfextract
+MBH_PATCH=	$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/mbh_patch
+BTXLD=		$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/btxld
+VTFONTCVT=	$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/vtfontcvt
 # echo(1) and true(1) are specified without absolute paths, so that the shell
 # spawned by make(1) may use the built-in versions.  This is minimally
 # problematic, as the shell spawned by make(1) is known and under control, the
@@ -159,7 +175,7 @@ VTFONTCVT=	$(ONBLD_TOOLS)/bin/$(MACH)/vtfontcvt
 # which ksh93, /bin/sh, and bash will all provide.
 ECHO=		echo
 TRUE=		true
-INS=		$(ONBLD_TOOLS)/bin/$(MACH)/install
+INS=		$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/install
 ED=		/usr/bin/ed
 SYMLINK=	/usr/bin/ln -s
 LN=		/usr/bin/ln
@@ -193,12 +209,12 @@ ANSI_CPP=	$(GNUC_ROOT)/bin/cpp
 JAVAC=		$(JAVA_ROOT)/bin/javac
 JAVADOC=	$(JAVA_ROOT)/bin/javadoc
 JAR=		$(JAVA_ROOT)/bin/jar
-CTFCONVERT=	$(ONBLD_TOOLS)/bin/$(MACH)/ctfconvert
-CTFDIFF=	$(ONBLD_TOOLS)/bin/$(MACH)/ctfdiff
-CTFMERGE=	$(ONBLD_TOOLS)/bin/$(MACH)/ctfmerge
-CTFSTABS=	$(ONBLD_TOOLS)/bin/$(MACH)/ctfstabs
-CTFSTRIP=	$(ONBLD_TOOLS)/bin/$(MACH)/ctfstrip
-NDRGEN=		$(ONBLD_TOOLS)/bin/$(MACH)/ndrgen
+CTFCONVERT=	$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/ctfconvert
+CTFDIFF=	$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/ctfdiff
+CTFMERGE=	$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/ctfmerge
+CTFSTABS=	$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/ctfstabs
+CTFSTRIP=	$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/ctfstrip
+NDRGEN=		$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/ndrgen
 GENOFFSETS=	$(ONBLD_TOOLS)/bin/genoffsets
 XREF=		$(ONBLD_TOOLS)/bin/xref
 FIND=		/usr/bin/find
@@ -240,12 +256,12 @@ TAR=		/usr/bin/tar
 ASTBINDIR=	/usr/ast/bin
 MSGCC=		$(ASTBINDIR)/msgcc
 MSGFMT=		/usr/bin/msgfmt -s
-LCDEF=		$(ONBLD_TOOLS)/bin/$(MACH)/localedef
-TIC=		$(ONBLD_TOOLS)/bin/$(MACH)/tic
-ZIC=		$(ONBLD_TOOLS)/bin/$(MACH)/zic
+LCDEF=		$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/localedef
+TIC=		$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/tic
+ZIC=		$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/zic
 OPENSSL=	/usr/bin/openssl
-CPCGEN=		$(ONBLD_TOOLS)/bin/$(MACH)/cpcgen
-GENICONVTBL=	$(ONBLD_TOOLS)/bin/$(MACH)/geniconvtbl
+CPCGEN=		$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/cpcgen
+GENICONVTBL=	$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/geniconvtbl
 
 DEFAULT_CONSOLE_COLOR=					\
 	-DDEFAULT_ANSI_FOREGROUND=ANSI_COLOR_WHITE	\
@@ -327,15 +343,21 @@ INS.pyfile=	$(RM) $@; $(SED) \
 # Set BUILD64=# in the environment to disable 64-bit amd64
 # builds on i386 machines.
 
-MACH64_1=	$(MACH:sparc=sparcv9)
-MACH64=		$(MACH64_1:i386=amd64)
+sparc_MACH64=	sparcv9
+i386_MACH64=	amd64
+MACH64=		$($(MACH)_MACH64)
 
-MACH32_1=	$(MACH:sparc=sparcv7)
-MACH32=		$(MACH32_1:i386=i86)
+sparc_MACH32=	sparcv7
+i386_MACH32=	i86
+MACH32=		$($(MACH)_MACH32)
 
 sparc_BUILD64=
 i386_BUILD64=
 BUILD64=	$($(MACH)_BUILD64)
+
+sparc_BUILD32=
+i386_BUILD32=
+BUILD32=	$($(MACH)_BUILD32)
 
 #
 # C compiler mode. Future compilers may change the default on us,
@@ -475,12 +497,14 @@ sparc_XARCH=	-m32
 sparcv9_XARCH=	-m64
 i386_XARCH=	-m32
 amd64_XARCH=	-m64 -Ui386 -U__i386
+aarch64_XARCH=	-m64 # -xarch=generic64
 
 # assembler '-xarch' flag.  Different from compiler '-xarch' flag.
 sparc_AS_XARCH=		-xarch=v8plus
 sparcv9_AS_XARCH=	-xarch=v9
 i386_AS_XARCH=
 amd64_AS_XARCH=		-xarch=amd64 -P -Ui386 -U__i386
+aarch64_AS_XARCH=	-xarch=generic64
 
 #
 # These flags define what we need to be 'standalone' i.e. -not- part
@@ -554,7 +578,7 @@ sparc_CFLAGS=	$(sparc_XARCH) $(CCSTATICSYM)
 sparcv9_CFLAGS=	$(sparcv9_XARCH) -dalign $(CCVERBOSE) $(V9ABIWARN) $(CCREGSYM) \
 		$(CCSTATICSYM)
 i386_CFLAGS=	$(i386_XARCH)
-amd64_CFLAGS=	$(amd64_XARCH)
+amd64_CFLAGS=	$(amd64_XARCH) -m64
 
 sparc_ASFLAGS=	$(sparc_AS_XARCH)
 sparcv9_ASFLAGS=$(sparcv9_AS_XARCH)
@@ -615,6 +639,7 @@ $(__GNUC)CTF_FLAGS_amd64 += $(SAVEARGS)
 CTF_FLAGS_32	= $(CTF_FLAGS_$(MACH))
 CTF_FLAGS_64	= $(CTF_FLAGS_$(MACH64))
 CTF_FLAGS	= $(CTF_FLAGS_32)
+NATIVE_CTF_FLAGS= $(CTF_FLAGS_$(NATIVE_MACH))
 
 #
 # Flags used with genoffsets
@@ -699,14 +724,14 @@ CFLAGS64=       $(COPTFLAG64) $($(MACH64)_CFLAGS) $(SPACEFLAG64) $(CCMODE64) \
 # Flags that are used to build parts of the code that are subsequently
 # run on the build machine (also known as the NATIVE_BUILD).
 #
-NATIVE_CFLAGS=	$(COPTFLAG) $($(NATIVE_MACH)_CFLAGS) $(CCMODE) \
+NATIVE_CFLAGS=	$($(NATIVE_MACH)_COPTFLAG) $($(NATIVE_MACH)_CFLAGS) $(CCMODE) \
 		$(ILDOFF) $(CERRWARN) $(CSTD) $($(NATIVE_MACH)_CCUNBOUND) \
 		$(IROPTFLAG) $(CGLOBALSTATIC) $(CCNOAUTOINLINE) \
 		$(CCNOREORDER) $(CCNOAGGRESSIVELOOPS) $(CCINLINESIZE) \
 		$(CSOURCEDEBUGFLAGS) $(CUSERFLAGS)
 
-NATIVE_CCFLAGS=	$(CCOPTFLAG) $($(NATIVE_MACH)_CCFLAGS) $(CCSOURCEDEBUGFLAGS) \
-		$(CCUSERFLAGS)
+NATIVE_CCFLAGS=	$($(NATIVE_MACH)_CCOPTFLAG) $($(NATIVE_MACH)_CCFLAGS) \
+		$(CCSOURCEDEBUGFLAGS) $(CCUSERFLAGS)
 
 NATIVE_CFLAGS64=	$(COPTFLAG64) $($(NATIVE_MACH64)_CFLAGS) $(CCMODE64) \
 		$(ILDOFF) $(CERRWARN) $(CSTD) $($(NATIVE_MACH64)_CCUNBOUND) \
@@ -901,7 +926,10 @@ LINK64.cc=		$(CCC) $(CCFLAGS64) $(CPPFLAGS) $(NORUNPATH) \
 #
 # For now at least, we cross-compile amd64 on i386 machines.
 NATIVE_MACH=	$(MACH:amd64=i386)
-NATIVE_MACH64=	$(MACH64)
+i386_NATIVE_MACH64=	amd64
+sparc_NATIVE_MACH64=	sparcv9
+aarch64_NATIVE_MACH64=	aarch64
+NATIVE_MACH64=		$($(NATIVE_MACH)_MACH64)
 
 # Define native compilation macros
 #
@@ -911,27 +939,47 @@ NATIVE_MACH64=	$(MACH64)
 #
 SPRO_ROOT=		$(BUILD_TOOLS)/SUNWspro
 SPRO_VROOT=		$(SPRO_ROOT)/SS12
-GNU_ROOT=		/usr
+i386_GNU_ROOT=		/usr
+sparc_GNU_ROOT=		/usr
+GNU_ROOT=		$($(MACH)_GNU_ROOT)
 
-$(__GNUC)PRIMARY_CC=	gcc7,$(GNUC_ROOT)/bin/gcc,gnu
-$(__SUNC)PRIMARY_CC=	studio12,$(SPRO_VROOT)/bin/cc,sun
-$(__GNUC)PRIMARY_CCC=	gcc7,$(GNUC_ROOT)/bin/g++,gnu
-$(__SUNC)PRIMARY_CCC=	studio12,$(SPRO_VROOT)/bin/CC,sun
+$(__GNUC)i386_PRIMARY_CC=	gcc7,$(i386_GNUC_ROOT)/bin/gcc,gnu
+$(__SUNC)i386_PRIMARY_CC=	studio12,$(SPRO_VROOT)/bin/cc,sun
+$(__GNUC)i386_PRIMARY_CCC=	gcc7,$(i386_GNUC_ROOT)/bin/g++,gnu
+$(__SUNC)i386_PRIMARY_CCC=	studio12,$(SPRO_VROOT)/bin/CC,sun
 
-CW_CC_COMPILERS=	$(PRIMARY_CC:%=--primary %) $(SHADOW_CCS:%=--shadow %)
-CW_CCC_COMPILERS=	$(PRIMARY_CCC:%=--primary %) $(SHADOW_CCCS:%=--shadow %)
+$(__GNUC)sparc_PRIMARY_CC=	gcc7,$(sparc_GNUC_ROOT)/bin/gcc,gnu
+$(__SUNC)sparc_PRIMARY_CC=	studio12,$(SPRO_VROOT)/bin/cc,sun
+$(__GNUC)sparc_PRIMARY_CCC=	gcc7,$(sparc_GNUC_ROOT)/bin/g++,gnu
+$(__SUNC)sparc_PRIMARY_CCC=	studio12,$(SPRO_VROOT)/bin/CC,sun
+
+CW_CC_COMPILERS=	$($(MACH)_PRIMARY_CC:%=--primary %) \
+			$($(MACH)_SHADOW_CCS:%=--shadow %)
+CW_CCC_COMPILERS=	$($(MACH)_PRIMARY_CCC:%=--primary %) \
+			$($(MACH)_SHADOW_CCCS:%=--shadow %)
+NATIVE_CW_CC_COMPILERS=	$($(NATIVE_MACH)_PRIMARY_CC:%=--primary %) \
+			$($(NATIVE_MACH)_SHADOW_CCS:%=--shadow %)
+NATIVE_CW_CCC_COMPILERS=$($(NATIVE_MACH)_PRIMARY_CCC:%=--primary %) \
+			$($(NATIVE_MACH)_SHADOW_CCCS:%=--shadow %)
 
 CW_LINKER=		--linker $(LD)
 
 # Specify platform compiler versions for languages
 # that we use (currently only c and c++).
 #
-CW=			$(ONBLD_TOOLS)/bin/$(MACH)/cw
+CW=			$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/cw.$(MACH)
+NATIVE_CW=		$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/cw.$(NATIVE_MACH)
 
 BUILD_CC=		$(CW) $(CW_LINKER) $(CW_CC_COMPILERS) --
+NATIVEBUILD_CC=		$(NATIVE_CW) $(CW_LINKER) $(NATIVE_CW_CC_COMPILERS) --
 BUILD_CCC=		$(CW) -C $(CW_LINKER) $(CW_CCC_COMPILERS) --
+NATIVEBUILD_CCC=	$(NATIVE_CW) -C $(CW_LINKER) \
+			$(NATIVE_CW_CCC_COMPILERS) --
 BUILD_CPP=		/usr/lib/cpp
-BUILD_LD=		$(ONBLD_TOOLS)/bin/$(MACH64)/ld
+# XXXAARCH64: We need a cross-cpp build in tools
+NATIVEBUILD_CPP=	/usr/lib/cpp
+BUILD_LD=		$(ONBLD_TOOLS)/bin/$(NATIVE_MACH64)/ld
+NATIVEBUILD_LD=		$(ONBLD_TOOLS)/bin/$(NATIVE_MACH64)/ld
 
 $(MACH)_CC=		$(BUILD_CC)
 $(MACH)_CCC=		$(BUILD_CCC)
@@ -945,36 +993,38 @@ $(MACH64)_LD=		$(BUILD_LD)
 sparc_AS=		/usr/bin/as -xregsym=no
 sparcv9_AS=		$($(MACH)_AS)
 
-i386_AS=		/usr/bin/as
-$(__GNUC)i386_AS=	$(ONBLD_TOOLS)/bin/$(MACH)/aw
-amd64_AS=		$(ONBLD_TOOLS)/bin/$(MACH)/aw
+i386_AS=		$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/aw.i386
+$(__GNUC)i386_AS=	$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/aw.i386
+amd64_AS=		$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/aw.i386
 
-NATIVECC=		$($(NATIVE_MACH)_CC)
-NATIVECCC=		$($(NATIVE_MACH)_CCC)
-NATIVECPP=		$($(NATIVE_MACH)_CPP)
+NATIVECC=		$(NATIVEBUILD_CC)
+NATIVECCC=		$(NATIVEBUILD_CCC)
+NATIVECPP=		$(NATIVEBUILD_CPP)
 NATIVEAS=		$($(NATIVE_MACH)_AS)
-NATIVELD=		$($(NATIVE_MACH)_LD)
+NATIVELD=		$(BUILD_LD)
 
-NATIVECC64=		$($(NATIVE_MACH64)_CC)
-NATIVECCC64=		$($(NATIVE_MACH64)_CCC)
-NATIVECPP64=		$($(NATIVE_MACH64)_CPP)
+# XXXAARCH64: this needs to be fleshed out a bit
+NATIVECC64=		$(NATIVEBUILD_CC)
+NATIVECCC64=		$(NATIVEBUILD_CCC)
+# XXXAARCH64: this is probably wrong
+NATIVECPP64=		$(NATIVEBUILD_CPP)
 NATIVEAS64=		$($(NATIVE_MACH64)_AS)
-NATIVELD64=		$($(NATIVE_MACH64)_LD)
+NATIVELD64=		$(NATIVEBUILD_LD)
 
 #
 # Makefile.master.64 overrides these settings
 #
-CC=			$(NATIVECC)
-CCC=			$(NATIVECCC)
-CPP=			$(NATIVECPP)
-AS=			$(NATIVEAS)
-LD=			$(NATIVELD)
+CC=			$($(MACH)_CC)
+CCC=			$($(MACH)_CCC)
+CPP=			$($(MACH)_CPP)
+AS=			$($(MACH)_AS)
+LD=			$($(MACH)_LD)
 
-CC64=			$(NATIVECC64)
-CCC64=			$(NATIVECCC64)
-CPP64=			$(NATIVECPP64)
-AS64=			$(NATIVEAS64)
-LD64=			$(NATIVELD64)
+CC64=			$($(MACH)_CC)
+CCC64=			$($(MACH)_CCC)
+CPP64=			$($(MACH)_CPP)
+AS64=			$($(MACH)_AS)
+LD64=			$($(MACH)_LD)
 
 # Pass -Y flag to cpp (method of which is release-dependent)
 CCYFLAG=		-Y I,
@@ -1150,7 +1200,7 @@ POST_PROCESS=		$(PROCESS_COMMENT) $@ ; $(PROCESS_CTF) ; \
 # ELF section size which can trigger an OBP bug on older platforms.
 # This problem affects only specific sun4u bootable modules.
 #
-CHK4UBIN=	$(ONBLD_TOOLS)/bin/$(MACH)/chk4ubin
+CHK4UBIN=	$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/chk4ubin
 CHK4UBINFLAGS=
 CHK4UBINARY=	$(CHK4UBIN) $(CHK4UBINFLAGS) $@
 

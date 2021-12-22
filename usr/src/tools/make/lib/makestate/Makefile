@@ -13,7 +13,9 @@
 
 include $(SRC)/Makefile.master
 
-SUBDIRS=$(MACH) $(MACH64)
+# XXXAARCH64: this list include(d) $(NATIVE_MACH64), but for the life of me I
+# can't figure out why.
+SUBDIRS=$(NATIVE_MACH)
 
 all	:=	TARGET = all
 install :=	TARGET = install

@@ -9,25 +9,4 @@
 # http://www.illumos.org/license/CDDL.
 #
 
-#
-# Copyright (c) 2015, Joyent, Inc.
-#
-
-include		../../Makefile.tools
-
-SUBDIRS	= $(NATIVE_MACH)
-
-all	:= TARGET= all
-install	:= TARGET= install
-clean	:= TARGET= clean
-clobber	:= TARGET= clobber
-lint	:= TARGET= lint
-
-.KEEP_STATE:
-
-install all clean clobber lint: $(SUBDIRS)
-
-$(SUBDIRS): FRC
-	@cd $@; pwd; $(MAKE) $(TARGET)
-
-FRC:
+include ../Makefile.com

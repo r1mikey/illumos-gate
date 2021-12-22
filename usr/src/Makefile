@@ -86,12 +86,15 @@ check :=		TARGET= check
 
 .KEEP_STATE:
 
+i386_CLOSEDBINS=closedbins
+sparc_CLOSEDBINS=closedbins
+
 #
 # Note: install does not cause a build in pkg.  To build packages,
 #	cd pkg and do a 'make install'
 #
 
-all: mapfiles closedbins sgs .WAIT $(SUBDIRS) pkg
+all: mapfiles $($(MACH)_CLOSEDBINS) sgs .WAIT $(SUBDIRS) pkg
 
 #
 # The _msg build is a two-step process.  First, the _msg dependency
@@ -112,7 +115,7 @@ install: install1 install2 _msg stage-licenses
 stage-licenses: install2
 	@cd pkg; pwd; $(MAKE) stage-licenses
 
-install1: mapfiles closedbins sgs
+install1: mapfiles $($(MACH)_CLOSEDBINS) sgs
 
 install2: install1 .WAIT $(SUBDIRS)
 
@@ -182,7 +185,7 @@ sgs: rootdirs .WAIT sysheaders userheaders .WAIT \
 # dependent on a number of constant mapfiles, the tools themselves are
 # required to build the generated mapfiles.
 #
-setup: closedbins bldtools sgs mapfiles
+setup: $($(MACH)_CLOSEDBINS) bldtools sgs mapfiles
 
 #
 # Always build tools as non-DEBUG.

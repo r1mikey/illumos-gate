@@ -32,8 +32,15 @@ include		$(SRC)/Makefile.master.64
 CPPFLAGS =	 $(NATIVE_CPPFLAGS) -I$(SRC)/lib/libc/inc -I$(ELFCAP) \
 	-I$(SRC)/common/sgsrtcid \
 	-I$(SRC)/lib/libdemangle/common
+CERRWARN +=	-_gnu=-Wno-error=switch
 CFLAGS =	$(NATIVE_CFLAGS)
+AS_CPPFLAGS=	-P -D_ASM $(CPPFLAGS)
 CW_LINKER =
+
+#
+# Tell bld_vernote that we need to use the native build.
+#
+BLDVERNOTE_TARGET_ARGS= -n
 
 .PARALLEL:	$(PICS)
 .KEEP_STATE:

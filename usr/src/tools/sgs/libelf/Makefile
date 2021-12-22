@@ -24,13 +24,15 @@
 #
 
 include		../Makefile.com
-include		../../Makefile.tools
 include		$(SGSHOME)/libelf/Makefile.com
 include		$(SRC)/Makefile.master.64
 
 CONVLIBDIR =	-L../libconv
+LDLIBS +=	$(CONVLIBDIR) -lconv -lc
 CPPFLAGS =	$(NATIVE_CPPFLAGS)
 CFLAGS =	$(NATIVE_CFLAGS)
+CERRWARN +=	-_gcc=-Wno-parentheses
+CERRWARN +=	$(CNOWARN_UNINIT)
 SGSMSGTARG +=	$(SGSMSG32)
 NATIVE_LIBS +=	libc.so
 CW_LINKER =
@@ -52,3 +54,7 @@ $(ROOTONBLDLIBMACH64)/$(LIBLINKS): $(ROOTONBLDLIBMACH64)/$(DYNLIB)
 		$(SYMLINK) $(DYNLIB) $(ROOTONBLDLIBMACH64)/$(LIBLINKS)
 
 include		$(SGSHOME)/libelf/Makefile.targ
+
+# We can't create CTF in the tools build because of a bootstrap bug with the new CTF
+$(DYNLIB) := CTFMERGE_POST= :
+CTFCONVERT_O= :
