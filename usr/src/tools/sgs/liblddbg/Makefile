@@ -25,17 +25,22 @@
 #
 
 include		../Makefile.com
-include		../../Makefile.tools
 include		$(SGSHOME)/liblddbg/Makefile.com
+include		../../Makefile.tools
 
 .KEEP_STATE:
 
 CPPFLAGS =	$(NATIVE_CPPFLAGS) -I$(SRC)/lib/libc/inc
 CFLAGS =	$(NATIVE_CFLAGS)
+CERRWARN +=	-_gcc=-Wno-unused-value
+CERRWARN +=	$(CNOWARN_UNINIT)
+CERRWARN +=	-_gcc=-Wno-parentheses
 DYNFLAGS +=	-L../libconv
 SGSMSGTARG +=	$(SGSMSG32)
+SGSMSGDIR =	$(SGSHOME)/messages/$(NATIVE_MACH)
 NATIVE_LIBS +=	libc.so
 CW_LINKER =
+LDLIBS +=	-lconv -lc
 
 # A bootstrapping problem means we can't use the regular mapfile just yet
 MAPFILES =
@@ -53,3 +58,7 @@ $(ROOTONBLDLIBMACH)/$(LIBLINKS): $(ROOTONBLDLIBMACH)/$(DYNLIB)
 		$(SYMLINK) $(DYNLIB) $(ROOTONBLDLIBMACH)/$(LIBLINKS)
 
 include		$(SGSHOME)/liblddbg/Makefile.targ
+
+# We can't create CTF in the tools build because of a bootstrap bug with the new CTF
+$(DYNLIB) := CTFMERGE_POST= :
+CTFCONVERT_O= :

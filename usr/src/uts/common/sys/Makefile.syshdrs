@@ -175,12 +175,9 @@ ROOTDIR=	$(ROOT)/usr/include/sys
 
 ROOTDKTPDIR=	$(ROOTDIR)/dktp
 
-sparc_ROOTDIRS=	$(ROOTDKTPDIR) $(ROOTDIR)/scsi/adapters \
-		$(ROOTDIR)/scsi/targets
+sparc_ROOTDIRS=	$(ROOTDKTPDIR)
 
-i386_ROOTDIRS=	$(ROOTDKTPDIR) $(ROOTDIR)/scsi/adapters \
-		$(ROOTDIR)/scsi/targets \
-		$(ROOTDIR)/sata
+i386_ROOTDIRS=	$(ROOTDKTPDIR) $(ROOTDIR)/sata
 
 ROOTDIRS=			\
 	$(ROOTDIR)		\
@@ -219,9 +216,11 @@ ROOTDIRS=			\
 	$(ROOTDIR)/idm		\
 	$(ROOTDIR)/iscsit	\
 	$(ROOTDIR)/scsi		\
+	$(ROOTDIR)/scsi/adapters	\
 	$(ROOTDIR)/scsi/conf	\
 	$(ROOTDIR)/scsi/generic	\
 	$(ROOTDIR)/scsi/impl	\
+	$(ROOTDIR)/scsi/targets	\
 	$(ROOTDIR)/sdcard	\
 	$(ROOTDIR)/sysevent     \
 	$(ROOTDIR)/contract     \
@@ -356,7 +355,7 @@ $(ROOTDIR)/fibre-channel/%:	fibre-channel/%
 $(ROOTDIR)/fibre-channel/impl/%:	fibre-channel/impl/%
 	$(INS.file)
 
-$(ROOTDIR)/fibre-channel/ulp/:	fibre-channel/ulp/%
+$(ROOTDIR)/fibre-channel/ulp/%:	fibre-channel/ulp/%
 	$(INS.file)
 
 $(ROOTDIR)/fm/%:                fm/%

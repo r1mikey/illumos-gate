@@ -23,17 +23,21 @@
 # All rights reserved.
 
 include		../Makefile.com
-include		../../Makefile.tools
 include		$(SGSHOME)/ld/Makefile.com
+include		../../Makefile.tools
 
 LDLIBS =	-L../libconv -L$(ROOTONBLDLIBMACH) -lld -lelf -lconv
 NATIVE_LIBS +=	libc.so
 CPPFLAGS =	$(NATIVE_CPPFLAGS)
 CFLAGS =	$(NATIVE_CFLAGS)
+CERRWARN +=	-_gcc=-Wno-switch
+CERRWARN +=	-_gcc=-Wno-parentheses
+SGSMSGDIR =	$(SGSHOME)/messages/$(NATIVE_MACH)
 MAPFILES =	$(SRCDIR)/common/mapfile-intf
 CW_LINKER =
-VAR_LD_LLDFLAGS=	'-R$$ORIGIN/../../lib/$(MACH)'
-VAR_LD_LLDFLAGS64 =	'-R$$ORIGIN/../../../lib/$(MACH64)'
+VAR_LD_LLDFLAGS=	'-R$$ORIGIN/../../lib/$(NATIVE_MACH)'
+VAR_LD_LLDFLAGS64 =	'-R$$ORIGIN/../../../lib/$(NATIVE_MACH64)'
+LDFLAGS +=	$(VERSREF) $(MAPOPTS) $(VAR_LD_LLDFLAGS)
 
 install: $(ROOTONBLDMACHPROG)
 
