@@ -46,6 +46,7 @@ dir  path=opt/onbld
 dir  path=opt/onbld/bin
 dir  path=opt/onbld/bin/$(ARCH)
 $(i386_ONLY)link path=opt/onbld/bin/$(ARCH)/aw target=aw.i386
+$(i386_ONLY)file path=opt/onbld/bin/$(ARCH)/aw.aarch64 mode=0555
 $(i386_ONLY)file path=opt/onbld/bin/$(ARCH)/aw.i386 mode=0555
 $(i386_ONLY)file path=opt/onbld/bin/$(ARCH)/aw.sparc mode=0555
 $(i386_ONLY)file path=opt/onbld/bin/$(ARCH)/btxld mode=0555
@@ -60,6 +61,7 @@ file path=opt/onbld/bin/$(ARCH)/ctfstabs mode=0555
 file path=opt/onbld/bin/$(ARCH)/ctfstrip mode=0555
 $(i386_ONLY)link path=opt/onbld/bin/$(ARCH)/cw target=cw.i386
 $(sparc_ONLY)link path=opt/onbld/bin/$(ARCH)/cw target=cw.sparc
+file path=opt/onbld/bin/$(ARCH)/cw.aarch64 mode=0555
 file path=opt/onbld/bin/$(ARCH)/cw.i386 mode=0555
 file path=opt/onbld/bin/$(ARCH)/cw.sparc mode=0555
 link path=opt/onbld/bin/$(ARCH)/dmake target=make

@@ -91,6 +91,12 @@ export i386_PRIMARY_CCC=gcc7,$i386_GNUC_ROOT/bin/g++,gnu
 export i386_SHADOW_CCS=gcc10,/usr/gcc/10/bin/gcc,gnu
 export i386_SHADOW_CCCS=gcc10,/usr/gcc/10/bin/g++,gnu
 
+export aarch64_GNUC_ROOT=/usr/gcc/7
+export aarch64_PRIMARY_CC=gcc7,$aarch64_GNUC_ROOT/bin/gcc,gnu
+export aarch64_PRIMARY_CCC=gcc7,$aarch64_GNUC_ROOT/bin/g++,gnu
+export aarch64_SHADOW_CCS=gcc10,/usr/gcc/10/bin/gcc,gnu
+export aarch64_SHADOW_CCCS=gcc10,/usr/gcc/10/bin/g++,gnu
+
 # comment to disable smatch
 export ENABLE_SMATCH=1
 
@@ -311,4 +317,5 @@ if [[ "$ENABLE_SMATCH" == "1" ]]; then
 	SMATCHBIN=$CODEMGR_WS/usr/src/tools/proto/root_$MACH-nd/opt/onbld/bin/$NATIVE_MACH/smatch
 	export sparc_SHADOW_CCS="$sparc_SHADOW_CCS smatch,$SMATCHBIN,smatch"
 	export i386_SHADOW_CCS="$i386_SHADOW_CCS smatch,$SMATCHBIN,smatch"
+	export aarch64_SHADOW_CCS="$aarch64_SHADOW_CCS smatch,$SMATCHBIN,smatch"
 fi

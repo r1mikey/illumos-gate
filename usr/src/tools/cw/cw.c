@@ -39,7 +39,7 @@
  */
 
 /* If you modify this file, you must increment CW_VERSION */
-#define	CW_VERSION	"6.2"
+#define	CW_VERSION	"6.3"
 
 /*
  * -#		Verbose mode
@@ -358,6 +358,9 @@ static const xarch_table_t xtbl[] = {
 	{ "sparc",	SS12, { "-mcpu=v9", "-mv8plus" } },
 	{ "sparcvis",	SS12, { "-mcpu=ultrasparc", "-mvis" } },
 	{ "sparcvis2",	SS12, { "-mcpu=ultrasparc3", "-mvis" } }
+#elif defined(CW_TARGET_aarch64)
+	/* { "generic",	M32, { "-march=armv8-a", "-mabi=ilp32" } }, */
+	{ "generic64",	M64, { "-march=armv8-a", "-mabi=lp64" } },
 #endif
 };
 
@@ -859,7 +862,9 @@ do_gcc(cw_ictx_t *ctx)
 				break;
 			}
 			if (strcmp(arg, "-m64") == 0) {
+#if !defined(CW_TARGET_aarch64)
 				newae(ctx->i_ae, "-m64");
+#endif
 #if defined(CW_TARGET_i386)
 				newae(ctx->i_ae, "-mtune=opteron");
 #endif
@@ -867,8 +872,12 @@ do_gcc(cw_ictx_t *ctx)
 				break;
 			}
 			if (strcmp(arg, "-m32") == 0) {
+#if defined(CW_TARGET_aarch64)
+				error(arg);
+#else
 				newae(ctx->i_ae, "-m32");
 				mflag |= M32;
+#endif
 				break;
 			}
 			error(arg);

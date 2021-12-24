@@ -96,6 +96,8 @@ i386_SUBDIRS=			\
 
 $(INTEL_BLD)sgs: aw
 
+$(AARCH64_BLD)sgs: aw
+
 SUBDIRS=			\
 	$($(MACH)_SUBDIRS)	\
 	$(COMMON_SUBDIRS)	\
