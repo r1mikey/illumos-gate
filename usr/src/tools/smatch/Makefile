@@ -27,9 +27,12 @@ include ../Makefile.tools
 # We have to build smatch before we can use cw
 i386_CC = $($(NATIVE_MACH)_GNUC_ROOT)/bin/gcc
 sparc_CC = $($(NATIVE_MACH)_GNUC_ROOT)/bin/gcc
+aarch64_CC = $($(NATIVE_MACH)_GNUC_ROOT)/bin/gcc
 # sparc doesn't recognise -msave-args
 i386_SMATCHFLAGS = -m64 -msave-args
 sparc_SMATCHFLAGS = -m64
+# XXXAARCH64: this is a guess
+aarch64_SMATCHFLAGS = m64
 
 NATIVECC = $($(NATIVE_MACH)_CC)
 

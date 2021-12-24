@@ -749,6 +749,16 @@ main(int argc, char *argv[])
 		newae(as, "--32");
 #endif
 
+	/*
+	 * We do not, for now, support aarch64_p32.  This means that we're
+	 * 64-bit only on aarch64 at the moment.
+	 */
+#if defined(AW_TARGET_aarch64)
+	if (!as64) {
+		return (error("no 32-bit aw target for aarch64"));
+	}
+#endif
+
 	if (srcfile == NULL)
 		return (usage("no source file(s) specified"));
 	if (outfile == NULL)
@@ -772,6 +782,10 @@ main(int argc, char *argv[])
 		} else {
 			newae(cpp, "-Di386");
 			newae(cpp, "-D__i386");
+		}
+#elif defined(AW_TARGET_aarch64)
+		if (as64) {
+			newae(cpp, "-D__aarch64__");
 		}
 #else
 #error	"need isa-dependent defines"
