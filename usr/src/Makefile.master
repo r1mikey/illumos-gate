@@ -225,6 +225,7 @@ CTFMERGE=	$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/ctfmerge
 CTFSTABS=	$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/ctfstabs
 CTFSTRIP=	$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/ctfstrip
 NDRGEN=		$(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/ndrgen
+GENASSYM=	$(ONBLD_TOOLS)/bin/genassym
 GENOFFSETS=	$(ONBLD_TOOLS)/bin/genoffsets
 XREF=		$(ONBLD_TOOLS)/bin/xref
 FIND=		/usr/bin/find
@@ -673,6 +674,9 @@ OFFSETS_CREATE = $(GENOFFSETS) -s $(CTFSTABS) -r $(CTFCONVERT) \
 OFFSETS_CREATE64 = $(GENOFFSETS) -s $(CTFSTABS) -r $(CTFCONVERT) \
 	$(CW) --noecho $(CW_CC_COMPILERS) -- $(GENOFFSETS_FLAGS) \
 	$(CFLAGS64) $(CPPFLAGS)
+
+ASSYM_CREATE = $(GENASSYM) -- \
+	$(CW) --noecho $(CW_CC_COMPILERS) -- $(CPPFLAGS)
 
 #
 # tradeoff time for space (smaller is better)
