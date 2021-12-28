@@ -21,7 +21,9 @@
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright 2017 Hayashi Naoyuki
  * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2022 Michael van der Westhuizen
  */
 
 #ifndef _SYS_SDT_H

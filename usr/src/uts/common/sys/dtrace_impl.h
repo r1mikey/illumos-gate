@@ -25,6 +25,8 @@
  */
 
 /*
+ * Copyright 2022 Michael van der Westhuizen
+ * Copyright 2017 Hayashi Naoyuki
  * Copyright 2017 Joyent, Inc.
  * Copyright (c) 2012 by Delphix. All rights reserved.
  */
@@ -1288,6 +1290,8 @@ extern uint_t dtrace_getfprs(void);
 extern void dtrace_copy(uintptr_t, uintptr_t, size_t);
 extern void dtrace_copystr(uintptr_t, uintptr_t, size_t, volatile uint16_t *);
 #endif
+
+extern dtrace_id_t dtrace_probeid_error;
 
 /*
  * DTrace Assertions

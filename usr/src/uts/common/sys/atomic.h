@@ -20,6 +20,7 @@
  */
 
 /*
+ * Copyright 2022 Michael van der Westhuizen
  * Copyright 2014 Garrett D'Amore <garrett@damore.org>
  *
  * Copyright 2005 Sun Microsystems, Inc.  All rights reserved.
@@ -37,7 +38,7 @@ extern "C" {
 #endif
 
 #if defined(_KERNEL) && defined(__GNUC__) && defined(_ASM_INLINES) && \
-	(defined(__i386) || defined(__amd64))
+	(defined(__i386) || defined(__amd64) || defined(__aarch64__))
 #include <asm/atomic.h>
 #endif
 

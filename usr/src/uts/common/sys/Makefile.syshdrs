@@ -23,7 +23,9 @@
 # Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Nexenta Systems, Inc.
+# Copyright 2017 Hayashi Naoyuki
 # Copyright 2019 Joyent, Inc.
+# Copyright 2022 Michael van der Westhuizen
 #
 
 # Common definitions for open and closed headers.
@@ -178,6 +180,8 @@ ROOTDKTPDIR=	$(ROOTDIR)/dktp
 sparc_ROOTDIRS=	$(ROOTDKTPDIR)
 
 i386_ROOTDIRS=	$(ROOTDKTPDIR) $(ROOTDIR)/sata
+
+aarch64_ROOTDIRS=	$(ROOTDKTPDIR) $(ROOTDIR)/sata
 
 ROOTDIRS=			\
 	$(ROOTDIR)		\
@@ -338,6 +342,11 @@ sparc_ROOTHDRS=	$(ROOTSDKTPHDRS) $(ROOTSCSICADHDRS) $(ROOTSCSITARGETSHDRS) \
 i386_ROOTHDRS=	$(ROOTDKTPHDRS) $(ROOTPCHDRS) $(ROOTSCSITARGETSHDRS)	\
 		$(ROOTSCSIVHCIHDRS) $(ROOTHOTPLUGHDRS) \
 		$(ROOTHOTPLUGPCIHDRS) $(ROOTSATAGENHDRS)
+
+aarch64_ROOTHDRS=	$(ROOTDKTPHDRS) $(ROOTPCHDRS) $(ROOTSCSITARGETSHDRS) \
+			$(ROOTSCSIVHCIHDRS) $(ROOTPCMCIAHDRS) \
+			$(ROOTHOTPLUGHDRS) $(ROOTHOTPLUGPCIHDRS) \
+			$(ROOTSATAGENHDRS)
 
 # install rules
 $(ROOTDIR)/%: %

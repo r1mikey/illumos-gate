@@ -26,7 +26,9 @@
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved	*/
 /*
+ * Copyright 2017 Hayashi Naoyuki
  * Copyright (c) 2018, Joyent, Inc.
+ * Copyright 2022 Michael van der Westhuizen
  */
 
 
@@ -203,7 +205,7 @@ typedef struct {		/* kernel syscall set type */
  */
 #if defined(__sparc)
 #define	__KERN_NAUXV_IMPL 20
-#elif defined(__i386) || defined(__amd64)
+#elif defined(__i386) || defined(__amd64) || defined(__aarch64__)
 #define	__KERN_NAUXV_IMPL 25
 #endif
 

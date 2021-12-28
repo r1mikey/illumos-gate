@@ -19,6 +19,8 @@
  * CDDL HEADER END
  */
 /*
+ * Copyright 2022 Michaeil van der Westhuizen
+ * Copyright 2017 Hayashi Naoyuki
  * Copyright 2014 Garrett D'Amore <garrett@damore.org>
  *
  * Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
@@ -381,6 +383,17 @@ typedef struct ddi_dma_lim {
 	 */
 	uint_t	dlim_reqsize;
 
+} ddi_dma_lim_t;
+
+#elif defined(__aarch64__)
+
+typedef struct ddi_dma_lim {
+	uint_t	dlim_addr_lo;
+	uint_t	dlim_addr_hi;
+	uint_t	dlim_cntr_max;
+	uint_t	dlim_burstsizes;
+	uint_t	dlim_minxfer;
+	uint_t	dlim_dmaspeed;
 } ddi_dma_lim_t;
 
 #else
