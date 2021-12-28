@@ -106,3 +106,8 @@ $(MACH64)_gcc_map.noexeglobs :=	LINK =	$(LINK64.c)
 	$(GREP) MAP-TAIL $(TEMPLATE2) | \
 	    $(SED) -e "s/	*# MAP-TAIL//"		>> $@
 	$(RM) $(SYMS1) $(SYMS2) $(MAIN1) $(MAIN2)
+
+# XXXAARCH64: to survive 'make setup'
+aarch64_cc_map.noexeglobs aarch64_gcc_map.noexeglobs:
+	echo "This is not a valid mapfile. See common/mapfiles/gen/Makefile" > \
+		$@
