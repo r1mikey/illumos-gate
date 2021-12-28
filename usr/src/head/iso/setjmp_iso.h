@@ -69,6 +69,9 @@ extern "C" {
 #elif defined(__sparc)
 #define	_JBLEN		12	/* ABI value */
 #define	_SIGJBLEN	19	/* ABI value */
+#elif defined(__aarch64__)
+#define	_JBLEN		30	/* r18-r30, sp, v8-v15 */
+#define	_SIGJBLEN	128
 #else
 #error "ISA not supported"
 #endif
@@ -78,7 +81,8 @@ namespace std {
 #endif
 
 #if defined(__i386) || defined(__amd64) || \
-	defined(__sparc) || defined(__sparcv9)
+	defined(__sparc) || defined(__sparcv9) || \
+	defined(__aarch64__)
 #if defined(_LP64) || defined(_I32LPx)
 typedef long	jmp_buf[_JBLEN];
 #else
