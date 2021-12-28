@@ -21,7 +21,9 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2017 Hayashi Naoyuki
  * Copyright 2018 Joyent, Inc.
+ * Copyright 2022 Michael van der Westhuizen
  */
 
 #ifndef _SYS_PCI_IMPL_H
@@ -135,6 +137,18 @@ extern struct memlist *memlist_dup(struct memlist *);
 extern int memlist_count(struct memlist *);
 
 #endif /* __i386 || __amd64 */
+
+#if defined(__aarch64__)
+
+/* XXXAARCH64: this needs a lot of investigation and cleanup */
+typedef struct	pci_acc_cfblk {
+	uchar_t	c_busnum;		/* bus number */
+	uchar_t	c_devnum;		/* device number */
+	uchar_t	c_funcnum;		/* function number */
+	uchar_t	c_fill;			/* reserve field */
+} pci_acc_cfblk_t;
+
+#endif
 
 /* Definitions for minor numbers */
 #define	PCI_MINOR_NUM(x, y)		(((uint_t)(x) << 8) | ((y) & 0xFF))

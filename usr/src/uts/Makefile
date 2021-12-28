@@ -173,6 +173,8 @@ DYNHDRDIRS =	common/gssapi \
 
 sparc_HDRDIRS= sun/sys
 i386_HDRDIRS= i86pc/vm i86xpv/vm
+# XXXAARCH64: this can only be temporary
+aarch64_HDRDIRS= aarch64/asm aarch64/sys
 
 HDRDIRS= $(COMMON_HDRDIRS) $($(MACH)_HDRDIRS)
 install_h check: $(HDRDIRS) $($(MACH)_ARCHITECTURES)

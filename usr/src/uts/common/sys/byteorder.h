@@ -20,6 +20,10 @@
  */
 
 /*
+ * Copyright 2022 Michael van der Westhuizen
+ */
+
+/*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
@@ -44,7 +48,7 @@
 #include <sys/int_types.h>
 
 #if defined(__GNUC__) && defined(_ASM_INLINES) && \
-	(defined(__i386) || defined(__amd64))
+	(defined(__i386) || defined(__amd64) || defined(__aarch64__))
 #include <asm/byteorder.h>
 #endif
 
