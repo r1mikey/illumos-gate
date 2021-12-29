@@ -1173,7 +1173,7 @@ timespectohz64(timespec_t *tv)
 void
 hrt2ts(hrtime_t hrt, timestruc_t *tsp)
 {
-#if defined(__amd64)
+#if defined(__amd64) || defined(__aarch64__)
 	/*
 	 * The cleverness explained above is unecessary on x86_64 CPUs where
 	 * modern compilers are able to optimize down to faster operations.
@@ -1202,7 +1202,7 @@ hrt2ts(hrtime_t hrt, timestruc_t *tsp)
 	}
 	tsp->tv_sec = (time_t)sec;
 	tsp->tv_nsec = nsec;
-#endif /* defined(__amd64) */
+#endif /* defined(__amd64) || defined(__aarch64__) */
 }
 
 /*
@@ -1211,7 +1211,7 @@ hrt2ts(hrtime_t hrt, timestruc_t *tsp)
 hrtime_t
 ts2hrt(const timestruc_t *tsp)
 {
-#if defined(__x86)
+#if defined(__x86) || defined(__aarch64__)
 	/*
 	 * On modern x86 CPUs, the simple version is faster.
 	 */
@@ -1232,7 +1232,7 @@ ts2hrt(const timestruc_t *tsp)
 	hrt = (hrt << 7) - hrt - hrt - hrt;
 	hrt = (hrt << 9) + tsp->tv_nsec;
 	return (hrt);
-#endif /* defined(__x86) */
+#endif /* defined(__x86) || defined(__aarch64__) */
 }
 
 /*
@@ -1264,7 +1264,7 @@ tv2hrt(struct timeval *tvp)
 void
 hrt2tv(hrtime_t hrt, struct timeval *tvp)
 {
-#if defined(__amd64)
+#if defined(__amd64) || defined(__aarch64__)
 	/*
 	 * Like hrt2ts, the simple version is faster on x86_64.
 	 */
@@ -1302,7 +1302,7 @@ hrt2tv(hrtime_t hrt, struct timeval *tvp)
 	q = q >> 9;
 	r = nsec - q*1000;
 	tvp->tv_usec = q + ((r + 24) >> 10);
-#endif /* defined(__amd64) */
+#endif /* defined(__amd64) || defined(__aarch64__) */
 }
 
 int

@@ -66,7 +66,7 @@ extern vmem_t *static_alloc_arena;	/* arena for allocating static memory */
 extern vmem_t *zio_arena;	/* arena for zio caches */
 extern vmem_t *zio_alloc_arena;	/* arena for zio caches */
 
-#if defined(__amd64)
+#if defined(__amd64) || defined(__aarch64__)
 extern struct seg kvmmseg;	/* Segment for vmm mappings */
 extern vmem_t *kvmm_arena;	/* arena for vmm VA */
 extern void segkmem_kvmm_init(void *, size_t);

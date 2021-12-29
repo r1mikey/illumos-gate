@@ -183,7 +183,8 @@ thread_init(void)
 		mutex_init(lp, NULL, MUTEX_DEFAULT, NULL);
 	}
 
-#if defined(__x86)
+	/* XXXAARCH64: so many compromises, which do we need? */
+#if defined(__x86) || defined(__aarch64__)
 	thread_cache = kmem_cache_create("thread_cache", sizeof (kthread_t),
 	    PTR24_ALIGN, NULL, NULL, NULL, NULL, NULL, 0);
 

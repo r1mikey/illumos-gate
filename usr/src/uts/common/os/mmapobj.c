@@ -22,6 +22,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2014 Joyent, Inc.  All rights reserved.
+ * Copyright 2022 Michael van der Westhuizen
  */
 
 #include <sys/types.h>
@@ -201,12 +202,12 @@ struct mobj_stats {
 
 /*
  * Check if addr is at or above the address space reserved for the stack.
- * The stack is at the top of the address space for all sparc processes
- * and 64 bit x86 processes.  For 32 bit x86, the stack is not at the top
- * of the address space and thus this check wil always return false for
- * 32 bit x86 processes.
+ * The stack is at the top of the address space for all sparc and aarch64
+ * processes, as well as for 64 bit x86 processes.  For 32 bit x86, the
+ * stack is not at the top of the address space and thus this check will
+ * always return false for 32 bit x86 processes.
  */
-#if defined(__sparc)
+#if defined(__sparc) || defined(__aarch64__)
 #define	OVERLAPS_STACK(addr, p)						\
 	(addr >= (p->p_usrstack - ((p->p_stk_ctl + PAGEOFFSET) & PAGEMASK)))
 #elif defined(__amd64)

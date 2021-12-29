@@ -24,6 +24,11 @@
  */
 
 /*
+ * Copyright 2017 Hayashi Naoyuki
+ * Copyright 2022 Michael van der Westhuizen
+ */
+
+/*
  * Introduction
  * This file implements a CPU event notification mechanism to signal clients
  * which are interested in CPU related events.
@@ -67,7 +72,10 @@
 /* Define normal state for CPU on different platforms. */
 #if defined(__x86)
 #define	CPU_IDLE_STATE_NORMAL		IDLE_STATE_C0
-#elif defined(__sparc)
+/*
+ * XXXAARCH64: I think we need to take the x86 path here due to ACPI use...
+ */
+#elif defined(__sparc) || defined(__aarch64__)
 /*
  * At the time of this implementation IDLE_STATE_NORMAL is defined
  * in mach_startup.c, and not in a header file.  So if we find it is
@@ -194,6 +202,8 @@ static cpu_idle_cb_state_t		*cpu_idle_cb_state;
  * until the bit is cleared.
  * The target CPU disables interrupts before clearing corresponding bit and
  * then loops for ever.
+ *
+ * XXXAARCH64: I think we need this to quiesce CPUs...
  */
 static cpuset_t				cpu_idle_intercept_set;
 #endif
@@ -736,14 +746,20 @@ cpu_idle_exit(int flag)
 {
 	int i;
 	cpu_idle_cb_item_t *cip;
+	/* XXXAARCH64: do we need this? */
+#if defined(__x86) || defined(__sparc__)
 	cpu_idle_cb_state_t *sp;
+#endif
 	cpu_idle_callback_context_t ctx;
 #if defined(__x86)
 	ulong_t iflags;
 #endif
 
 	ASSERT(CPU->cpu_seqid < max_ncpus);
+	/* XXXAARCH64: do we need this? */
+#if defined(__x86) || defined(__sparc__)
 	sp = &cpu_idle_cb_state[CPU->cpu_seqid];
+#endif
 
 #if defined(__sparc)
 	/*

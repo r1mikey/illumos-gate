@@ -497,6 +497,12 @@ extern "C" {
 #define	_LONG_LONG_LTOH
 #define	_BIT_FIELDS_LTOH
 #define	_IEEE_754
+
+/*
+ * See the Procedure Call Standard for the Arm 64-bit Architecture.
+ *
+ * We're missing quad support here.
+ */
 #define	_CHAR_IS_SIGNED
 #define	_BOOL_ALIGNMENT			1
 #define	_CHAR_ALIGNMENT			1
@@ -526,10 +532,7 @@ extern "C" {
 #define	_SUNOS_VTOC_16
 #define	_DMA_USES_PHYSADDR
 #define	_FIRMWARE_NEEDS_FDISK
-/*
- * XXXAARCH64: we want these, eventually.
- * #define	_PSM_MODULES
- */
+#define	_PSM_MODULES
 #define	_RTC_CONFIG
 #define	_SOFT_HOSTID
 #define	_DONT_USE_1275_GENERIC_NAMES

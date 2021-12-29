@@ -98,13 +98,17 @@ syslwp_create(ucontext_t *ucp, int flags, id_t *new_lwp)
 		sigutok(&uc32.uc_sigmask, &sigmask);
 #if defined(__sparc)
 		ucontext_32ton(&uc32, &uc, NULL, NULL);
-#else	/* __amd64 */
+#elif defined(__aarch64__)
+		ucontext_32ton(&uc32, &uc);
+#elif defined(__amd64)
 		ucontext_32ton(&uc32, &uc);
 		/*
 		 * libc stashed thrptr into unused kernel %sp.
 		 * See setup_context() in libc.
 		 */
 		thrptr = (uint32_t)uc32.uc_mcontext.gregs[ESP];
+#else
+#error "port me"
 #endif
 	}
 #endif /* _SYSCALL32_IMPL */

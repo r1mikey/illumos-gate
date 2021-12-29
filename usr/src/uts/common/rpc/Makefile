@@ -35,6 +35,8 @@ include ../../../Makefile.master
 
 i386_HDRS=
 
+aarch64_HDRS=
+
 sparc_HDRS= ib.h
 
 COMMHDRS= \

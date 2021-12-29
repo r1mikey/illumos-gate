@@ -42,7 +42,7 @@ pgcnt_t kcage_desfree;
 pgcnt_t kcage_needfree;
 pgcnt_t	kcage_lotsfree = 1;
 
-#if !defined(__x86) || defined(__xpv)
+#if (!defined(__x86) || defined(__xpv)) && !defined(__aarch64__)
 /*ARGSUSED*/
 int
 kphysm_setup_func_register(kphysm_setup_vector_t *vec, void *arg)

@@ -116,7 +116,7 @@ static	struct	ddi_umem_cookie *ddi_umem_unlock_tail = NULL;
  * DDI(Sun) Function and flag definitions:
  */
 
-#if defined(__x86)
+#if defined(__x86) || defined(__aarch64__)
 /*
  * Used to indicate which entries were chosen from a range.
  */
@@ -164,7 +164,7 @@ ddi_map_regs(dev_info_t *dip, uint_t rnumber, caddr_t *kaddrp, off_t offset,
     off_t len)
 {
 	ddi_map_req_t mr;
-#if defined(__x86)
+#if defined(__x86) || defined(__aarch64__)
 	struct {
 		int	bus;
 		int	addr;
@@ -243,7 +243,7 @@ ddi_unmap_regs(dev_info_t *dip, uint_t rnumber, caddr_t *kaddrp, off_t offset,
 
 	(void) ddi_map(dip, &mr, offset, len, kaddrp);
 	*kaddrp = (caddr_t)0;
-#if defined(__x86)
+#if defined(__x86) || defined(__aarch64__)
 	(void) ddi_prop_remove(DDI_DEV_T_NONE, dip, chosen_reg);
 #endif
 }

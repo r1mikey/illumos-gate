@@ -20,6 +20,8 @@
  */
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2017 Hayashi Naoyuki
+ * Copyright 2022 Michael van der Westhuizen
  */
 
 #include <sys/kmem.h>
@@ -43,7 +45,11 @@ static void brand_plat_interposition_disable(void);
 struct brand_mach_ops native_mach_ops  = {
 		NULL, NULL
 };
-#else /* !__sparcv9 */
+#elif defined(__aarch64__)
+struct brand_mach_ops native_mach_ops  = {
+		NULL,
+};
+#else /* !__sparcv9 && !__aarch64__ */
 struct brand_mach_ops native_mach_ops  = {
 		NULL, NULL, NULL, NULL
 };

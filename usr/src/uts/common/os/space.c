@@ -80,6 +80,8 @@ int	__lintzero;		/* Alway zero for shutting up lint */
  *		    of physical memory in bytes.  Defined in
  *		    .../os/startup.c.
  *
+ *	physmin  -  The lowest numbered physical page in memory.
+ *
  *	physmax  -  The highest numbered physical page in memory.
  *
  *	maxmem	 -  Maximum available memory, in pages.  Defined
@@ -91,6 +93,7 @@ int	__lintzero;		/* Alway zero for shutting up lint */
  *		    physmem.
  */
 
+pfn_t	physmin;
 pfn_t	physmax;
 pgcnt_t	physinstalled;
 

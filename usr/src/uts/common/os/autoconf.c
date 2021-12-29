@@ -23,7 +23,9 @@
  * Use is subject to license terms.
  */
 /*
+ * Copyright 2017 Hayashi Naoyuki
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2022 Michael van der Westhuizen
  */
 
 /*
@@ -75,7 +77,7 @@ major_t	nulldriver_major;
 static void impl_create_root_class(void);
 static void create_devinfo_tree(void);
 
-#if defined(__x86)
+#if defined(__x86) || defined(__aarch64__)
 char *bootpath_prop = NULL;
 char *fstype_prop = NULL;
 #endif
@@ -197,7 +199,7 @@ impl_create_root_class(void)
 	 */
 	(void) BOP_GETPROP(bootops, "impl-arch-name", platform);
 
-#if defined(__x86)
+#if defined(__x86) || defined(__aarch64__)
 	/*
 	 * Retrieve and honor the bootpath and optional fstype properties
 	 */
@@ -375,7 +377,7 @@ create_devinfo_tree(void)
 	i_ddi_node_cache_init();
 #if defined(__sparc)
 	nodeid = prom_nextnode(0);
-#else /* x86 */
+#else /* x86 || aarch64 */
 	nodeid = DEVI_SID_NODEID;
 #endif
 	top_devinfo = i_ddi_alloc_node(NULL, rootname,

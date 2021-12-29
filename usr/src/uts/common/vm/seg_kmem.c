@@ -122,7 +122,7 @@ vmem_t *static_alloc_arena;	/* arena for allocating static memory */
 vmem_t *zio_arena = NULL;	/* arena for allocating zio memory */
 vmem_t *zio_alloc_arena = NULL;	/* arena for allocating zio memory */
 
-#if defined(__amd64)
+#if defined(__amd64) || defined(__aarch64__)
 vmem_t *kvmm_arena;		/* arena for vmm VA */
 struct seg kvmmseg;		/* Segment for vmm memory */
 #endif
@@ -404,7 +404,7 @@ boot_mapin(caddr_t addr, size_t size)
 
 		(void) page_hashin(pp, &kvp, (u_offset_t)(uintptr_t)addr, NULL);
 		pp->p_lckcnt = 1;
-#if defined(__x86)
+#if defined(__x86) || defined(__aarch64__)
 		page_downgrade(pp);
 #else
 		page_unlock(pp);
@@ -672,7 +672,7 @@ segkmem_dump(struct seg *seg)
 	 */
 	} else if (seg == &kzioseg) {
 		return;
-#if defined(__amd64)
+#if defined(__amd64) || defined(__aarch64__)
 	} else if (seg == &kvmmseg) {
 		return;
 #endif
@@ -822,7 +822,7 @@ segkmem_create(struct seg *seg)
 	seg->s_ops = &segkmem_ops;
 	if (seg == &kzioseg)
 		seg->s_data = &kvps[KV_ZVP];
-#if defined(__amd64)
+#if defined(__amd64) || defined(__aarch64__)
 	else if (seg == &kvmmseg)
 		seg->s_data = &kvps[KV_VVP];
 #endif
@@ -906,7 +906,7 @@ segkmem_xalloc(vmem_t *vmp, void *inaddr, size_t size, int vmflag, uint_t attr,
 	 */
 	if (vmflag & VM_MEMLOAD)
 		allocflag = HAT_NO_KALLOC;
-#if defined(__x86)
+#if defined(__x86) || defined(__aarch64__)
 	else if (vmem_is_populator())
 		allocflag = HAT_NO_KALLOC;
 #endif
@@ -923,7 +923,7 @@ segkmem_xalloc(vmem_t *vmp, void *inaddr, size_t size, int vmflag, uint_t attr,
 		    (PROT_ALL & ~PROT_USER) | HAT_NOSYNC | attr,
 		    HAT_LOAD_LOCK | allocflag);
 		pp->p_lckcnt = 1;
-#if defined(__x86)
+#if defined(__x86) || defined(__aarch64__)
 		page_downgrade(pp);
 #else
 		if (vmflag & SEGKMEM_SHARELOCKED)
@@ -1014,7 +1014,7 @@ segkmem_xfree(vmem_t *vmp, void *inaddr, size_t size, struct vnode *vp,
 	hat_unload(kas.a_hat, addr, size, HAT_UNLOAD_UNLOCK);
 
 	for (eaddr = addr + size; addr < eaddr; addr += PAGESIZE) {
-#if defined(__x86)
+#if defined(__x86) || defined(__aarch64__)
 		pp = page_find(vp, (u_offset_t)(uintptr_t)addr);
 		if (pp == NULL)
 			panic("segkmem_free: page not found");
@@ -1542,7 +1542,7 @@ segkmem_zio_init(void *zio_mem_base, size_t zio_mem_size)
 	ASSERT(zio_alloc_arena != NULL);
 }
 
-#if defined(__amd64)
+#if defined(__amd64) || defined(__aarch64__)
 
 void
 segkmem_kvmm_init(void *base, size_t size)
