@@ -27,6 +27,8 @@
  * Copyright 2012 Joshua M. Clulow <josh@sysmgr.org>
  * Copyright 2015 Josef 'Jeff' Sipek <jeffpc@josefsipek.net>
  * Copyright 2018, Joyent, Inc.
+ * Copyright 2018 Jonathan Perkin
+ * Copyright 2022 Michael van der Westhuizen
  */
 
 #include <ctype.h>
@@ -601,6 +603,10 @@ dis_file(const char *filename)
 				    "object");
 				return;
 			}
+			break;
+
+		case EM_AARCH64:
+			g_flags |= DIS_AARCH64;
 			break;
 
 		default:

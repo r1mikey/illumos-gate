@@ -25,6 +25,8 @@
  * Copyright 2012 Joshua M. Clulow <josh@sysmgr.org>
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2018, Joyent, Inc.
+ * Copyright 2018 Jonathan Perkin
+ * Copyright 2022 Michael van der Westhuizen
  */
 
 #include <libdisasm.h>
@@ -59,6 +61,9 @@ extern dis_arch_t dis_arch_s390;
 #if !defined(DIS_STANDALONE) || defined(__riscv)
 extern dis_arch_t dis_arch_riscv;
 #endif
+#if !defined(DIS_STANDALONE) || defined(__aarch64__)
+extern dis_arch_t dis_arch_aarch64;
+#endif
 
 static dis_arch_t *dis_archs[] = {
 #if !defined(DIS_STANDALONE) || defined(__i386) || defined(__amd64)
@@ -72,6 +77,9 @@ static dis_arch_t *dis_archs[] = {
 #endif
 #if !defined(DIS_STANDALONE) || defined(__riscv)
 	&dis_arch_riscv,
+#endif
+#if !defined(DIS_STANDALONE) || defined(__aarch64__)
+	&dis_arch_aarch64,
 #endif
 	NULL
 };

@@ -506,6 +506,17 @@ sparcv9plus_create(mdb_disasm_t *dp)
 }
 #endif
 
+#if defined(__aarch64__)
+static int
+aarch64_create(mdb_disasm_t *dp)
+{
+	return (libdisasm_create(dp,
+	    "aarch64",
+	    "aarch64 disassembler",
+	    DIS_AARCH64));
+}
+#endif
+
 /*ARGSUSED*/
 static void
 defdis_destroy(mdb_disasm_t *dp)
@@ -570,6 +581,8 @@ mdb_dis_ctor_f *const mdb_dis_builtins[] = {
 	sparcv8_create,
 	sparcv9_create,
 	sparcv9plus_create,
+#elif defined(__aarch64__)
+	aarch64_create,
 #endif
 	NULL
 };
