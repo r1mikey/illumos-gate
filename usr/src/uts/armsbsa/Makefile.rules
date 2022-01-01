@@ -1,0 +1,359 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2015 Igor Kozhukhov <ikozhukhov@gmail.com>
+# Copyright 2019 Joyent, Inc.
+# Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
+#
+
+#	This Makefile defines the build rules for the directory uts/armsbsa
+#	and its children. These are the source files which are armsbsa
+#	"implementation architecture" dependent.
+#
+#	The following two-level ordering must be maintained in this file.
+#	  Lines are sorted first in order of decreasing specificity based on
+#	  the first directory component.  That is, armsbsa rules come before
+#	  aarch64 rules come before common rules.
+#
+#	  Lines whose initial directory components are equal are sorted
+#	  alphabetically by the remaining components.
+
+#
+#	Section 1a: C object build rules
+#
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/conf/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/cpu/amd_opteron/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/cpu/authenticamd/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/cpu/generic_cpu/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/cpu/genuineintel/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:                $(UTSBASE)/armsbsa/io/acpi_drv/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/fipe/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/acpi/acpidev/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/acpi/acpinex/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+SBD_IOCTL	= $(UTSBASE)/armsbsa/sys/sbd_ioctl.h
+DRMACH_IO	= $(UTSBASE)/armsbsa/io/acpi/drmach_acpi
+DRMACH_GENERR	= $(DRMACH_IO)/sbdgenerr
+DR_IO		= $(UTSBASE)/armsbsa/io/dr
+DR_GENERR	= $(DR_IO)/sbdgenerr
+
+$(DRMACH_GENERR):	$(DR_IO)/sbdgenerr.pl
+	$(RM) $@
+	$(CAT) $(DR_IO)/sbdgenerr.pl > $@
+	$(CHMOD) +x $@
+
+$(DRMACH_IO)/drmach_err.c:	$(DRMACH_GENERR) $(SBD_IOCTL)
+	$(RM) $@
+	$(DRMACH_GENERR) EX86 < $(SBD_IOCTL) > $(DRMACH_IO)/drmach_err.c
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/acpi/drmach_acpi/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/amd_iommu/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(DR_GENERR):			$(DR_IO)/sbdgenerr.pl
+	$(RM) $@
+	$(CAT) $(DR_IO)/sbdgenerr.pl > $@
+	$(CHMOD) +x $@
+
+$(DR_IO)/dr_err.c:		$(DR_GENERR) $(SBD_IOCTL)
+	$(RM) $@
+	$(DR_GENERR) ESBD < $(SBD_IOCTL) > $(DR_IO)/dr_err.c
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/dr/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/ioat/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/pci/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/pciex/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/aarch64/io/pciex/hotplug/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/pcplusmp/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/pcplusmp/%.s
+	$(COMPILE.s) -o $@ $<
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/apix/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/ppm/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/ppm/%.s
+	$(COMPILE.s) -o $@ $<
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/psm/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/psm/%.s
+	$(COMPILE.s) -o $@ $<
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/tzmon/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/ml/%.s
+	$(COMPILE.s) -o $@ $<
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/os/%.c
+	$(COMPILE.c) -_gcc=-fno-stack-protector -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/os/cpupm/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/boot/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/vm/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/common/io/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/common/io/ppm/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/common/io/pciex/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/common/os/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(SRC)/common/dis/aarch64/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/gfx_private/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/xsvc/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/common/xen/os/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/eboot/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/vmm/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/vmm/amd/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/vmm/aarch64/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/vmm/io/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/vmm/%.s
+	$(COMPILE.s) -o $@ $<
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/vmm/aarch64/%.s
+	$(COMPILE.s) -o $@ $<
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/vmm/amd/%.s
+	$(COMPILE.s) -o $@ $<
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/io/viona/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+#
+# eboot stuff is always 32 bit, linked to run with phys_addr == virt_addr
+#
+EBOOT_OBJS_DIR	= eboot/$(OBJS_DIR)
+EBOOT_MACH_32	= -D_BOOT_TARGET_aarch64
+EBOOT_MACH_64	= -D_BOOT_TARGET_aarch64
+EBOOT_DEFS	= -D_BOOT $(EBOOT_MACH_$(CLASS))
+EBOOT_DEFS	+= -D_MACHDEP -U_KERNEL
+EBOOT_FLAGS	= $(CFLAGS_XARCH_64) $(CCVERBOSE) $(CSTD) $(CERRWARN)
+EBOOT_FLAGS	+= $(CCNOAUTOINLINE) -_gcc=-fpie
+
+EBOOT_CC_INCL	= -I$(SRC)/common -I$(SRC)/common/util $(INCLUDE_PATH)
+EBOOT_AS_INCL	= $(AS_INC_PATH)
+
+EBOOT_AS	= $(ONBLD_TOOLS)/bin/$(NATIVE_MACH)/aw.$(MACH)
+
+$(EBOOT_OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/boot/%.c
+	$(aarch64_CC) $(EBOOT_FLAGS) -O $(EBOOT_DEFS) $(EBOOT_CC_INCL) -c -o $@ $<
+
+$(EBOOT_OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/eboot/%.c
+	$(aarch64_CC) $(EBOOT_FLAGS) -O $(EBOOT_DEFS) $(EBOOT_CC_INCL) -c -o $@ $<
+
+$(EBOOT_OBJS_DIR)/%.o:		$(SRC)/common/font/%.c
+	$(aarch64_CC) $(EBOOT_FLAGS) -O $(EBOOT_DEFS) $(EBOOT_CC_INCL) -c -o $@ $<
+
+$(EBOOT_OBJS_DIR)/$(FONT).c:	$(FONT_DIR)/$(FONT_SRC).bdf
+	$(VTFONTCVT) -f source -o $@ $(FONT_DIR)/$(FONT_SRC).bdf
+
+$(EBOOT_OBJS_DIR)/%.o:		$(EBOOT_OBJS_DIR)/%.c
+	$(aarch64_CC) $(EBOOT_FLAGS) -O $(EBOOT_DEFS) $(EBOOT_CC_INCL) -c -o $@ $<
+
+$(EBOOT_OBJS_DIR)/%.o:		$(COMMONBASE)/crypto/sha1/%.c
+	$(aarch64_CC) $(EBOOT_FLAGS) -O $(EBOOT_DEFS) $(EBOOT_CC_INCL) -c -o $@ $<
+
+$(EBOOT_OBJS_DIR)/%.o:		$(EBOOT_OBJS_DIR)/%.c
+	$(aarch64_CC) $(EBOOT_FLAGS) -O $(EBOOT_DEFS) $(EBOOT_CC_INCL) -c -o $@ $<
+
+$(EBOOT_OBJS_DIR)/%.o:		$(COMMONBASE)/util/%.c
+	$(aarch64_CC) $(EBOOT_FLAGS) -O $(EBOOT_DEFS) $(EBOOT_CC_INCL) -c -o $@ $<
+
+$(EBOOT_OBJS_DIR)/%.o:		$(COMMONBASE)/util/aarch64/%.s
+	$(EBOOT_AS) -P -D_ASM $(EBOOT_DEFS) $(EBOOT_AS_INCL) -o $@ $<
+
+# ugh, this is just plain old asm, we can do better
+$(EBOOT_OBJS_DIR)/%.o:		$(UTSBASE)/armsbsa/eboot/%.s
+	$(EBOOT_AS) -xarch=generic64 -P -D_ASM $(EBOOT_DEFS) $(EBOOT_AS_INCL) -o $@ $<
+
+# as above, this is kinda iffy
+$(EBOOT_OBJS_DIR)/%.o:		$(UTSBASE)/aarch64/ml/%.s
+	$(EBOOT_AS) -xarch=generic64 -P -D_ASM $(EBOOT_DEFS) $(EBOOT_AS_INCL) -o $@ $<
+
+
+#
+# Stuff to build bios_call.o for the kernel.
+#
+MAPFILE_BIOS	= $(UTSBASE)/armsbsa/conf/Mapfile.bios
+$(OBJS_DIR)/bios_call.o:    $(UTSBASE)/armsbsa/ml/bios_call_src.s
+	$(COMPILE.s) -o $(OBJS_DIR)/bios_call_src.o \
+		$(UTSBASE)/armsbsa/ml/bios_call_src.s
+	$(LD) -dn -M $(MAPFILE_BIOS)  \
+		-o $(OBJS_DIR)/bios_call_src $(OBJS_DIR)/bios_call_src.o
+	@echo "  .data"				> $(OBJS_DIR)/bios_call.s
+	@echo "  .globl bios_image"		>> $(OBJS_DIR)/bios_call.s
+	@echo "bios_image:"			>> $(OBJS_DIR)/bios_call.s
+	$(ELFEXTRACT) $(OBJS_DIR)/bios_call_src	>> $(OBJS_DIR)/bios_call.s
+	@echo "  .align 4"			>> $(OBJS_DIR)/bios_call.s
+	@echo "  .globl bios_size"		>> $(OBJS_DIR)/bios_call.s
+	@echo "bios_size:"			>> $(OBJS_DIR)/bios_call.s
+	@echo "  .long . - bios_image"		>> $(OBJS_DIR)/bios_call.s
+	$(COMPILE.s) -o $@ $(OBJS_DIR)/bios_call.s
+
+#
+# Stuff to build fb_swtch.o for the kernel.
+#
+MAPFILE_FBSWTCH	= $(UTSBASE)/armsbsa/conf/Mapfile.fb_swtch
+$(OBJS_DIR)/fb_swtch.o:    $(UTSBASE)/armsbsa/ml/fb_swtch_src.s
+	$(COMPILE.s) -o $(OBJS_DIR)/fb_swtch_src.o \
+		$(UTSBASE)/armsbsa/ml/fb_swtch_src.s
+	$(LD) -dn -M $(MAPFILE_FBSWTCH)  \
+		-o $(OBJS_DIR)/fb_swtch_src $(OBJS_DIR)/fb_swtch_src.o
+	@echo "  .data"				> $(OBJS_DIR)/fb_swtch.s
+	@echo "  .globl fb_swtch_image"		>> $(OBJS_DIR)/fb_swtch.s
+	@echo "fb_swtch_image:"			>> $(OBJS_DIR)/fb_swtch.s
+	$(ELFEXTRACT) $(OBJS_DIR)/fb_swtch_src	>> $(OBJS_DIR)/fb_swtch.s
+	@echo "  .align 4"			>> $(OBJS_DIR)/fb_swtch.s
+	@echo "  .globl fb_swtch_size"		>> $(OBJS_DIR)/fb_swtch.s
+	@echo "fb_swtch_size:"			>> $(OBJS_DIR)/fb_swtch.s
+	@echo "  .long . - fb_swtch_image"	>> $(OBJS_DIR)/fb_swtch.s
+	$(COMPILE.s) -o $@ $(OBJS_DIR)/fb_swtch.s
+
+# ridiculous contortions ---
+ATOMIC_SUBDIR_32	= aarch64
+ATOMIC_SUBDIR_64	= aarch64
+ATOMIC_SUBDIR		= $(ATOMIC_SUBDIR_$(CLASS))
+
+$(OBJS_DIR)/%.o:		$(SRC)/common/atomic/$(ATOMIC_SUBDIR)/%.s
+	$(COMPILE.s) -o $@ $<
+
+#
+# dtrace stubs
+#
+
+$(OBJS_DIR)/dtracestubs.s:	$(UNIX_O) $(LIBS)
+	$(NM) -u $(UNIX_O) $(LIBS) | \
+	$(EGREP) '(__dtrace_probe_|smap_(disable|enable))' | $(SORT) | \
+	    $(UNIQ) | $(AWK) '{ \
+	    printf("\t.globl %s\n\t.type %s,@function\n%s:\n", \
+	    $$1, $$1, $$1); }' > $(OBJS_DIR)/dtracestubs.s
+
+$(DTRACESTUBS):	$(DTRACESTUBS_O)
+	$(BUILD.SO) $(DTRACESTUBS_O)

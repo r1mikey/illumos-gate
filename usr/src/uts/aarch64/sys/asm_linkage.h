@@ -72,6 +72,12 @@ x:	MCOUNT(x)
 
 #define	ENTRY_SIZE	MCOUNT_SIZE
 
+#define	ENTRY_P(x) \
+	.text; \
+	.align	4; \
+	.type	x, @function; \
+x:
+
 #define	ENTRY_NP(x) \
 	.text; \
 	.align	4; \

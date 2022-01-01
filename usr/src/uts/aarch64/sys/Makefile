@@ -27,19 +27,52 @@
 
 include ../../../Makefile.master
 
+# XXXAARCH64: prom stuff could probably go
 HDRS	=			\
+	archsystm.h		\
 	asm_linkage.h		\
+	bootconf.h		\
+	bootinfo.h		\
+	bootsvcs.h		\
+	bootvfs.h		\
+	controlregs.h		\
 	cpu.h			\
+	ddi_isa.h		\
+	fasttrap_isa.h		\
+	fp.h			\
+	frame.h			\
+	gic.h			\
+	inline.h		\
+	kdi_machimpl.h		\
+	kdi_regs.h		\
 	machlock.h		\
 	machsig.h		\
 	machtypes.h		\
+	mutex_impl.h		\
+	obpdefs.h		\
+	old_procfs.h		\
 	pcb.h			\
+	platform_module.h	\
+	polled_io.h		\
+	privregs.h		\
 	procfs_isa.h		\
+	prom_plat.h		\
+	promif.h		\
+	promimpl.h		\
+	psw.h			\
+	pte.h			\
+	reg.h			\
 	regset.h		\
+	spl.h			\
 	stack.h			\
+	stat_impl.h		\
 	synch32.h		\
+	sysconfig_impl.h	\
 	trap.h			\
-	ucontext.h
+	ucontext.h		\
+	utrap.h			\
+	vmparam.h		\
+	x_call.h
 
 #HDRS	=			\
 #	archsystm.h		\

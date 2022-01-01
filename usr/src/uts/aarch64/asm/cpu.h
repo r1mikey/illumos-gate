@@ -40,22 +40,22 @@ extern "C" {
 /*
  * prefetch
  */
-static inline void
+static __inline__ void
 prefetch_read_many(void *addr)
 {
 }
 
-static inline void
+static __inline__ void
 prefetch_read_once(void *addr)
 {
 }
 
-static inline void
+static __inline__ void
 prefetch_write_many(void *addr)
 {
 }
 
-static inline void
+static __inline__ void
 prefetch_write_once(void *addr)
 {
 }

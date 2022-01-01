@@ -95,8 +95,17 @@ extern "C" {
 typedef long	greg_t;
 typedef greg_t	gregset_t[_NGREG];
 
-#if !defined(__SIZEOF_INT128__)
+#if defined(__SIZEOF_INT128__)
+typedef __uint128_t	fpreg_t;
+#else
+#if defined(__aarch64__)
 #error Compiler lacks 128 bit integer support
+#else
+typedef struct {
+	uint64_t _lo;
+	uint64_t _hi;
+} fpreg_t;
+#endif
 #endif
 
 /*
@@ -104,11 +113,11 @@ typedef greg_t	gregset_t[_NGREG];
  */
 typedef struct fpu {
 #if !defined(_XPG4_2) || defined(__EXTENSIONS__)
-	__uint128_t		d_fpregs[32];
+	fpreg_t			d_fpregs[32];
 	uint32_t		fp_cr;
 	uint32_t		fp_sr;
 #else
-	 __uint128_t		__d_fpregs[32];
+	fpreg_t			__d_fpregs[32];
 	uint32_t		__fp_cr;
 	uint32_t		__fp_sr;
 #endif
@@ -131,12 +140,12 @@ typedef struct {
 #if defined(_SYSCALL32)
 #define	_NGREG32	_NGREG
 #define	_NGREG64	_NGREG
-typedef int32_t	greg32_t;
+typedef int64_t	greg32_t;	/* XXXAARCH64: probably wrong, fix later */
 typedef int64_t	greg64_t;
 typedef greg32_t gregset32_t[_NGREG32];
 typedef greg64_t gregset64_t[_NGREG64];
 typedef struct fpu32 {
-	__uint128_t		__d_fpregs[32];
+	fpreg_t			__d_fpregs[32];
 	uint32_t		__fp_cr;
 	uint32_t		__fp_sr;
 } fpregset32_t;
@@ -150,7 +159,7 @@ typedef struct {
  * Kernel's FPU save area
  */
 typedef struct {
-	 __uint128_t		kfpu_regs[32];
+	fpreg_t			kfpu_regs[32];
 	uint32_t		kfpu_cr;
 	uint32_t		kfpu_sr;
 } kfpu_t;

@@ -29,7 +29,12 @@
 include ../../../Makefile.master
 
 HDRS	=			\
-	cpu.h
+	atomic.h		\
+	byteorder.h		\
+	controlregs.h		\
+	cpu.h			\
+	sunddi.h		\
+	thread.h
 
 #HDRS	=			\
 #	atomic.h		\

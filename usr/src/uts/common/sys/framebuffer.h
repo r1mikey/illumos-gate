@@ -82,6 +82,10 @@ typedef struct fb_info {
 } fb_info_t;
 
 #if defined(__aarch64__)
+/*
+ * XXXAARCH64: * Maybe not the right place for this, but it ought to be
+ * applicable to both aarch64 and i86pc.
+ */
 struct efi_fb {
 	uint64_t	fb_addr;
 	uint64_t	fb_size;

@@ -370,7 +370,7 @@ kobj_init(
 {
 	struct module *mp;
 	struct modctl *modp;
-#if defined(_DBOOT) || defined(KOBJ_DEBUG)
+#if defined(_DBOOT) || defined(_EBOOT) || defined(KOBJ_DEBUG)
 	Addr entry;
 #endif
 	char filename[MAXPATHLEN];
@@ -483,7 +483,7 @@ kobj_init(
 	if (bind_primary(bootaux, KOBJ_LM_PRIMARY) == -1)
 		goto fail;
 
-#if defined(_DBOOT) || defined(KOBJ_DEBUG)
+#if defined(_DBOOT) || defined(_EBOOT) || defined(KOBJ_DEBUG)
 	entry = bootaux[BA_ENTRY].ba_val;
 #endif
 
@@ -542,7 +542,7 @@ kobj_init(
 	/* restore printf/bcopy/bzero vectors before returning */
 	kobj_restore_vectors();
 
-#if defined(_DBOOT)
+#if defined(_DBOOT) || defined(_EBOOT)
 	/*
 	 * krtld was called from a dboot ELF section, the embedded
 	 * dboot code contains the real entry via bootaux

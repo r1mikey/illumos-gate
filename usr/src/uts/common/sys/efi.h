@@ -172,6 +172,81 @@ typedef struct _EFI_CONFIGURATION_TABLE64 {
 	efiptr64_t	VendorTable;
 } __packed EFI_CONFIGURATION_TABLE64;
 
+#if defined(__aarch64__)
+/*
+ * UEFI declarations are undeniably ugly.
+ */
+typedef uint64_t	UINT64;
+typedef uint32_t	UINT32;
+typedef uint64_t	EFI_STATUS64;
+typedef uint16_t	CHAR16;
+
+#define	EFI_SUCCESS	0
+
+typedef enum {
+	EfiResetCold,
+	EfiResetWarm,
+	EfiResetShutdown,
+	EfiResetPlatformSpecific
+} EFI_RESET_TYPE;
+
+#if 0
+/*
+ * XXXAARCH64: these will be useful
+ */
+typedef
+EFI_STATUS
+(EFIAPI *EFI_GET_TIME64) (
+    OUT EFI_TIME                    *Time,
+    OUT EFI_TIME_CAPABILITIES       *Capabilities OPTIONAL
+    );
+
+typedef
+EFI_STATUS
+(EFIAPI *EFI_SET_TIME64) (
+    IN EFI_TIME                     *Time
+    );
+#endif
+
+typedef EFI_STATUS64 (*EFI_SET_VIRTUAL_ADDRESS_MAP64) (
+	UINT64			MemoryMapSize,
+	UINT64			DescriptorSize,
+	UINT32			DescriptorVersion,
+	EFI_MEMORY_DESCRIPTOR	*VirtualMap
+);
+
+typedef void (*EFI_RESET_SYSTEM64) (
+	EFI_RESET_TYPE		ResetType,
+	EFI_STATUS64		ResetStatus,
+	UINT64			DataSize,
+	CHAR16			*ResetData
+) __NORETURN;
+
+typedef struct _EFI_RUNTIME_SERVICES64 {
+	EFI_TABLE_HEADER		Hdr;
+
+	/* Time services */
+	efiptr64_t			GetTime;
+	efiptr64_t			SetTime;
+	efiptr64_t			GetWakeupTime;
+	efiptr64_t			SetWakeupTime;
+
+	/* Virtual memory services */
+	EFI_SET_VIRTUAL_ADDRESS_MAP64	SetVirtualAddressMap;
+	efiptr64_t			ConvertPointer;
+
+	/* Variable services */
+	efiptr64_t			GetVariable;
+	efiptr64_t			GetNextVariableName;
+	efiptr64_t			SetVariable;
+
+	/* Misc */
+	efiptr64_t			GetNextHighMonotonicCount;
+	EFI_RESET_SYSTEM64		ResetSystem;
+} __packed EFI_RUNTIME_SERVICES64;
+
+#endif	/* __aarch64__ */
+
 typedef struct _EFI_SYSTEM_TABLE32 {
 	EFI_TABLE_HEADER	Hdr;
 
@@ -210,7 +285,11 @@ typedef struct _EFI_SYSTEM_TABLE64 {
 	efiptr64_t		StandardErrorHandle;
 	efiptr64_t		StdErr;
 
+#if defined(__aarch64__)
+	EFI_RUNTIME_SERVICES64	*RuntimeServices;
+#else
 	efiptr64_t		RuntimeServices;
+#endif
 	efiptr64_t		BootServices;
 
 	uint64_t		NumberOfTableEntries;

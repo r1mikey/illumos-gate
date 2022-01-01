@@ -1,0 +1,39 @@
+OUTPUT_FORMAT("elf64-littleaarch64")
+OUTPUT_ARCH(aarch64)
+SECTIONS
+{
+	.text : {
+		*(.plt*)
+		*(.text)
+		*(.text.*)
+		. = ALIGN(0x10);
+		*(.rodata)
+		*(.rodata.*)
+		. = ALIGN(0x10);
+	}
+	. = ALIGN(0x1000);
+	.data : {
+		*(.data)
+		*(.data.*)
+		. = ALIGN(0x8);
+		_probepoints_start = .;
+		*(.probepoint)
+		_probepoints_end = .;
+		CONSTRUCTORS
+		*(.got)
+		*(.got.*)
+		*(.sdata)
+		*(.sdata.*)
+		. = ALIGN(0x10);
+	}
+	.bss : {
+		*(.sbss)
+		*(.sbss.*)
+		*(.scommon)
+		*(.bss)
+		*(.bss.*)
+		*(COMMON)
+	}
+	/DISCARD/ : { *(.interp) }
+	/DISCARD/ : { *(.eh_frame) }
+}
