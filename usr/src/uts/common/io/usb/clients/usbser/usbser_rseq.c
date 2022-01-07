@@ -34,8 +34,12 @@
 #include <sys/debug.h>
 #include <sys/ddi.h>
 #include <sys/sunddi.h>
+#ifdef DEBUG
+#ifndef __lock_lint
 static long rseq_random();
 #define	random	rseq_random
+#endif
+#endif
 #else
 #include <assert.h>
 #define	ASSERT	assert
