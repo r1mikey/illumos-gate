@@ -370,7 +370,9 @@ kobj_init(
 {
 	struct module *mp;
 	struct modctl *modp;
+#if defined(_DBOOT) || defined(KOBJ_DEBUG)
 	Addr entry;
+#endif
 	char filename[MAXPATHLEN];
 
 	/*
@@ -481,7 +483,9 @@ kobj_init(
 	if (bind_primary(bootaux, KOBJ_LM_PRIMARY) == -1)
 		goto fail;
 
+#if defined(_DBOOT) || defined(KOBJ_DEBUG)
 	entry = bootaux[BA_ENTRY].ba_val;
+#endif
 
 	/*
 	 * Get the boot flags
