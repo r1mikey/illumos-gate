@@ -38,8 +38,15 @@ extern "C" {
 #include <sys/cpu.h>
 #include <sys/thread.h>
 
-#ifdef _KERNEL
+#if defined(_KERNEL) || defined(_BOOT)
 #include <sys/ctype.h>
+
+#if defined(__aarch64__)
+#if !defined(ACPI_REDUCED_HARDWARE)
+#define	ACPI_REDUCED_HARDWARE		1
+#endif
+#endif
+
 #else
 #include <ctype.h>
 #include <strings.h>
@@ -54,8 +61,10 @@ extern "C" {
 /* Function name used for debug output. */
 #define	ACPI_GET_FUNCTION_NAME	__func__
 
+#if (!ACPI_REDUCED_HARDWARE)
 uint32_t __acpi_acquire_global_lock(void *);
 uint32_t __acpi_release_global_lock(void *);
+#endif
 void	 __acpi_wbinvd(void);
 uint32_t acpi_strtoul(const char *, char **, int);
 
@@ -108,11 +117,13 @@ uint32_t acpi_strtoul(const char *, char **, int);
 #define	BREAKPOINT3
 #define	ACPI_DISABLE_IRQS()	cli()
 #define	ACPI_ENABLE_IRQS()	sti()
+#if (!ACPI_REDUCED_HARDWARE)
 #define	ACPI_ACQUIRE_GLOBAL_LOCK(Facs, Acq)	\
 	((Acq) = __acpi_acquire_global_lock(Facs))
 
 #define	ACPI_RELEASE_GLOBAL_LOCK(Facs, Acq)	\
 	((Acq) = __acpi_release_global_lock(Facs))
+#endif
 
 #ifdef __cplusplus
 }
