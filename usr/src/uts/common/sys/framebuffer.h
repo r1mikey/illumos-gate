@@ -81,6 +81,20 @@ typedef struct fb_info {
 	boolean_t inverse_screen;
 } fb_info_t;
 
+#if defined(__aarch64__)
+struct efi_fb {
+	uint64_t	fb_addr;
+	uint64_t	fb_size;
+	uint32_t	fb_height;
+	uint32_t	fb_width;
+	uint32_t	fb_stride;
+	uint32_t	fb_mask_red;
+	uint32_t	fb_mask_green;
+	uint32_t	fb_mask_blue;
+	uint32_t	fb_mask_reserved;
+};
+#endif
+
 extern fb_info_t fb_info;
 void boot_fb_cursor(boolean_t);
 extern uint32_t boot_color_map(uint8_t);
