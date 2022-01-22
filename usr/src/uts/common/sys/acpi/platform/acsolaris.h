@@ -38,7 +38,7 @@ extern "C" {
 #include <sys/cpu.h>
 #include <sys/thread.h>
 
-#ifdef _KERNEL
+#if defined(_KERNEL) || defined(_BOOT)
 #include <sys/ctype.h>
 #else
 #include <ctype.h>
