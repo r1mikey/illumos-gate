@@ -224,7 +224,7 @@ extern int sysevent_evc_control(evchan_t *, int, ...);
 extern int sysevent_evc_setpropnvl(evchan_t *, nvlist_t *);
 extern int sysevent_evc_getpropnvl(evchan_t *, nvlist_t **);
 
-#ifndef	_KERNEL
+#if !defined(_KERNEL) && !defined(_BOOT)
 
 /*
  * Userland-only event channel interfaces
