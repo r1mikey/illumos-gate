@@ -37,6 +37,7 @@
 
 #include <efi.h>
 #include <efilib.h>
+#include <Guid/Acpi.h>
 
 #include "loader_efi.h"
 #include "cache.h"
@@ -44,19 +45,24 @@
 #include "platform/acfreebsd.h"
 #include "acconfig.h"
 #define ACPI_SYSTEM_XFACE
-#define ACPI_USE_SYSTEM_INTTYPES
+#if !defined(ACPI_USE_SYSTEM_INTTYPES)
+#define ACPI_USE_SYSTEM_INTTYPES 1
+#endif
 #include "actypes.h"
 #include "actbl.h"
 
 static EFI_GUID acpi_guid = ACPI_TABLE_GUID;
-static EFI_GUID acpi20_guid = ACPI_20_TABLE_GUID;
+static EFI_GUID acpi20_guid = EFI_ACPI_20_TABLE_GUID;
 
 static int elf64_exec(struct preloaded_file *amp);
+#ifdef XXXARM
 static int elf64_obj_exec(struct preloaded_file *amp);
+#endif
 
 int bi_load(char *args, vm_offset_t *modulep, vm_offset_t *kernendp);
 
-static struct file_format arm64_elf = {
+static
+struct file_format arm64_elf = {
 	elf64_loadfile,
 	elf64_exec
 };
@@ -119,6 +125,7 @@ elf64_exec(struct preloaded_file *fp)
 		return (err);
 	}
 
+	efi_time_fini();
 	dev_cleanup();
 
 	/* Clean D-cache under kernel area and invalidate whole I-cache */
@@ -132,6 +139,7 @@ elf64_exec(struct preloaded_file *fp)
 	panic("exec returned");
 }
 
+#ifdef XXXARM
 static int
 elf64_obj_exec(struct preloaded_file *fp)
 {
@@ -140,4 +148,4 @@ elf64_obj_exec(struct preloaded_file *fp)
 	    fp->f_name);
 	return (ENOSYS);
 }
-
+#endif

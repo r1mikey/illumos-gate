@@ -69,7 +69,9 @@ EFI_GUID gEfiSmbiosTableGuid = SMBIOS_TABLE_GUID;
 EFI_GUID gEfiSmbios3TableGuid = SMBIOS3_TABLE_GUID;
 
 extern void acpi_detect(void);
+#if defined(__i386) || defined(__amd64)
 extern void efi_getsmap(void);
+#endif
 
 static EFI_LOADED_IMAGE_PROTOCOL *img;
 
@@ -719,7 +721,9 @@ main(int argc, CHAR16 *argv[])
 	howto = parse_uefi_con_out();
 	serial = uefi_serial_console();
 	cons_probe();
+#if defined(__i386) || defined(__amd64)
 	efi_getsmap();
+#endif
 
 	if ((s = getenv("efi_com_speed")) != NULL) {
 		char *name;
@@ -1075,8 +1079,10 @@ command_memmap(int argc __unused, char *argv[] __unused)
 	for (i = 0, p = map; i < ndesc;
 	    i++, p = NextMemoryDescriptor(p, dsz)) {
 		snprintf(line, 80, "%23s %012jx %012jx %08jx ",
-		    efi_memory_type(p->Type), p->PhysicalStart,
-		    p->VirtualStart, p->NumberOfPages);
+		    efi_memory_type(p->Type),
+		    (uintmax_t)p->PhysicalStart,
+		    (uintmax_t)p->VirtualStart,
+		    (uintmax_t)p->NumberOfPages);
 		rv = pager_output(line);
 		if (rv)
 			break;

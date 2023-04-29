@@ -11,27 +11,21 @@
 
 #
 # Copyright 2016 Toomas Soome <tsoome@me.com>
+# Copyright 2016 RackTop Systems.
+# Copyright 2023 Michael van der Westhuizen <r1mikey@gmail.com>
 #
-
-.KEEP_STATE:
 
 include $(SRC)/Makefile.master
 
-i386_SUBDIRS = $(MACH) $(MACH64)
-aarch64_SUBDIRS = arm64
-SUBDIRS = $($(MACH)_SUBDIRS)
+MACHINE=	arm64
+DYNLIB=		libficl_pics.a
 
-all	:=	TARGET = all
-clean	:=	TARGET = clean
-clobber	:=	TARGET = clobber
-install	:=	TARGET = install
+all install: $(DYNLIB)
 
-all clean clobber: $(SUBDIRS)
+include ../Makefile.com
 
-install: all
+CFLAGS += $(CFLAGS64)
 
-.PARALLEL:
-$(SUBDIRS): FRC
-	@cd $@; pwd; $(MAKE) $(TARGET)
+include $(BOOTSRC)/Makefile.lib
 
 FRC:

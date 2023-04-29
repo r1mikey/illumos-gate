@@ -175,7 +175,7 @@ __elfN(loadfile_raw)(char *filename, uint64_t dest,
 	 * Check to see what sort of module we are.
 	 */
 	kfp = file_findfile(NULL, __elfN(kerneltype));
-#ifdef __powerpc__
+#if defined(__powerpc__) || defined(__aarch64__)
 	/*
 	 * Kernels can be ET_DYN, so just assume the first loaded object is the
 	 * kernel. This assumption will be checked later.
@@ -200,18 +200,24 @@ __elfN(loadfile_raw)(char *filename, uint64_t dest,
 		 * calculated by archsw.arch_loadaddr() and passed in to
 		 * this function.
 		 */
-#ifndef __arm__
+#if !defined(__arm__)
 		if (ehdr->e_type == ET_EXEC)
 			dest = (ehdr->e_entry & ~PAGE_MASK);
 #endif
 		if ((ehdr->e_entry & ~PAGE_MASK) == 0) {
-			printf("elf" __XSTRING(__ELF_WORD_SIZE)
-			    "_loadfile: not a kernel (maybe static binary?)\n");
-			err = EPERM;
-			goto oerr;
+#if defined(__aarch64__)
+			if (ehdr->e_entry != 0) {
+#endif
+				printf("elf" __XSTRING(__ELF_WORD_SIZE)
+				    "_loadfile: not a kernel (maybe "
+				    "static binary?)\n");
+				err = EPERM;
+				goto oerr;
+#if defined(__aarch64__)
+			}
+#endif
 		}
 		ef.kernel = 1;
-
 	} else if (ehdr->e_type == ET_DYN) {
 		/* Looks like a kld module */
 		if (multiboot != 0) {
@@ -241,7 +247,12 @@ __elfN(loadfile_raw)(char *filename, uint64_t dest,
 	}
 
 	if (archsw.arch_loadaddr != NULL)
+#if defined(__aarch64__)
+		/* XXXARM: I don't see how this could work otherwise */
+		dest = archsw.arch_loadaddr(LOAD_ELF, filename, dest);
+#else
 		dest = archsw.arch_loadaddr(LOAD_ELF, ehdr, dest);
+#endif
 	else
 		dest = roundup(dest, PAGE_SIZE);
 
@@ -279,6 +290,11 @@ __elfN(loadfile_raw)(char *filename, uint64_t dest,
 	fp->f_size = __elfN(loadimage)(fp, &ef, dest);
 	if (fp->f_size == 0 || fp->f_addr == 0)
 		goto ioerr;
+
+#if defined(__aarch64__)
+	if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS)
+		ehdr->e_entry += __elfN(relocation_offset);
+#endif
 
 	/* save exec header as metadata */
 	file_addmetadata(fp, MODINFOMD_ELFHDR, sizeof (*ehdr), ehdr);
@@ -400,10 +416,12 @@ __elfN(loadimage)(struct preloaded_file *fp, elf_file_t ef, uint64_t off)
 	}
 	ef->off = off;
 
+#if !defined(__aarch64__)
 	if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS) {
 		/* use entry address from header */
 		fp->f_addr = ehdr->e_entry;
 	}
+#endif
 
 	if (ef->kernel)
 		__elfN(relocation_offset) = off;
@@ -681,8 +699,13 @@ nosyms:
 	printf("\n");
 
 	ret = lastaddr - firstaddr;
+#if defined(__aarch64__)
+	if (ehdr->e_ident[EI_OSABI] == ELFOSABI_SOLARIS)
+		fp->f_addr = firstaddr;
+#else
 	if (ehdr->e_ident[EI_OSABI] != ELFOSABI_SOLARIS)
 		fp->f_addr = firstaddr;
+#endif
 
 	php = NULL;
 	for (i = 0; i < ehdr->e_phnum; i++) {
@@ -755,17 +778,23 @@ nosyms:
 	ef->buckets = ef->hashtab + 2;
 	ef->chains = ef->buckets + ef->nbuckets;
 
-	if (__elfN(lookup_symbol)(fp, ef, "__start_set_modmetadata_set",
-	    &sym) != 0)
-		return (0);
-	p_start = sym.st_value + ef->off;
-	if (__elfN(lookup_symbol)(fp, ef, "__stop_set_modmetadata_set",
-	    &sym) != 0)
-		return (ENOENT);
-	p_end = sym.st_value + ef->off;
+#if defined(__aarch64__)
+	if (ehdr->e_ident[EI_OSABI] != ELFOSABI_SOLARIS) {
+#endif
+		if (__elfN(lookup_symbol)(fp, ef, "__start_set_modmetadata_set",
+		    &sym) != 0)
+			return (0);
+		p_start = sym.st_value + ef->off;
+		if (__elfN(lookup_symbol)(fp, ef, "__stop_set_modmetadata_set",
+		    &sym) != 0)
+			return (ENOENT);
+		p_end = sym.st_value + ef->off;
 
-	if (__elfN(parse_modmetadata)(fp, ef, p_start, p_end) == 0)
-		goto out;
+		if (__elfN(parse_modmetadata)(fp, ef, p_start, p_end) == 0)
+			goto out;
+#if defined(__aarch64__)
+	}
+#endif
 
 	if (ef->kernel)			/* kernel must not depend on anything */
 		goto out;
