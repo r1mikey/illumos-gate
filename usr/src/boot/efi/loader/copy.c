@@ -169,11 +169,23 @@ efi_loadaddr(uint_t type, void *data, vm_offset_t addr)
 	uint64_t pages;
 	EFI_STATUS status;
 
-	if (addr == 0)
+#if !defined(__aarch64__)
+	/*
+	 * XXXARM: add a LOAD_ELF_PEI and use that here
+	 */
+	if (addr == 0) {
 		return (addr);	/* nothing to do */
+	}
+#endif
 
-	if (type == LOAD_ELF)
+#if !defined(__aarch64__)
+	/*
+	 * XXXARM: add a LOAD_ELF_PEI and use that here
+	 */
+	if (type == LOAD_ELF) {
 		return (0);	/* not supported */
+	}
+#endif
 
 	if (type == LOAD_MEM)
 		size = *(size_t *)data;
@@ -187,11 +199,18 @@ efi_loadaddr(uint_t type, void *data, vm_offset_t addr)
 		return (addr);
 
 	pages = EFI_SIZE_TO_PAGES(size);
+#if defined(__amd64__) || defined(__i386__)
 	/* 4GB upper limit */
 	paddr = UINT32_MAX;
 
 	status = BS->AllocatePages(AllocateMaxAddress, EfiLoaderData,
 	    pages, &paddr);
+#else
+	paddr = 0;
+
+	status = BS->AllocatePages(AllocateAnyPages, EfiLoaderData,
+	    pages, &paddr);
+#endif
 
 	if (EFI_ERROR(status)) {
 		printf("failed to allocate %zu bytes for staging area: %lu\n",
@@ -217,7 +236,11 @@ efi_translate(vm_offset_t ptr)
 ssize_t
 efi_copyin(const void *src, vm_offset_t dest, const size_t len)
 {
+#if defined(__amd64__) || defined(__i386__)
 	if (dest + len >= dest && (uint64_t)dest + len <= UINT32_MAX) {
+#else
+	if (dest + len >= dest) {
+#endif
 		bcopy(src, (void *)(uintptr_t)dest, len);
 		return (len);
 	} else {
@@ -229,7 +252,11 @@ efi_copyin(const void *src, vm_offset_t dest, const size_t len)
 ssize_t
 efi_copyout(const vm_offset_t src, void *dest, const size_t len)
 {
+#if defined(__amd64__) || defined(__i386__)
 	if (src + len >= src && (uint64_t)src + len <= UINT32_MAX) {
+#else
+	if (src + len >= src) {
+#endif
 		bcopy((void *)(uintptr_t)src, dest, len);
 		return (len);
 	} else {
@@ -242,7 +269,11 @@ efi_copyout(const vm_offset_t src, void *dest, const size_t len)
 ssize_t
 efi_readin(const int fd, vm_offset_t dest, const size_t len)
 {
+#if defined(__amd64__) || defined(__i386__)
 	if (dest + len >= dest && (uint64_t)dest + len <= UINT32_MAX) {
+#else
+	if (dest + len >= dest) {
+#endif
 		return (read(fd, (void *)dest, len));
 	} else {
 		errno = EFBIG;

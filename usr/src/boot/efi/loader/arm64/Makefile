@@ -10,27 +10,26 @@
 #
 
 #
+# Copyright 2016 Toomas Soome <tsoome@me.com>
+# Copyright 2016 RackTop Systems.
 # Copyright 2023 Michael van der Westhuizen <r1mikey@gmail.com>
 #
 
-SRCS +=	bootsvcs.c \
-	cache.c \
-	efiserialio.c \
-	exec.c \
-	isadir.c \
-	start.S
+include $(SRC)/Makefile.master
 
-OBJS +=	bootsvcs.o \
-	cache.o \
-	efiserialio.o \
-	exec.o \
-	isadir.o \
-	start.o
+MACHINE=	arm64
+EFIPROG=	loader64.efi
 
-SRCS += nullconsole.c \
-	spinconsole.c
+all:		$(EFIPROG)
 
-OBJS += nullconsole.o \
-	spinconsole.o
+include ../Makefile.com
 
-start.o := CCASFLAGS += $(C_BIGPICFLAGS)
+EFI_TARGET=	binary
+LDFLAGS +=	-znocombreloc
+
+efi_main.o := CPPFLAGS += -DLOADER_EFI=L\"loader64.efi\"
+CFLAGS +=	$(CFLAGS64) -_gcc=-mgeneral-regs-only
+
+CLEANFILES +=	machine $(EFIPROG)
+
+$(OBJS):	machine

@@ -10,27 +10,20 @@
 #
 
 #
-# Copyright 2023 Michael van der Westhuizen <r1mikey@gmail.com>
+# Copyright 2016 Toomas Soome <tsoome@me.com>
+# Copyright 2016 RackTop Systems.
+# Copyright 2023 Michael van der Westhuizen
 #
 
-SRCS +=	bootsvcs.c \
-	cache.c \
-	efiserialio.c \
-	exec.c \
-	isadir.c \
-	start.S
+MACHINE=	arm64
 
-OBJS +=	bootsvcs.o \
-	cache.o \
-	efiserialio.o \
-	exec.o \
-	isadir.o \
-	start.o
+all:		libefi.a
 
-SRCS += nullconsole.c \
-	spinconsole.c
+SRCS=	time_$(MACHINE).c
+include ../Makefile.com
 
-OBJS += nullconsole.o \
-	spinconsole.o
+CFLAGS +=	$(CFLAGS64)
 
-start.o := CCASFLAGS += $(C_BIGPICFLAGS)
+CLEANFILES +=	machine
+
+$(OBJS): machine
