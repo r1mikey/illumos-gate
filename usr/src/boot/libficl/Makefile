@@ -15,7 +15,9 @@
 
 include $(SRC)/Makefile.master
 
-SUBDIRS = softcore $(MACH) $(MACH64)
+i386_SUBDIRS = $(MACH) $(MACH64)
+aarch64_SUBDIRS = arm64
+SUBDIRS = softcore $($(MACH)_SUBDIRS)
 
 all	:=	TARGET = all
 install	:=	TARGET = install
@@ -25,7 +27,7 @@ clobber	:=	TARGET = clobber
 all install: $(SUBDIRS)
 clean clobber: $(SUBDIRS)
 
-$(MACH) $(MACH64): softcore
+$($(MACH)_SUBDIRS): softcore
 
 .PARALLEL:
 

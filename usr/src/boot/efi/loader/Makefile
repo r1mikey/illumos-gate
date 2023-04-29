@@ -17,7 +17,9 @@
 
 include $(SRC)/Makefile.master
 
-SUBDIRS = $(MACH) $(MACH64)
+i386_SUBDIRS = $(MACH) $(MACH64)
+aarch64_SUBDIRS = arm64
+SUBDIRS = $($(MACH)_SUBDIRS)
 
 all	:=	TARGET = all
 clean	:=	TARGET = clean

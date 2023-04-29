@@ -65,7 +65,9 @@ EFI_GUID inputid = SIMPLE_TEXT_INPUT_PROTOCOL;
 EFI_GUID serialio = SERIAL_IO_PROTOCOL;
 
 extern void acpi_detect(void);
+#if defined(__i386) || defined(__amd64)
 extern void efi_getsmap(void);
+#endif
 
 static EFI_LOADED_IMAGE *img;
 
@@ -711,7 +713,9 @@ main(int argc, CHAR16 *argv[])
 	howto = parse_uefi_con_out();
 	serial = uefi_serial_console();
 	cons_probe();
+#if defined(__i386) || defined(__amd64)
 	efi_getsmap();
+#endif
 
 	if ((s = getenv("efi_com_speed")) != NULL) {
 		char *name;

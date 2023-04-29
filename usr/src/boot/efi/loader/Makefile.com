@@ -19,6 +19,10 @@ include $(SRC)/boot/Makefile.inc
 PROG=		loader.sym
 
 # architecture-specific loader code
+i386_SRCS=\
+	memmap.c \
+	multiboot2.c
+aarch64_SRCS=
 SRCS=	\
 	acpi.c \
 	autoload.c \
@@ -30,14 +34,16 @@ SRCS=	\
 	$(FONT).c \
 	framebuffer.c \
 	main.c \
-	memmap.c \
 	mb_header.S \
-	multiboot2.c \
 	nvstore.c \
 	self_reloc.c \
 	tem.c \
 	vers.c
 
+i386_OBJS=\
+	memmap.o \
+	multiboot2.o
+aarch64_OBJS=
 OBJS=	\
 	acpi.o \
 	autoload.o \
@@ -49,9 +55,7 @@ OBJS=	\
 	$(FONT).o \
 	framebuffer.o \
 	main.o \
-	memmap.o \
 	mb_header.o \
-	multiboot2.o \
 	nvstore.o \
 	self_reloc.o \
 	tem.o \
@@ -97,11 +101,16 @@ OBJS += boot.o commands.o console.o devopen.o interp.o \
 	interp_backslash.o interp_parse.o ls.o misc.o \
 	module.o linenoise.o zfs_cmd.o
 
-SRCS +=	load_elf32.c load_elf32_obj.c reloc_elf32.c
-SRCS +=	load_elf64.c load_elf64_obj.c reloc_elf64.c
+i386_SRCS += load_elf32.c load_elf32_obj.c reloc_elf32.c
+i386_SRCS += load_elf64.c load_elf64_obj.c reloc_elf64.c
+aarch64_SRCS += load_elf64.c load_elf64_obj.c reloc_elf64.c
 
-OBJS += load_elf32.o load_elf32_obj.o reloc_elf32.o \
+i386_OBJS += load_elf32.o load_elf32_obj.o reloc_elf32.o \
 	load_elf64.o load_elf64_obj.o reloc_elf64.o
+aarch64_OBJS += load_elf64.o load_elf64_obj.o reloc_elf64.o
+
+SRCS += $($(MACH)_SRCS)
+OBJS += $($(MACH)_OBJS)
 
 SRCS +=	disk.c part.c dev_net.c vdisk.c
 OBJS += disk.o part.o dev_net.o vdisk.o
@@ -132,6 +141,9 @@ LDFLAGS =	-nostdlib --eh-frame-hdr
 LDFLAGS +=	-shared --hash-style=both --enable-new-dtags
 LDFLAGS +=	-T$(LDSCRIPT) -Bsymbolic
 
+aarch64_LDFLAGS=--no-warn-rwx-segments
+LDFLAGS +=	$($(MACH)_LDFLAGS)
+
 CLEANFILES=	$(EFIPROG) loader.sym loader.bin
 CLEANFILES +=	$(FONT).c vers.c
 
@@ -142,8 +154,14 @@ install: all $(ROOTBOOTFILES)
 vers.c:	../../../common/newvers.sh $(SRC)/boot/Makefile.version
 	$(SH) ../../../common/newvers.sh $(LOADER_VERSION) $(NEWVERSWHAT)
 
+# XXXARM: We "need" BTXLD compiled as a tool to add the version stuff, but we
+#         don't *really* need it, do we?
 $(EFIPROG): loader.bin
-	$(BTXLD) -V $(BOOT_VERSION) -o $@ loader.bin
+	if [ x"$(MACH)" = x"aarch64" ]; then \
+		$(CP) loader.bin $@; \
+	else \
+		$(BTXLD) -V $(BOOT_VERSION) -o $@ loader.bin; \
+	fi
 
 loader.bin: loader.sym
 	if [ `$(OBJDUMP) -t loader.sym | fgrep '*UND*' | wc -l` != 0 ]; then \
