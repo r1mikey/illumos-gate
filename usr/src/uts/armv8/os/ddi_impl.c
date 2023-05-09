@@ -1074,8 +1074,10 @@ impl_setup_ddi(void)
 	ndi_devi_alloc_sleep(ddi_root_node(), "ramdisk", (pnode_t)DEVI_SID_NODEID, &xdip);
 	(void) BOP_GETPROP(bootops, "ramdisk_start", (void *)&ramdisk_start);
 	(void) BOP_GETPROP(bootops, "ramdisk_end", (void *)&ramdisk_end);
+#if !defined(_EFI)
 	ramdisk_start = ntohll(ramdisk_start);
 	ramdisk_end = ntohll(ramdisk_end);
+#endif
 
 	rd_mem_prop.phys = ramdisk_start;
 	rd_mem_prop.size = ramdisk_end - ramdisk_start + 1;
@@ -1085,13 +1087,17 @@ impl_setup_ddi(void)
 	err = ndi_devi_bind_driver(xdip, 0);
 	ASSERT(err == 0);
 
+	prom_printf("impl_setup_ddi: about to get_boot_properties\n");
 	/*
 	 * Read in the properties from the boot.
 	 */
 	get_boot_properties();
+	prom_printf("impl_setup_ddi: get_boot_properties OK\n");
 
+	prom_printf("impl_setup_ddi: about to impl_bus_initialprobe\n");
 	/* do bus dependent probes. */
 	impl_bus_initialprobe();
+	prom_printf("impl_setup_ddi: impl_bus_initialprobe OK\n");
 }
 
 

@@ -176,7 +176,7 @@ kobj_boot_mountroot()
 	}
 
 	/* XXXARM: Why do this, and not just not swap it in the first place? */
-#if defined(__aarch64__)
+#if defined(__aarch64__) && !defined(_EFI)
 	rd_start = ntohll(rd_start);
 	rd_end = ntohll(rd_end);
 #endif

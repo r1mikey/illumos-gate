@@ -191,6 +191,7 @@ prom_getprop(pnode_t nodeid, const char *name, caddr_t value)
 int
 prom_setprop(pnode_t nodeid, const char *name, const caddr_t value, int len)
 {
+	prom_panic("prom_setprop: whodunnit?!\n");
 	int offset = fdt_node_offset_by_phandle(fdtp, (pnode_t)nodeid);
 	if (offset < 0)
 		return (-1);
@@ -378,6 +379,11 @@ prom_nextprop(pnode_t nodeid, const char *name, char *next)
 pnode_t
 prom_nextnode(pnode_t nodeid)
 {
+	if (fdtp == NULL) {
+		if (nodeid == 0)
+			return (DEVI_SID_NODEID);
+	}
+
 	if (nodeid == OBP_NONODE)
 		return (prom_rootnode());
 
@@ -487,7 +493,10 @@ prom_init(char *pgmname, void *cookie)
 	int err;
 	fdtp = cookie;
 
-	err = fdt_check_header(fdtp);
+	if (fdtp)
+		err = fdt_check_header(fdtp);
+	else
+		err = -1;
 	if (err == 0) {
 		phandle_t chosen = prom_chosennode();
 		if (chosen == OBP_NONODE) {

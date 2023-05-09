@@ -117,6 +117,7 @@ psci_call(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3)
 		return (psci_call_raw(a0, a1, a2, a3));
 	}
 }
+#endif
 
 void
 psci_init(void)
@@ -147,6 +148,9 @@ psci_init(void)
 	psci_migrate_id = pi->pi_migrate_id;
 
 	psci_initialized = B_TRUE;
+	/* XXXARM: for ACPI, use FADT for this, pass through from the shim */
+	/* see 5.2.9.4: ARM Architecture Boot Flags */
+	/* PSCI_COMPLIANT and PSCI_USE_HVC */
 }
 
 uint32_t

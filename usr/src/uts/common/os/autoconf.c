@@ -372,29 +372,38 @@ create_devinfo_tree(void)
 	major_t major;
 	pnode_t nodeid;
 
+	prom_printf("create_devinfo_tree: i_ddi_node_cache_init\n");
 	i_ddi_node_cache_init();
-#if defined(__sparc) || defined(__aarch64__)
+#if defined(__sparc) || (defined(__aarch64__) && !defined(_EFI))
 	nodeid = prom_nextnode(0);
 #else /* x86 */
+	prom_printf("create_devinfo_tree: nodeid = DEVI_SID_NODEID\n");
 	nodeid = DEVI_SID_NODEID;
 #endif
+	prom_printf("create_devinfo_tree: i_ddi_alloc_node\n");
 	top_devinfo = i_ddi_alloc_node(NULL, rootname,
 	    nodeid, -1, NULL, KM_SLEEP);
+	prom_printf("create_devinfo_tree: ndi_hold_devi\n");
 	ndi_hold_devi(top_devinfo);	/* never release the root */
 
+	prom_printf("create_devinfo_tree: i_ddi_add_devimap\n");
 	i_ddi_add_devimap(top_devinfo);
 
 	/*
 	 * Bind root node.
 	 * This code is special because root node has no parent
 	 */
+	prom_printf("create_devinfo_tree: ddi_name_to_major\n");
 	major = ddi_name_to_major("rootnex");
 	ASSERT(major != DDI_MAJOR_T_NONE);
 	DEVI(top_devinfo)->devi_major = major;
 	devnamesp[major].dn_head = top_devinfo;
+	prom_printf("create_devinfo_tree: i_ddi_set_binding_name\n");
 	i_ddi_set_binding_name(top_devinfo, rootname);
+	prom_printf("create_devinfo_tree: i_ddi_set_node_state\n");
 	i_ddi_set_node_state(top_devinfo, DS_BOUND);
 
+	prom_printf("create_devinfo_tree: di_dfs\n");
 	/*
 	 * Record that devinfos have been made for "rootnex."
 	 * di_dfs() is used to read the prom because it doesn't get the
@@ -409,9 +418,11 @@ create_devinfo_tree(void)
 	 */
 	{
 		extern void impl_setup_ddi(void);
+		prom_printf("create_devinfo_tree: impl_setup_ddi\n");
 		impl_setup_ddi();
 	}
 #endif /* x86 */
+	prom_printf("create_devinfo_tree: done\n");
 }
 
 /*

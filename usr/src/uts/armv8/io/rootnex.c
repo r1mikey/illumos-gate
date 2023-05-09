@@ -718,6 +718,7 @@ rootnex_ctl_reportdev(dev_info_t *dev)
 static int
 get_address_cells(pnode_t node)
 {
+	panic("get_address_cells: unimplemented\n");
 	int address_cells = 0;
 
 	while (node > 0) {
@@ -737,6 +738,7 @@ get_address_cells(pnode_t node)
 static int
 get_size_cells(pnode_t node)
 {
+	panic("get_size_cells: unimplemented\n");
 	int size_cells = 0;
 
 	while (node > 0) {
@@ -1058,6 +1060,7 @@ rootnex_map_handle(ddi_map_req_t *mp, off_t offset)
 static int
 get_interrupt_cells(pnode_t node)
 {
+	panic("get_interrupt_cells: unimplemented\n");
 	int interrupt_cells = 0;
 
 	while (node > 0) {
@@ -1085,6 +1088,7 @@ get_interrupt_cells(pnode_t node)
 static int
 get_pil(dev_info_t *rdip)
 {
+	panic("get_pil: unimplemented\n");
 	static struct {
 		const char *name;
 		int pil;

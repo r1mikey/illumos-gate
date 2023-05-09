@@ -42,6 +42,8 @@
 extern "C" {
 #endif
 
+#define	BP_MAX_STRLEN	32
+
 /*
  * masks to hand to bsys_alloc memory allocator
  * XXX	These names shouldn't really be srmmu derived.

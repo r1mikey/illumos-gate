@@ -355,6 +355,8 @@ startup(void)
 	startup_kmem();
 	startup_vm();
 	startup_modules();
+	prom_printf("startup: you shall not pass!\n");
+	for (;;) ;
 	startup_end();
 }
 
@@ -398,6 +400,7 @@ startup_init(void)
 		++prom_debug;
 		PRM_POINT("prom_debug found in boot enviroment");
 	}
+	++prom_debug;	/* XXXARM: MICHAEL: clean this mess up */
 
 	/*
 	 * Collect node, cpu and memory configuration information.
@@ -1268,6 +1271,8 @@ startup_modules(void)
 	 * then invoke bus specific code to probe devices.
 	 */
 	setup_ddi();
+	prom_printf("startup_modules: you shall not pass!\n");
+	for (;;) ;
 
 	/*
 	 * Set up the CPU module subsystem for the boot cpu in the native
