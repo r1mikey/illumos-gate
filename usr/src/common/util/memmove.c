@@ -26,11 +26,11 @@
 /*	Copyright (c) 1988 AT&T	*/
 /*	  All Rights Reserved  	*/
 
-#if !defined(_KMDB) && !defined(_KERNEL)
+#if !defined(_KMDB) && !defined(_KERNEL) && !defined(_BOOT)
 
 #include "lint.h"
 
-#endif /* !_KMDB && !_KERNEL */
+#endif /* !_KMDB && !_KERNEL && !_BOOT */
 
 /*
  * The SunStudio compiler may generate calls to _memmove; So we
@@ -40,7 +40,7 @@
 
 #include <sys/types.h>
 
-#if defined(_KERNEL)
+#if defined(_KERNEL) || defined(_BOOT)
 #include <sys/systm.h>
 #else
 #include <string.h>

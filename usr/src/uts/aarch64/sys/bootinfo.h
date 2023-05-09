@@ -76,8 +76,22 @@ struct xboot_info {
 	uint64_t		bi_phys_installed;
 	uint64_t		bi_boot_scratch;
 	uint64_t		bi_framebuffer;
+	uint64_t		bi_dbg2_pa;	/* terrible */
+	uint64_t		bi_dbg2_va;	/* terrible */
+	uint64_t		bi_dbg2_sz;	/* terrible */
+	uint64_t		bi_gic_dist_base;	/* terrible */
+	uint64_t		bi_gic_dist_size;	/* terrible */
+	uint64_t		bi_boot_sysp;		/* mmm... */
+	uint64_t		bi_acpi_xsdt;		/* no... */
+	uint64_t		bi_rsdp;		/* no... */
+	uint64_t		bi_smbios3;		/* no... */
 	uint32_t		bi_module_cnt;
 	uefi_arch_type_t	bi_uefi_arch;
+	uint32_t		bi_psci_use_hvc;	/* maybe? */
+	uint32_t		bi_use_psci;		/* maybe? */
+	uint32_t		bi_gic_version;		/* no */
+	uint32_t		bi_dbg2_type;		/* terrible */
+	uint32_t		bi_boothowto;		/* dunno */
 };
 
 #ifdef	__cplusplus
