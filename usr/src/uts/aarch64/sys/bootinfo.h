@@ -98,6 +98,9 @@ struct xboot_info {
 	uint64_t		bi_framebuffer;
 	uint64_t		bi_bsvc_uart_mmio_base;
 	uint64_t		bi_arch_timer_freq;
+	uint64_t		bi_acpi_xsdt;		/* no... */
+	uint64_t		bi_rsdp;		/* no... */
+	uint64_t		bi_smbios3;		/* no... */
 	xbi_bsvc_uart_type_t	bi_bsvc_uart_type;
 	uint32_t		bi_module_cnt;
 	uint32_t		bi_psci_version;
@@ -107,7 +110,9 @@ struct xboot_info {
 	uint32_t		bi_psci_cpu_on_id;
 	uint32_t		bi_psci_migrate_id;
 	uefi_arch_type_t	bi_uefi_arch;
+	uint32_t		bi_boothowto;		/* dunno */
 	uint32_t		bi_pad1;
+	uint32_t		bi_pad2;
 };
 
 #ifdef	__cplusplus

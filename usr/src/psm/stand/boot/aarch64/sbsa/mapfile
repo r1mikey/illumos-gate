@@ -1,0 +1,89 @@
+OUTPUT_ARCH(aarch64)
+ENTRY(_start)
+SECTIONS
+{
+  /* Read-only sections, merged into text segment: */
+  . = 0x0;
+  .text		: {
+    *eboot_entry.o(.text .text.*)
+    *(.text .stub .text.* .gnu.linkonce.t.*)
+    /* .gnu.warning sections are handled specially by elf32.em. */
+    *(.gnu.warning)
+    *(.plt)
+  }
+  . = ALIGN(16);
+  .data		: {
+    *(.rodata .rodata.* .gnu.linkonce.r.*)
+    *(.rodata1)
+    *(.sdata2 .sdata2.* .gnu.linkonce.s2.*)
+    *(.sbss2 .sbss2.* .gnu.linkonce.sb2.*)
+    *(.opd)
+    *(.data .data.* .gnu.linkonce.d.*)
+    *(.data1)
+    *(.plabel)
+    . = ALIGN(16);
+    __bss_start = .;
+    *(.sbss .sbss.* .gnu.linkonce.sb.*)
+    *(.scommon)
+    *(.dynbss)
+    *(.bss *.bss.*)
+    *(COMMON)
+    . = ALIGN(16);
+    /* ugh */
+    . = . + 0x10000;
+    _BootStackTop = .;
+    __bss_end = .;
+  }
+  . = ALIGN(16);
+  __gp = .;
+  .sdata	: {
+    *(.got.plt .got)
+    *(.sdata .sdata.* .gnu.linkonce.s.*)
+    *(dynsbss)
+    *(.scommon)
+  }
+  . = ALIGN(16);
+  .dynamic	: { *(.dynamic) }
+  . = ALIGN(16);
+  .rela.dyn	: {
+    *(.rela.text .rela.text.* .rela.gnu.linkonce.t.*)
+    *(.rela.rodata .rela.rodata.* .rela.gnu.linkonce.r.*)
+    *(.rela.data .rela.data.* .rela.gnu.linkonce.d.*)
+    *(.rela.got)
+    *(.rela.sdata .rela.sdata.* .rela.gnu.linkonce.s.*)
+    *(.rela.sbss .rela.sbss.* .rela.gnu.linkonce.sb.*)
+    *(.rela.sdata2 .rela.sdata2.* .rela.gnu.linkonce.s2.*)
+    *(.rela.sbss2 .rela.sbss2.* .rela.gnu.linkonce.sb2.*)
+    *(.rela.bss .rela.bss.* .rela.gnu.linkonce.b.*)
+    *(.rela.plt)
+    *(.relset_* .relaset_*)
+    *(.rela.dyn .rela.dyn.*)
+  }
+  . = ALIGN(16);
+  .reloc	: { *(.reloc) }
+  . = ALIGN(16);
+  .dynsym	: { *(.dynsym) }
+  _edata = .;
+
+  /* Unused sections */
+  .interp	: { *(.interp) }
+  .dynstr	: { *(.dynstr) }
+  .hash		: { *(.hash) }
+  _end = .;
+        . = ALIGN(0x1000);
+        _end = . ;
+        _LogBuf       = .;
+        . = . + 0x100000;
+    	_BootScratch  = .;
+    	. = . + 0x4000000;
+        _RamdiskStart = .;
+        # XXXARM: This is a truly massive -- 400MB -- allowance
+        # for the boot_archive.  This is so that if you build
+        # the whole system with DWARF for debugging, we can still load it.
+        # It is otherwise incredibly regrettable.
+        . = . + 0x19000000;
+        _RamdiskEnd  = .;
+        _dtb_start   = .;
+        . = . + 0x20000;
+        _BootEnd     = .;
+}

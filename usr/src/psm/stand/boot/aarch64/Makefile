@@ -28,6 +28,7 @@ include ../../../../Makefile.master
 
 SUBDIRS=		\
 	rpi4		\
+	sbsa		\
 	virt
 
 all		:=	TARGET= all

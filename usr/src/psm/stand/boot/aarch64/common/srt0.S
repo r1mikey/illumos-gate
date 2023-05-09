@@ -30,6 +30,13 @@
  * void _start(void)
  */
 	ENTRY(_start)
+#if defined(_EFI_STUB)
+	bl	1f
+	sub	x28, lr, #0x4
+	b	2f
+1:	ret
+2:
+#else
 	b	1f
 	.long   0
 	.quad   0
@@ -43,6 +50,7 @@
 	.byte   'M'
 	.byte   0x64
 	.long   0
+#endif
 1:
 	mov	x19, x0
 	mov	x20, x1
@@ -136,8 +144,14 @@ not_cortex_0:
 	eret
 
 el1:
+#if defined(_EFI_STUB)
+	/*
+	 * In the UEFI stub we need to relocate
+	 * ourselves prior to setting the stack.
+	 */
 	ldr	x1, =_BootStackTop
 	mov	sp, x1
+#endif
 
 	bl	dcache_clean_all
 
@@ -184,6 +198,16 @@ not_cortex_1:
 	bic	x0, x0, #CPACR_FPEN_MASK
 	//orr	x0, x0, #CPACR_FPEN_DIS
 	msr	cpacr_el1, x0
+
+#if defined(_EFI_STUB)
+	mov	x0, x28
+	adrp	x1, _DYNAMIC
+	add	x1, x1, :lo12:_DYNAMIC
+	bl	self_reloc
+
+	ldr	x1, =_BootStackTop
+	mov	sp, x1
+#endif
 
 	ldr	x0, =boot_args
 	str	x19, [x0, #8 * 0]
