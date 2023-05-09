@@ -45,7 +45,7 @@ $(ROOT_PSM_DIR):
 
 clean: FRC
 	$(RM) $(NFS_SRT0) $(NFS_OBJS) $(ASSYM_H)
-	$(RM) $(NFSBOOT_OUT) $(NFSBOOT_BIN) $(DTB)
+	$(RM) $(NFSBOOT_OUT) $(NFSBOOT_BIN) $(NFSBOOT_ELF) $(DTB)
 
 clobber: clean FRC
 

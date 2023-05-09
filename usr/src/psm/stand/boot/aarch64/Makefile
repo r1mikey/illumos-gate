@@ -29,6 +29,7 @@ include ../../../../Makefile.master
 SUBDIRS=		\
 	meson-gxbb	\
 	rpi4		\
+	sbsa		\
 	virt
 
 all		:= 	TARGET= all
