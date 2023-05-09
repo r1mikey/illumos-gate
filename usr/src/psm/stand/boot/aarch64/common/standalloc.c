@@ -65,6 +65,7 @@ static pte_t *l1_ptbl0;
 static pte_t *l1_ptbl1;
 
 static void init_pt(void);
+static void dump_tables(uint64_t tab, uint64_t va_offset);
 
 static inline int
 l1_pteidx(caddr_t vaddr)
@@ -165,6 +166,9 @@ init_pt(void)
 	write_ttbr0((uint64_t)l1_ptbl0);
 	write_ttbr1((uint64_t)l1_ptbl1);
 	isb();
+
+	if (debug)
+		dump_tables((uint64_t)l1_ptbl0, 0);
 
 	tlbi_allis();
 	dsb(ish);
@@ -386,4 +390,83 @@ reset_alloc(void)
 void
 resfree(enum RESOURCES type, caddr_t virtaddr, size_t size)
 {
+}
+
+static void
+dump_tables(uint64_t tab, uint64_t va_offset)
+{
+	uint_t shift_amt[] = {12, 21, 30, 39};
+	uint_t save_index[4];   /* for recursion */
+	char *save_table[4];    /* for recursion */
+	uint_t top_level = 3;
+	uint_t ptes_per_table = 512;
+	uint_t  l;
+	uint64_t va;
+	uint64_t pgsize;
+	int index;
+	int i;
+	pte_t pteval;
+	char *table;
+	static char *tablist = "\t\t\t";
+	char *tabs = tablist + 3 - top_level;
+	paddr_t pa, pa1;
+
+	table = (char *)(uintptr_t)tab;
+	l = top_level;
+	va = va_offset;
+
+	for (index = 0; index < ptes_per_table; ++index) {
+		pgsize = 1ull << shift_amt[l];
+		pteval = ((pte_t *)table)[index];
+		if (!(pteval & PTE_VALID))
+			goto next_entry;
+
+		printf("%s [L%u] 0x%p[%u] = 0x%" PRIx64 ", va=0x%" PRIx64,
+		    tabs + l, l, (void *)table, index, (uint64_t)pteval, va);
+		pa = pteval & PTE_PFN_MASK;
+		if (l == 0 ||
+		    (l != 0 && (pteval & PTE_TYPE_MASK) == PTE_BLOCK)) {
+			printf(" physaddr=0x%" PRIx64 "\n", pa);
+		} else {
+			printf(" => 0x%" PRIx64 "\n", pa);
+		}
+
+		if (l > 0 && (pteval & PTE_TYPE_MASK) == PTE_TABLE) {
+			save_table[l] = table;
+			save_index[l] = index;
+			--l;
+			index = -1;
+			table = (char *)(uintptr_t)(pteval & PTE_PFN_MASK);
+			goto recursion;
+		}
+
+		/*
+		 * shorten dump for consecutive mappings
+		 */
+		for (i = 1; index + i < ptes_per_table; ++i) {
+			pteval = ((pte_t *)table)[index + i];
+			if (!(pteval & PTE_TYPE_MASK))
+				break;
+			pa1 = (pteval & PTE_PFN_MASK);
+			if (pa1 != pa + i * pgsize)
+				break;
+		}
+
+		if (i > 2) {
+			printf("%s...\n", tabs + l);
+			va += pgsize * (i - 2);
+			index += i - 2;
+		}
+next_entry:
+		va += pgsize;
+recursion:
+		;
+	}
+
+	if (l < top_level) {
+		++l;
+		index = save_index[l];
+		table = save_table[l];
+		goto recursion;
+	}
 }
