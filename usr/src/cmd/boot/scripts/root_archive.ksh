@@ -64,8 +64,6 @@ do_unpack()
 		cd $MNT
 		find . -print | cpio -pdum "$UNPACKED_ROOT" 2> /dev/null
 	)
-	# increase the chances the unmount will succeed
-	umount -f $MNT
 }
 
 unpack()
@@ -96,9 +94,15 @@ unpack()
 	if [ "$FSTYP" = ufs ] ; then
 		/usr/sbin/mount -o ro,nologging $LOFIDEV $MNT
 		do_unpack
+		umount -f $MNT
 	elif [ "$FSTYP" = hsfs ] ; then
 		/usr/sbin/mount -F hsfs -o ro $LOFIDEV $MNT
 		do_unpack
+		umount $MNT
+		if [ $? -ne 0 ]; then
+			sleep 1
+			umount $MNT
+		fi
 	else
 		printf "invalid root archive\n"
 	fi
