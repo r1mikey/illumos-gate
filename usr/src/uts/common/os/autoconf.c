@@ -55,6 +55,9 @@
 #include <sys/ddi_ufm_impl.h>
 #include <sys/ksensor_impl.h>
 
+#if defined(__aarch64__)
+extern int prom_is_acpi;
+#endif
 extern dev_info_t *top_devinfo;
 extern dev_info_t *scsi_vhci_dip;
 extern struct hwc_class *hcl_head;
@@ -374,8 +377,18 @@ create_devinfo_tree(void)
 
 	prom_printf("create_devinfo_tree: i_ddi_node_cache_init\n");
 	i_ddi_node_cache_init();
-#if defined(__sparc) || (defined(__aarch64__) && !defined(_EFI))
+	/* XXXARM: this likely needs a runtime switch */
+#if defined(__sparc)
+	prom_printf("create_devinfo_tree: aarch64 and not _EFI\n");
 	nodeid = prom_nextnode(0);
+#elif defined(__aarch64__)
+	if (prom_is_acpi) {
+		prom_printf("create_devinfo_tree: nodeid = DEVI_SID_NODEID (aarch64 and ACPI)\n");
+		nodeid = DEVI_SID_NODEID;
+	} else {
+		prom_printf("create_devinfo_tree: aarch64 and not _EFI\n");
+		nodeid = prom_nextnode(0);
+	}
 #else /* x86 */
 	prom_printf("create_devinfo_tree: nodeid = DEVI_SID_NODEID\n");
 	nodeid = DEVI_SID_NODEID;

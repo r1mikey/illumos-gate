@@ -57,6 +57,7 @@ HDRS	=			\
 	prom_plat.h		\
 	promif.h		\
 	promimpl.h		\
+	prom_emul.h		\
 	psw.h			\
 	pte.h			\
 	reg.h			\

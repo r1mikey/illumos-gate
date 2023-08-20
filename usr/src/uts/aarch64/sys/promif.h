@@ -64,11 +64,11 @@ extern	pnode_t		prom_alias_node(void);
 extern	pnode_t		prom_rootnode(void);
 extern	int		prom_setprop(pnode_t nodeid, const char *name,
     const caddr_t value, int len);
-extern	int		prom_getproplen(pnode_t nodeid, const char *name);
-extern	int		prom_getprop(pnode_t nodeid, const char *name,
+extern	int		prom_getproplen(pnode_t nodeid, caddr_t name);
+extern	int		prom_getprop(pnode_t nodeid, caddr_t name,
     caddr_t value);
-extern	char		*prom_nextprop(pnode_t nodeid, const char *previous,
-    char *next);
+extern	char		*prom_nextprop(pnode_t nodeid, caddr_t previous,
+    caddr_t next);
 
 extern	char		*prom_decode_composite_string(void *buf, size_t buflen,
     char *prev);
@@ -77,7 +77,7 @@ extern	pnode_t		prom_findnode_by_phandle(phandle_t phandle);
 /*
  * Device tree and property group: IEEE 1275-1994 Only.
  */
-extern	pnode_t		prom_finddevice(const char *path);
+extern	pnode_t		prom_finddevice(char *path);
 
 extern	int		prom_bounded_getprop(pnode_t nodeid, char *name,
     caddr_t buffer, int buflen);

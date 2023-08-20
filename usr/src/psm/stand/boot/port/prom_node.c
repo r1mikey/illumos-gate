@@ -65,7 +65,7 @@ prom_findnode_by_phandle(phandle_t phandle)
 }
 
 int
-prom_getprop(pnode_t nodeid, const char *name, caddr_t value)
+prom_getprop(pnode_t nodeid, caddr_t name, caddr_t value)
 {
 	int offset = fdt_node_offset_by_phandle(fdtp, (pnode_t)nodeid);
 	if (offset < 0)
@@ -152,7 +152,7 @@ prom_setprop(pnode_t nodeid, const char *name, const caddr_t value, int len)
 }
 
 int
-prom_getproplen(pnode_t nodeid, const char *name)
+prom_getproplen(pnode_t nodeid, caddr_t name)
 {
 	int offset = fdt_node_offset_by_phandle(fdtp, (pnode_t)nodeid);
 	if (offset < 0)
@@ -198,7 +198,7 @@ prom_getproplen(pnode_t nodeid, const char *name)
 }
 
 pnode_t
-prom_finddevice(const char *device)
+prom_finddevice(caddr_t device)
 {
 	int offset = fdt_path_offset(fdtp, device);
 	if (offset < 0)
@@ -231,7 +231,7 @@ prom_chosennode(void)
 }
 
 char *
-prom_nextprop(pnode_t nodeid, const char *name, char *next)
+prom_nextprop(pnode_t nodeid, caddr_t name, char *next)
 {
 	int offset = fdt_node_offset_by_phandle(fdtp, (pnode_t)nodeid);
 	if (offset < 0)

@@ -36,10 +36,10 @@ int
 prom_get_prop_index(pnode_t node, const char *prop_name, const char *name)
 {
 	int len;
-	len = prom_getproplen(node, prop_name);
+	len = prom_getproplen(node, (caddr_t)prop_name);
 	if (len > 0) {
 		char *prop = __builtin_alloca(len);
-		prom_getprop(node, prop_name, prop);
+		prom_getprop(node, (caddr_t)prop_name, prop);
 		int offeset = 0;
 		int index = 0;
 		while (offeset < len) {
@@ -58,10 +58,10 @@ prom_get_prop_int(pnode_t node, const char *name, int def)
 	int value = def;
 
 	while (node > 0) {
-		int len = prom_getproplen(node, name);
-		if (len == sizeof (int)) {
+		int len = prom_getproplen(node, (caddr_t)name);
+		if (len == sizeof(int)) {
 			int prop;
-			prom_getprop(node, name, (caddr_t)&prop);
+			prom_getprop(node, (caddr_t)name, (caddr_t)&prop);
 			value = ntohl(prop);
 			break;
 		}
@@ -79,8 +79,8 @@ prom_get_prop_u64(pnode_t node, const char *name, uint64_t def)
 	uint64_t prop;
 	uint64_t value = def;
 
-	if (node > 0 && prom_getproplen(node, name) == sizeof (uint64_t)) {
-		prom_getprop(node, name, (caddr_t)&prop);
+	if (node > 0 && prom_getproplen(node, (char *)name) == sizeof (uint64_t)) {
+		prom_getprop(node, (char *)name, (caddr_t)&prop);
 		value = ntohll(prop);
 	}
 
@@ -93,8 +93,8 @@ prom_get_prop_u32(pnode_t node, const char *name, uint32_t def)
 	uint32_t prop;
 	uint32_t value = def;
 
-	if (node > 0 && prom_getproplen(node, name) == sizeof (uint32_t)) {
-		prom_getprop(node, name, (caddr_t)&prop);
+	if (node > 0 && prom_getproplen(node, (char *)name) == sizeof (uint32_t)) {
+		prom_getprop(node, (char *)name, (caddr_t)&prop);
 		value = ntohl(prop);
 	}
 

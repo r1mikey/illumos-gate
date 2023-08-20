@@ -26,6 +26,8 @@
 
 #PLATVIRTIO_OBJS += virtio_main.o virtio_dma.o virtio_mmio.o
 #TODPL031_OBJS += todpl031.o
+UEFIRT_OBJS += uefirt.o
+TODUEFI_OBJS += toduefi.o
 
 # XXXARM: I might be mis-using this.  These are what would be the platmod, if
 # we didn't need it so early for console I/O

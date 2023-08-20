@@ -134,7 +134,7 @@ virtblk_chip_reset(struct virtblk_sc *sc)
 static int
 virtblk_match(const char *name)
 {
-	pnode_t node = prom_finddevice(name);
+	pnode_t node = prom_finddevice((caddr_t)name);
 	if (node <= 0)
 		return 0;
 	if (!prom_is_compatible(node, "virtio-blk"))
@@ -159,7 +159,7 @@ virtblk_open(const char *name)
 	memset(sc, 0, sizeof(struct virtblk_sc));
 
 	uint64_t base;
-	if (prom_get_reg_address(prom_finddevice(name), 0, &base) != 0)
+	if (prom_get_reg_address(prom_finddevice((caddr_t)name), 0, &base) != 0)
 		return -1;
 
 	sc->base = base;

@@ -56,7 +56,10 @@
 
 extern void return_instr(void);
 
+void mach_init();
+
 uint_t cp_haltset_fanout = 0;
+void (*psminitf)()	= mach_init;
 int (*addintr)(void *, int, avfunc, char *, int, caddr_t, caddr_t, uint64_t *,
     dev_info_t *) = NULL;
 void (*remintr)(void *, int, avfunc, int) = NULL;

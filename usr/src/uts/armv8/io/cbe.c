@@ -45,6 +45,13 @@
 #include <sys/promif.h>
 #include <sys/arch_timer.h>
 
+#include <sys/bootconf.h>
+#include <sys/acpi/acpi.h>
+#include <sys/acpi/acconfig.h>
+
+extern int prom_is_acpi;
+extern int prom_is_fdt;
+
 static int cbe_ticks = 0;
 
 /*
@@ -317,7 +324,46 @@ get_interrupt_cell(void)
 }
 
 static int
-get_cbe_vector(void)
+get_cbe_vector_acpi(void)
+{
+	uint64_t gtdt_addr;
+	ACPI_TABLE_GTDT *gtdt;
+	int irq = -1;
+
+	if (BOP_GETPROPLEN(bootops, "hint.acpi.0.gtdt") > sizeof(gtdt_addr) ||
+	    BOP_GETPROP(bootops, "hint.acpi.0.gtdt", &gtdt_addr) < 0)
+		return (-1);
+
+	prom_printf("get_cbe_vector_acpi: GTDT at 0x%lx\n", gtdt_addr);
+	gtdt = (ACPI_TABLE_GTDT *) gtdt_addr;
+
+	/*
+	 * gtdt->NonSecureEl1Interrupt GSIV for the non-secure EL1 timer.
+	 * gtdt->NonSecureEl1Flags Flags for the non-secure EL1 timer.
+	 * gtdt->VirtualTimerInterrupt GSIV for the virtual EL1 timer.
+	 * gtdt->VirtualTimerFlags Flags for the virtual EL1 timer.
+	 *
+	 * IRQ_MODE_MASK 0x00000001
+	 * IRQ_MODE_LEVEL 0x00000000
+	 * IRQ_MODE_EDGE 0x00000001
+	 *
+	 * IRQ_POLARITY_MASK 0x00000002
+	 * IRQ_POLARITY_ACTIVE_HIGH 0x00000000
+	 * IRQ_POLARITY_ACTIVE_LOW 0x00000002
+	 *
+	 * ALWAYS_ON_MASK 0x00000004
+	 * ALWAYS_ON_NO 0x00000000
+	 * ALWAYS_ON_YES 0x00000004
+	 */
+	irq = (int) gtdt->NonSecureEl1Interrupt;
+	/* this loses flags, which is rubbish */
+	prom_printf("get_cbe_vector_acpi: NS EL1 timer IRQ is %d\n", irq);
+
+        return (irq);
+}
+
+static int
+get_cbe_vector_fdt(void)
 {
 	cpu_t *cpu = CPU;
 	pnode_t timer = prom_finddevice("/timer");
@@ -373,6 +419,19 @@ get_cbe_vector(void)
 	return irq;
 }
 
+static int
+get_cbe_vector(void)
+{
+	int irq = -1;
+
+	if (prom_is_acpi)
+		irq = get_cbe_vector_acpi();
+	else if (prom_is_fdt)
+		irq = get_cbe_vector_fdt();
+
+	return (irq);
+}
+
 void
 cbe_init(void)
 {
@@ -403,6 +462,7 @@ cbe_init(void)
 	cyclic_init(&cbe, cbe_timer_resolution);
 	mutex_exit(&cpu_lock);
 
+	/* XXXARM: we completely ignore polarity and mode */
 	int cbe_vector = get_cbe_vector();
 	if (cbe_vector > 0) {
 		/* XXXARM */

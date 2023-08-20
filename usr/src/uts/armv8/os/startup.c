@@ -207,6 +207,8 @@ int prom_debug = 0;
 
 extern int size_pse_array(pgcnt_t, int);
 
+extern int prom_is_acpi;
+
 /*
  * This structure is used to keep track of the intial allocations
  * done in startup_memlist(). The value of NUM_ALLOCATIONS needs to
@@ -355,8 +357,6 @@ startup(void)
 	startup_kmem();
 	startup_vm();
 	startup_modules();
-	prom_printf("startup: you shall not pass!\n");
-	for (;;) ;
 	startup_end();
 }
 
@@ -920,22 +920,33 @@ startup_end(void)
 
 	PRM_POINT("startup_end() starting...");
 
+#if 0
+	write_vbar((uintptr_t)exception_vector);
+	prom_printf("startup_end: VBAR done\n");
+#endif
+
 	/*
 	 * Perform tasks that get done after most of the VM
 	 * initialization has been done but before the clock
 	 * and other devices get started.
 	 */
+	prom_printf("startup_end: about to kern_setup\n");
 	kern_setup1();
+	prom_printf("startup_end: kern_setup done\n");
 
 	/*
 	 * Perform CPC initialization for this CPU.
 	 */
+	prom_printf("startup_end: about to kcpc_hw_init\n");
 	kcpc_hw_init(CPU);
+	prom_printf("startup_end: kcpc_hw_init done\n");
 
 	/*
 	 * Initialize cpu event framework.
 	 */
+	prom_printf("startup_end: about to cpu_event_init\n");
 	cpu_event_init();
+	prom_printf("startup_end: cpu_event_init done\n");
 
 	/*
 	 * If needed, load TOD module now so that ddi_get_time(9F) etc. work
@@ -957,25 +968,41 @@ startup_end(void)
 	 * Set the isa_list string to the defined instruction sets we
 	 * support.
 	 */
+	prom_printf("startup_end: about to cpu_intr_alloc\n");
 	cpu_intr_alloc(CPU, NINTR_THREADS);
+	prom_printf("startup_end: cpu_intr_alloc done\n");
 
+	prom_printf("startup_end: about to mach_init\n");
 	mach_init();
+	prom_printf("startup_end: mach_init done\n");
 
 	PRM_POINT("Enabling interrupts");
+#if 0
+	(*picinitf)();
+	sti();
+#endif
+	prom_printf("startup_end: about to set_base_spl\n");
 	set_base_spl();
+	prom_printf("startup_end: set_base_spl done\n");
+	prom_printf("startup_end: about to enable_irq\n");
 	enable_irq();
+	prom_printf("startup_end: enable_irq done\n");
 
+	prom_printf("startup_end: about to add_avsoftintr[softlevel1]\n");
 	(void) add_avsoftintr((void *)&softlevel1_hdl, 1, softlevel1,
 	    "softlevel1", NULL, NULL); /* XXX to be moved later */
+	prom_printf("startup_end: add_avsoftintr[softlevel1] done\n");
 
 	/*
 	 * Register these software interrupts for ddi timer.
 	 * Software interrupts up to the level 10 are supported.
 	 */
 	for (i = DDI_IPL_1; i <= DDI_IPL_10; i++) {
+		prom_printf("startup_end: about to add_avsoftintr[ddi_periodic]\n");
 		(void) add_avsoftintr((void *)&softlevel_hdl[i-1], i,
 		    (avfunc)(uintptr_t)ddi_periodic_softintr, "ddi_periodic",
 		    (caddr_t)(uintptr_t)i, NULL);
+		prom_printf("startup_end: add_avsoftintr[ddi_periodic] done\n");
 	}
 	PRM_POINT("startup_end() done");
 }
@@ -1175,6 +1202,43 @@ atoi(char *p)
 }
 
 static void
+startup_smbios(void)
+{
+	/* XXXARM: port the SMBIOS code */
+#if 0
+	id_t smid;
+	smbios_system_t smsys;
+	smbios_info_t sminfo;
+	char *mfg;
+
+	/*
+	 * Load the System Management BIOS into the global ksmbios
+	 * handle, if an SMBIOS is present on this system.
+	 * Also set "si-hw-provider" property, if not already set.
+	 */
+	ksmbios = smbios_open(NULL, SMB_VERSION, ksmbios_flags, NULL);
+	if (ksmbios != NULL &&
+	    ((smid = smbios_info_system(ksmbios, &smsys)) != SMB_ERR) &&
+	    (smbios_info_common(ksmbios, smid, &sminfo)) != SMB_ERR) {
+		mfg = (char *)sminfo.smbi_manufacturer;
+		if (BOP_GETPROPLEN(bootops, "si-hw-provider") < 0) {
+			extern char hw_provider[];
+			int i;
+			for (i = 0; i < SYS_NMLN; i++) {
+				if (isprint(mfg[i])) {
+					hw_provider[i] = mfg[i];
+				} else {
+					hw_provider[i] = '\0';
+					break;
+				}
+			}
+			hw_provider[SYS_NMLN - 1] = '\0';
+		}
+	}
+#endif
+}
+
+static void
 startup_modules(void)
 {
 	int cnt;
@@ -1271,8 +1335,18 @@ startup_modules(void)
 	 * then invoke bus specific code to probe devices.
 	 */
 	setup_ddi();
-	prom_printf("startup_modules: you shall not pass!\n");
-	for (;;) ;
+
+	/* XXXARM: SMBIOS processing here */
+
+	if (prom_is_acpi) {
+		PRM_POINT("startup_modules: loading SMBIOS");
+		startup_smbios();
+#if 0
+		PRM_POINT("startup_modules: loading acpica");
+		if (modload("misc", "acpica") == -1)
+			halt("Can't load acpica");
+#endif
+	}
 
 	/*
 	 * Set up the CPU module subsystem for the boot cpu in the native
@@ -1285,6 +1359,9 @@ startup_modules(void)
 	 */
 	PRM_POINT("startup_modules: calling prom_setup...");
 	prom_setup();
+
+	/* XXXARM: platmod here */
+	/* XXXARM: psm_modload here */
 
 	PRM_POINT("startup_modules() done");
 }

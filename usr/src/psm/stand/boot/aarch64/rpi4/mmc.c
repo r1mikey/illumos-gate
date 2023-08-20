@@ -957,7 +957,7 @@ mmc_open(const char *name)
 	struct mmc_sc *sc = kmem_alloc(sizeof(struct mmc_sc), 0);
 	memset(sc, 0, sizeof(struct mmc_sc));
 
-	node = prom_finddevice(name);
+	node = prom_finddevice((caddr_t)name);
 	if (node <= 0)
 		return -1;
 
@@ -1228,7 +1228,7 @@ mmc_read(int dev, caddr_t buf, size_t buf_len, uint_t startblk)
 static int
 mmc_match(const char *path)
 {
-	pnode_t node = prom_finddevice(path);
+	pnode_t node = prom_finddevice((caddr_t)path);
 	if (node <= 0)
 		return 0;
 

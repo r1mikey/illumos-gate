@@ -22,4 +22,10 @@ dir  path=platform/ARM,sbsa/kernel/aarch64
 file path=platform/ARM,sbsa/kernel/aarch64/unix mode=0755 \
     pkg.depend.bypass-generate=dtracestubs
 file path=platform/ARM,sbsa/kernel/aarch64/unix.shim mode=0644
+dir  path=platform/ARM,sbsa/kernel/misc
+dir  path=platform/ARM,sbsa/kernel/misc/aarch64
+file path=platform/ARM,sbsa/kernel/misc/aarch64/uefirt mode=0755
+dir  path=platform/ARM,sbsa/kernel/tod
+dir  path=platform/ARM,sbsa/kernel/tod/aarch64
+file path=platform/ARM,sbsa/kernel/tod/aarch64/toduefi mode=0755
 license lic_CDDL license=lic_CDDL

@@ -1105,12 +1105,12 @@ get_pil(dev_info_t *rdip)
 
 	pnode_t node = ddi_get_nodeid(rdip);
 	for (int i = 0; type_name[i]; i++) {
-		int len = prom_getproplen(node, type_name[i]);
+		int len = prom_getproplen(node, (caddr_t)type_name[i]);
 		if (len <= 0) {
 			continue;
 		}
 		char *name = __builtin_alloca(len);
-		prom_getprop(node, type_name[i], name);
+		prom_getprop(node, (caddr_t)type_name[i], name);
 
 		for (int j = 0; name_to_pil[j].name; j++) {
 			if (strcmp(name_to_pil[j].name, name) == 0) {

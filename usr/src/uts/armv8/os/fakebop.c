@@ -309,7 +309,11 @@ void bop_init(struct xboot_info *xbp)
 	sysp = (boot_syscalls_t *)xbp->bi_boot_sysp;
 #endif
 
+#if defined(_EFI)
+	prom_init("kernel", (void *)xbp->bi_rsdp);
+#else
 	prom_init("kernel", (void *)xbp->bi_fdt);
+#endif
 	bmemlist_init();
 
 	/*
@@ -457,14 +461,14 @@ int
 do_bsys_getproplen(bootops_t *bop, const char *name)
 {
 	pnode_t chosen = prom_chosennode();
-	return prom_getproplen(chosen, name);
+	return prom_getproplen(chosen, (caddr_t)name);
 }
 
 int
 do_bsys_getprop(bootops_t *bop, const char *name, void *value)
 {
 	pnode_t chosen = prom_chosennode();
-	prom_getprop(chosen, name, (caddr_t)value);
+	prom_getprop(chosen, (caddr_t)name, (caddr_t)value);
 	return 0;
 }
 
@@ -546,6 +550,7 @@ bsetprop(int flags, char *name, int nlen, void *value, int vlen)
 static void
 bsetprops(char *name, char *value)
 {
+	bop_printf(NULL, "bsetprops: <%s> => <%s>\n", name, value);
 	bsetprop(DDI_PROP_TYPE_STRING, name, strlen(name),
 	    value, strlen(value) + 1);
 }
@@ -553,6 +558,7 @@ bsetprops(char *name, char *value)
 static void
 bsetprop32(char *name, uint32_t value)
 {
+	bop_printf(NULL, "bsetprop32: <%s> => <%" PRIx32 ">\n", name, value);
 	bsetprop(DDI_PROP_TYPE_INT, name, strlen(name),
 	    (void *)&value, sizeof (value));
 }
@@ -560,6 +566,7 @@ bsetprop32(char *name, uint32_t value)
 static void
 bsetprop64(char *name, uint64_t value)
 {
+	bop_printf(NULL, "bsetprop64: <%s> => <%" PRIx64 ">\n", name, value);
 	bsetprop(DDI_PROP_TYPE_INT64, name, strlen(name),
 	    (void *)&value, sizeof (value));
 }
@@ -570,6 +577,7 @@ bsetpropsi(char *name, int value)
 	char prop_val[32];
 
 	(void) snprintf(prop_val, sizeof (prop_val), "%d", value);
+	bop_printf(NULL, "bsetpropsi: <%s> => <%s>\n", name, prop_val);
 	bsetprops(name, prop_val);
 }
 
@@ -949,6 +957,7 @@ build_boot_properties(struct xboot_info *xbp)
 	/*
 	 * Port-specific values carried from boot info to props
 	 */
+	bsetprop64("uefi.systab", xbp->bi_uefi_systab);
 	bsetprop64("gic.version", xbp->bi_gic_version);
 	bsetprop64("gic.dist.base", xbp->bi_gic_dist_base);
 	bsetprop64("gic.dist.size", xbp->bi_gic_dist_size);

@@ -74,6 +74,10 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/aarch64/io/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/common/io/acpica/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 $(OBJS_DIR)/%.o:		$(UTSBASE)/aarch64/io/acpica/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)

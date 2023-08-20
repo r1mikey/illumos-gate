@@ -52,6 +52,7 @@ CORE_OBJS +=			\
 	intr.o			\
 	machdep.o		\
 	trap.o			\
+	mp_implfuncs.o		\
 	mp_machdep.o		\
 	mp_startup.o		\
 	startup.o		\

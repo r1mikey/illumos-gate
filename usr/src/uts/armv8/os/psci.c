@@ -117,7 +117,6 @@ psci_call(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3)
 		return (psci_call_raw(a0, a1, a2, a3));
 	}
 }
-#endif
 
 void
 psci_init(void)

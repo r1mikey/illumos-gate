@@ -15,7 +15,10 @@ ROOT_PLAT_DRV_DIRS	= $(ROOT_VIRT_DRV_DIR)
 #
 # Define modules
 #
-VIRT_KMODS	=
+SBSA_KMODS	=	\
+	uefirt		\
+	toduefi
+
 #VIRT_KMODS	=	\
 #	todpl031	\
 #	virtio

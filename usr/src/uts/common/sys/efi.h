@@ -79,7 +79,14 @@ extern "C" {
 	{ 0x880aaca3, 0x4adc, 0x4a04, 0x90, 0x79, \
 	{ 0xb7, 0x47, 0x34, 0x8, 0x25, 0xe5 } }
 
+#define	EFI_RT_PROPERTIES_TABLE_GUID	\
+	{ 0xeb66918a, 0x7eef, 0x402a, 0x84, 0x2e, \
+	{ 0x93, 0x1d, 0x21, 0xc3, 0x8a, 0xe9 } }
+
 typedef struct uuid efi_guid_t __aligned(8);
+
+typedef uint16_t EFI_CHAR16;
+typedef uint8_t EFI_BOOLEAN;
 
 /* Memory data */
 typedef uint64_t	EFI_PHYSICAL_ADDRESS;
@@ -135,7 +142,57 @@ typedef struct {
 	uint64_t		Attribute;
 } __packed EFI_MEMORY_DESCRIPTOR;
 
+/* EFI_TIME and friends */
+
+#define	EFI_TIME_ADJUST_DAYLIGHT	0x01
+#define	EFI_TIME_IN_DAYLIGHT		0x02
+#define	EFI_UNSPECIFIED_TIMEZONE	0x07FF
+
+typedef struct _EFI_TIME {
+	uint16_t		Year;		/* 1900 - 9999 */
+	uint8_t			Month;		/* 1 - 12 */
+	uint8_t			Day;		/* 1 - 31 */
+	uint8_t			Hour;		/* 0 - 23 */
+	uint8_t			Minute;		/* 0 - 59 */
+	uint8_t			Second;		/* 0 - 59 */
+	uint8_t			Pad1;
+	uint32_t		Nanosecond;	/* 0 – 999999999 */
+	uint16_t		TimeZone;	/* -1440 to 1440 or 2047 */
+	uint8_t			Daylight;
+	uint8_t			Pad2;
+} __packed EFI_TIME;
+
+/* XXXARM: should this be packed? */
+typedef struct _EFI_TIME_CAPABILITIES {
+	uint32_t		Resolution;
+	uint32_t		Accuracy;
+	EFI_BOOLEAN		SetsToZero;
+} EFI_TIME_CAPABILITIES;
+
 /* Tables */
+
+#define	EFI_RT_PROPERTIES_TABLE_VERSION	0x1
+
+#define	EFI_RT_SUPPORTED_GET_TIME			0x00000001
+#define	EFI_RT_SUPPORTED_SET_TIME			0x00000002
+#define	EFI_RT_SUPPORTED_GET_WAKEUP_TIME		0x00000004
+#define	EFI_RT_SUPPORTED_SET_WAKEUP_TIME		0x00000008
+#define	EFI_RT_SUPPORTED_GET_VARIABLE			0x00000010
+#define	EFI_RT_SUPPORTED_GET_NEXT_VARIABLE_NAME		0x00000020
+#define	EFI_RT_SUPPORTED_SET_VARIABLE			0x00000040
+#define	EFI_RT_SUPPORTED_SET_VIRTUAL_ADDRESS_MAP	0x00000080
+#define	EFI_RT_SUPPORTED_CONVERT_POINTER		0x00000100
+#define	EFI_RT_SUPPORTED_GET_NEXT_HIGH_MONOTONIC_COUNT	0x00000200
+#define	EFI_RT_SUPPORTED_RESET_SYSTEM			0x00000400
+#define	EFI_RT_SUPPORTED_UPDATE_CAPSULE			0x00000800
+#define	EFI_RT_SUPPORTED_QUERY_CAPSULE_CAPABILITIES	0x00001000
+#define	EFI_RT_SUPPORTED_QUERY_VARIABLE_INFO		0x00002000
+
+typedef struct _EFI_RT_PROPERTIES_TABLE {
+	uint16_t Version;
+	uint16_t Length;
+	uint32_t RuntimeServicesSupported;
+} __packed EFI_RT_PROPERTIES_TABLE;
 
 typedef struct {
 	uint64_t Signature;
@@ -172,7 +229,10 @@ typedef struct _EFI_CONFIGURATION_TABLE64 {
 	efiptr64_t	VendorTable;
 } __packed EFI_CONFIGURATION_TABLE64;
 
-#define	EFI_SUCCESS	0
+#define	EFI_SUCCESS		0
+#define	EFI_INVALID_PARAMETER	2
+#define	EFI_UNSUPPORTED		3
+#define	EFI_DEVICE_ERROR	7
 
 typedef uint64_t	EFI_STATUS64;
 
@@ -190,6 +250,15 @@ typedef EFI_STATUS64 (*EFI_SET_VIRTUAL_ADDRESS_MAP64) (
 	EFI_MEMORY_DESCRIPTOR	*VirtualMap
 );
 
+typedef EFI_STATUS64 (*EFI_GETTIME) (
+	EFI_TIME		*Time,
+	EFI_TIME_CAPABILITIES	*Capabilities
+);
+
+typedef EFI_STATUS64 (*EFI_SETTIME) (
+	EFI_TIME		*Time
+);
+
 typedef void (*EFI_RESET_SYSTEM64) (
 	EFI_RESET_TYPE		ResetType,
 	EFI_STATUS64		ResetStatus,
@@ -197,12 +266,14 @@ typedef void (*EFI_RESET_SYSTEM64) (
 	uint16_t		*ResetData
 );
 
+#define	EFI_RUNTIME_SERVICES_SIGNATURE	0x56524553544e5552
+
 typedef struct _EFI_RUNTIME_SERVICES64 {
 	EFI_TABLE_HEADER		Hdr;
 
 	/* Time services */
-	efiptr64_t			GetTime;
-	efiptr64_t			SetTime;
+	EFI_GETTIME			GetTime;
+	EFI_SETTIME			SetTime;
 	efiptr64_t			GetWakeupTime;
 	efiptr64_t			SetWakeupTime;
 
@@ -266,7 +337,11 @@ typedef struct _EFI_SYSTEM_TABLE64 {
 	efiptr64_t		BootServices;
 
 	uint64_t		NumberOfTableEntries;
-	efiptr64_t		ConfigurationTable;
+#if defined(__aarch64__)
+	EFI_CONFIGURATION_TABLE64	*ConfigurationTable;
+#else
+	efiptr64_t			ConfigurationTable;
+#endif
 } __packed EFI_SYSTEM_TABLE64;
 
 #ifdef __cplusplus

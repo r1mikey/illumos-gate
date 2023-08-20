@@ -48,7 +48,7 @@ static void _reset(bool poff)
 void
 set_platform_defaults(void)
 {
-	tod_module_name = "todefirt";
+	tod_module_name = "toduefi";
 }
 
 static struct boot_syscalls _sysp =

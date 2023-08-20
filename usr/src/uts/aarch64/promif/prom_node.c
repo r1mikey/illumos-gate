@@ -27,6 +27,7 @@
 #include <libfdt.h>
 #include <sys/promif.h>
 #include <sys/promimpl.h>
+#include <sys/prom_emul.h>
 #include <sys/systm.h>
 #include <sys/sunddi.h>
 
@@ -49,7 +50,15 @@
  *    rather than manipulating the actual FDT.
  */
 
+extern int prom_set_rsdp(void *ptr);
+
+int	prom_is_fdt = 0;
+int	prom_is_acpi = 0;
+
 static struct fdt_header *fdtp;
+
+static int prom_getproplen_fdt(pnode_t nodeid, const char *name);
+static pnode_t prom_nextnode_acpi(pnode_t nodeid);
 
 /*
  * This exists to keep us from trying to check for over-long property names
@@ -92,6 +101,9 @@ get_phandle(int offset)
 pnode_t
 prom_findnode_by_phandle(phandle_t phandle)
 {
+	if (!prom_is_fdt)
+		prom_panic("prom_findnode_by_phandle: not an FDT prom");
+
 	int offset = fdt_node_offset_by_phandle(fdtp, phandle);
 	if (offset < 0)
 		return (-1);
@@ -133,8 +145,14 @@ no_name:
 	}
 }
 
-int
-prom_getprop(pnode_t nodeid, const char *name, caddr_t value)
+static int
+prom_getprop_acpi(pnode_t nodeid, caddr_t name, caddr_t value)
+{
+	return (promif_getprop(nodeid, name, value));
+}
+
+static int
+prom_getprop_fdt(pnode_t nodeid, const char *name, caddr_t value)
 {
 	int offset = fdt_node_offset_by_phandle(fdtp, nodeid);
 
@@ -189,9 +207,23 @@ prom_getprop(pnode_t nodeid, const char *name, caddr_t value)
 }
 
 int
+prom_getprop(pnode_t nodeid, caddr_t name, caddr_t value)
+{
+	if (prom_is_acpi)
+		return prom_getprop_acpi(nodeid, name, value);
+
+	if (prom_is_fdt)
+		return prom_getprop_fdt(nodeid, name, value);
+
+	prom_panic("prom_getprop: no implementation selected");
+}
+
+int
 prom_setprop(pnode_t nodeid, const char *name, const caddr_t value, int len)
 {
-	prom_panic("prom_setprop: whodunnit?!\n");
+	if (!prom_is_fdt)
+		prom_panic("prom_setprop: not an FDT prom");
+
 	int offset = fdt_node_offset_by_phandle(fdtp, (pnode_t)nodeid);
 	if (offset < 0)
 		return (-1);
@@ -210,8 +242,14 @@ prom_setprop(pnode_t nodeid, const char *name, const caddr_t value, int len)
 	return (r == 0 ? len : -1);
 }
 
-int
-prom_getproplen(pnode_t nodeid, const char *name)
+static int
+prom_getproplen_acpi(pnode_t nodeid, caddr_t name)
+{
+	return (promif_getproplen(nodeid, name));
+}
+
+static int
+prom_getproplen_fdt(pnode_t nodeid, const char *name)
 {
 	int offset = fdt_node_offset_by_phandle(fdtp, (pnode_t)nodeid);
 
@@ -260,8 +298,26 @@ prom_getproplen(pnode_t nodeid, const char *name)
 	return (len);
 }
 
-pnode_t
-prom_finddevice(const char *device)
+int
+prom_getproplen(pnode_t nodeid, caddr_t name)
+{
+	if (prom_is_acpi)
+		return prom_getproplen_acpi(nodeid, name);
+
+	if (prom_is_fdt)
+		return prom_getproplen_fdt(nodeid, name);
+
+	prom_panic("prom_getproplen: no implementation selected");
+}
+
+static pnode_t
+prom_finddevice_acpi(char *path)
+{
+	return (OBP_BADNODE);
+}
+
+static pnode_t
+prom_finddevice_fdt(const char *device)
 {
 	int offset = fdt_path_offset(fdtp, device);
 	if (offset < 0)
@@ -275,7 +331,27 @@ prom_finddevice(const char *device)
 }
 
 pnode_t
-prom_rootnode(void)
+prom_finddevice(char *path)
+{
+	if (prom_is_acpi)
+		return prom_finddevice_acpi(path);
+
+	if (prom_is_fdt)
+		return prom_finddevice_fdt(path);
+
+	prom_panic("prom_finddevice: no implementation selected");
+}
+
+static pnode_t
+prom_rootnode_acpi(void)
+{
+	static pnode_t rootnode;
+
+	return (rootnode ? rootnode : (rootnode = prom_nextnode_acpi(OBP_NONODE)));
+}
+
+static pnode_t
+prom_rootnode_fdt(void)
 {
 	pnode_t root = prom_finddevice("/");
 	if (root < 0) {
@@ -285,7 +361,25 @@ prom_rootnode(void)
 }
 
 pnode_t
-prom_chosennode(void)
+prom_rootnode(void)
+{
+	if (prom_is_acpi)
+		return prom_rootnode_acpi();
+
+	if (prom_is_fdt)
+		return prom_rootnode_fdt();
+
+	prom_panic("prom_rootnode: neither FDT nor ACPI selected");
+}
+
+static pnode_t
+prom_chosennode_acpi(void)
+{
+	return (OBP_NONODE);
+}
+
+static pnode_t
+prom_chosennode_fdt(void)
 {
 	pnode_t node = prom_finddevice("/chosen");
 	if (node != OBP_BADNODE)
@@ -294,7 +388,25 @@ prom_chosennode(void)
 }
 
 pnode_t
-prom_optionsnode(void)
+prom_chosennode(void)
+{
+	if (prom_is_acpi)
+		return prom_chosennode_acpi();
+
+	if (prom_is_fdt)
+		return prom_chosennode_fdt();
+
+	prom_panic("prom_chosennode: no implementation selected");
+}
+
+static pnode_t
+prom_optionsnode_acpi(void)
+{
+	return (OBP_NONODE);
+}
+
+static pnode_t
+prom_optionsnode_fdt(void)
 {
 	pnode_t node = prom_finddevice("/options");
 	if (node != OBP_BADNODE)
@@ -302,12 +414,30 @@ prom_optionsnode(void)
 	return (OBP_NONODE);
 }
 
+pnode_t
+prom_optionsnode(void)
+{
+	if (prom_is_acpi)
+		return prom_optionsnode_acpi();
+
+	if (prom_is_fdt)
+		return prom_optionsnode_fdt();
+
+	prom_panic("prom_optionsnode: no implementation selected");
+}
+
 /*
  * Returning NULL means something went wrong, returning '\0' means no more
  * properties.
  */
-char *
-prom_nextprop(pnode_t nodeid, const char *name, char *next)
+static caddr_t
+prom_nextprop_acpi(pnode_t nodeid, caddr_t previous, caddr_t next)
+{
+	return (promif_nextprop(nodeid, previous, next));
+}
+
+static char *
+prom_nextprop_fdt(pnode_t nodeid, const char *name, char *next)
 {
 	int offset = fdt_node_offset_by_phandle(fdtp, (pnode_t)nodeid);
 	if (offset < 0)
@@ -376,14 +506,27 @@ prom_nextprop(pnode_t nodeid, const char *name, char *next)
 	return (next);
 }
 
-pnode_t
-prom_nextnode(pnode_t nodeid)
+caddr_t
+prom_nextprop(pnode_t nodeid, caddr_t previous, caddr_t next)
 {
-	if (fdtp == NULL) {
-		if (nodeid == 0)
-			return (DEVI_SID_NODEID);
-	}
+	if (prom_is_acpi)
+		return prom_nextprop_acpi(nodeid, previous, next);
 
+	if (prom_is_fdt)
+		return prom_nextprop_fdt(nodeid, previous, next);
+
+	prom_panic("prom_nextprop: no implementation selected");
+}
+
+static pnode_t
+prom_nextnode_acpi(pnode_t nodeid)
+{
+	return (promif_nextnode(nodeid));
+}
+
+static pnode_t
+prom_nextnode_fdt(pnode_t nodeid)
+{
 	if (nodeid == OBP_NONODE)
 		return (prom_rootnode());
 
@@ -407,7 +550,25 @@ prom_nextnode(pnode_t nodeid)
 }
 
 pnode_t
-prom_childnode(pnode_t nodeid)
+prom_nextnode(pnode_t nodeid)
+{
+	if (prom_is_acpi)
+		return prom_nextnode_acpi(nodeid);
+
+	if (prom_is_fdt)
+		return prom_nextnode_fdt(nodeid);
+
+	prom_panic("prom_nextnode: no implementation selected");
+}
+
+static pnode_t
+prom_childnode_acpi(pnode_t nodeid)
+{
+	return (promif_childnode(nodeid));
+}
+
+static pnode_t
+prom_childnode_fdt(pnode_t nodeid)
 {
 	if (nodeid == OBP_NONODE)
 		return (prom_rootnode());
@@ -433,8 +594,29 @@ prom_childnode(pnode_t nodeid)
 }
 
 pnode_t
+prom_childnode(pnode_t nodeid)
+{
+	if (prom_is_acpi)
+		return prom_childnode_acpi(nodeid);
+
+	if (prom_is_fdt)
+		return prom_childnode_fdt(nodeid);
+
+	prom_panic("prom_childnode: no implementation selected");
+}
+
+pnode_t
+prom_findnode_byname(pnode_t n, char *name)
+{
+	return (OBP_NONODE);
+}
+
+pnode_t
 prom_parentnode(pnode_t nodeid)
 {
+	if (!prom_is_fdt)
+		prom_panic("prom_parentnode: not an FDT prom");
+
 	int offset = fdt_node_offset_by_phandle(fdtp, (pnode_t)nodeid);
 	if (offset < 0)
 		return (OBP_NONODE);
@@ -463,8 +645,14 @@ prom_decode_composite_string(void *buf, size_t buflen, char *prev)
 	return (prev);
 }
 
-int
-prom_bounded_getprop(pnode_t nodeid, char *name, caddr_t value, int len)
+static int
+prom_bounded_getprop_acpi(pnode_t nodeid, caddr_t name, caddr_t value, int len)
+{
+	return (-1);
+}
+
+static int
+prom_bounded_getprop_fdt(pnode_t nodeid, char *name, caddr_t value, int len)
 {
 	int prop_len = prom_getproplen(nodeid, name);
 	if (prop_len < 0 || len < prop_len) {
@@ -472,6 +660,18 @@ prom_bounded_getprop(pnode_t nodeid, char *name, caddr_t value, int len)
 	}
 
 	return (prom_getprop(nodeid, name, value));
+}
+
+int
+prom_bounded_getprop(pnode_t nodeid, caddr_t name, caddr_t value, int len)
+{
+	if (prom_is_acpi)
+		return prom_bounded_getprop_acpi(nodeid, name, value, len);
+
+	if (prom_is_fdt)
+		return prom_bounded_getprop_fdt(nodeid, name, value, len);
+
+	prom_panic("prom_bounded_getprop: no implementation selected");
 }
 
 pnode_t
@@ -487,24 +687,42 @@ prom_pathname(char *buf)
 	/* nothing, just to get consconfig_dacf to compile */
 }
 
-void
-prom_init(char *pgmname, void *cookie)
+static void
+prom_init_acpi(char *pgmname, void *cookie)
+{
+	if (prom_set_rsdp(cookie) != 0)
+		return;
+}
+
+static void
+prom_init_fdt(char *pgmname, void *cookie)
 {
 	int err;
 	fdtp = cookie;
 
-	if (fdtp)
-		err = fdt_check_header(fdtp);
-	else
-		err = -1;
+	err = fdt_check_header(fdtp);
 	if (err == 0) {
-		phandle_t chosen = prom_chosennode();
+		phandle_t chosen = prom_chosennode_fdt();
 		if (chosen == OBP_NONODE) {
 			fdt_add_subnode(fdtp, fdt_node_offset_by_phandle(fdtp,
-			    prom_rootnode()), "chosen");
+			    prom_rootnode_fdt()), "chosen");
 		}
 	} else {
 		fdtp = NULL;
+	}
+}
+
+void
+prom_init(char *pgmname, void *cookie)
+{
+	if (cookie && prom_is_fdt == 0 && prom_is_acpi == 0) {
+		if (fdt_check_header((struct fdt_header *)cookie) == 0) {
+			prom_is_fdt = 1;
+			prom_init_fdt(pgmname, cookie);
+		} else if (strncmp((const char *)cookie, "RSD PTR ", 8) == 0) {
+			prom_is_acpi = 1;
+			prom_init_acpi(pgmname, cookie);
+		}
 	}
 }
 
@@ -538,21 +756,23 @@ prom_setup(void)
 }
 
 static void
-prom_walk_dev(pnode_t nodeid, void(*func)(pnode_t, void*), void *arg)
+prom_walk_dev_fdt(pnode_t nodeid, void(*func)(pnode_t, void*), void *arg)
 {
 	func(nodeid, arg);
 
-	pnode_t child = prom_childnode(nodeid);
+	pnode_t child = prom_childnode_fdt(nodeid);
 	while (child > 0) {
-		prom_walk_dev(child, func, arg);
-		child = prom_nextnode(child);
+		prom_walk_dev_fdt(child, func, arg);
+		child = prom_nextnode_fdt(child);
 	}
 }
 
 void
 prom_walk(void(*func)(pnode_t, void*), void *arg)
 {
-	prom_walk_dev(prom_rootnode(), func, arg);
+	if (!prom_is_fdt)
+		prom_panic("prom_walk: not an FDT prom");
+	prom_walk_dev_fdt(prom_rootnode(), func, arg);
 }
 
 boolean_t

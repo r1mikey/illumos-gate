@@ -116,10 +116,10 @@ static int
 init_mmc_gpio(pnode_t node, const char *name, struct gpio_ctrl *gpio)
 {
 	uint32_t gpio_buf[3];
-	int len = prom_getproplen(node, name);
+	int len = prom_getproplen(node, (caddr_t)name);
 	if (len != sizeof(gpio_buf))
 		return -1;
-	prom_getprop(node, name, (caddr_t)&gpio_buf);
+	prom_getprop(node, (caddr_t)name, (caddr_t)&gpio_buf);
 	gpio->node = prom_findnode_by_phandle(ntohl(gpio_buf[0]));
 	gpio->pin = ntohl(gpio_buf[1]);
 	gpio->flags = ntohl(gpio_buf[2]);
@@ -796,7 +796,7 @@ mmc_open(const char *name)
 	struct mmc_sc *sc = kmem_alloc(sizeof(struct mmc_sc), 0);
 	memset(sc, 0, sizeof(struct mmc_sc));
 
-	node = prom_finddevice(name);
+	node = prom_finddevice((caddr_t)name);
 	if (node <= 0)
 		return -1;
 

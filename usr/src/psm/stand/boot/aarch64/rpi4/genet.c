@@ -260,7 +260,7 @@ genet_get_macaddr(struct genet_sc *sc, pnode_t node)
 static int
 genet_match(const char *name)
 {
-	pnode_t node = prom_finddevice(name);
+	pnode_t node = prom_finddevice((caddr_t)name);
 	if (node <= 0)
 		return 0;
 	if (prom_is_compatible(node, "brcm,bcm2711-genet-v5"))
@@ -442,7 +442,7 @@ genet_update_link(struct genet_sc *sc)
 static int
 genet_open(const char *name)
 {
-	pnode_t node = prom_finddevice(name);
+	pnode_t node = prom_finddevice((caddr_t)name);
 	if (node <= 0)
 		return -1;
 	if (!prom_is_compatible(node, "brcm,bcm2711-genet-v5"))
