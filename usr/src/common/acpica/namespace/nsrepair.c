@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -328,9 +328,10 @@ AcpiNsSimpleRepair (
      */
     if (!ReturnObject)
     {
-        if (ExpectedBtypes && (!(ExpectedBtypes & ACPI_RTYPE_NONE)))
+        if (ExpectedBtypes)
         {
-            if (PackageIndex != ACPI_NOT_PACKAGE_ELEMENT)
+            if (!(ExpectedBtypes & ACPI_RTYPE_NONE) &&
+                PackageIndex != ACPI_NOT_PACKAGE_ELEMENT)
             {
                 ACPI_WARN_PREDEFINED ((AE_INFO, Info->FullPathname,
                     ACPI_WARN_ALWAYS, "Found unexpected NULL package element"));
@@ -342,13 +343,14 @@ AcpiNsSimpleRepair (
                     return (AE_OK); /* Repair was successful */
                 }
             }
-            else
+
+            if (ExpectedBtypes != ACPI_RTYPE_NONE)
             {
                 ACPI_WARN_PREDEFINED ((AE_INFO, Info->FullPathname,
-                    ACPI_WARN_ALWAYS, "Missing expected return value"));
+                                       ACPI_WARN_ALWAYS,
+                                       "Missing expected return value"));
+                return (AE_AML_NO_RETURN_VALUE);
             }
-
-            return (AE_AML_NO_RETURN_VALUE);
         }
     }
 
@@ -470,7 +472,7 @@ AcpiNsMatchSimpleRepair (
     ThisName = AcpiObjectRepairInfo;
     while (ThisName->ObjectConverter)
     {
-        if (ACPI_COMPARE_NAME (Node->Name.Ascii, ThisName->Name))
+        if (ACPI_COMPARE_NAMESEG (Node->Name.Ascii, ThisName->Name))
         {
             /* Check if we can actually repair this name/type combination */
 

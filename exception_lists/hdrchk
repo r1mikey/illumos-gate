@@ -1,7 +1,3 @@
-usr/src/cmd/acpi/acpidump/acpidump.h
-usr/src/cmd/acpi/acpixtract/acpixtract.h
-usr/src/cmd/acpi/acpixtract/axmain.h
-usr/src/cmd/acpi/acpixtract/axutils.h
 usr/src/cmd/cxgbetool/*
 usr/src/cmd/krb5/kadmin/cli/kadmin.h
 usr/src/cmd/krb5/kadmin/dbutil/import_err.h
@@ -370,6 +366,20 @@ usr/src/uts/common/io/udmf/dm9601reg.h
 usr/src/uts/common/io/upf/adm8511reg.h
 usr/src/uts/common/io/urf/rtl8150reg.h
 usr/src/uts/common/sys/scsi/adapters/mpi/*
+
+# acpica upstream sources
+usr/src/cmd/acpi/acpidump/acpidump.h
+usr/src/cmd/acpi/acpixtract/acpixtract.h
+usr/src/cmd/acpi/acpixtract/axmain.h
+usr/src/cmd/acpi/acpixtract/axutils.h
+usr/src/cmd/acpi/iasl/aslcompiler.h
+usr/src/cmd/acpi/iasl/asldefine.h
+usr/src/cmd/acpi/iasl/aslmessages.h
+usr/src/cmd/acpi/iasl/asltypes.h
+usr/src/cmd/acpi/iasl/dtcompiler.h
+usr/src/cmd/acpi/iasl/dttemplate.h
+usr/src/cmd/acpi/iasl/preprocess.h
+usr/src/uts/intel/sys/acpi/acbuffer.h
 usr/src/uts/intel/sys/acpi/acdebug.h
 usr/src/uts/intel/sys/acpi/acdisasm.h
 usr/src/uts/intel/sys/acpi/acevents.h
@@ -379,8 +389,10 @@ usr/src/uts/intel/sys/acpi/acnames.h
 usr/src/uts/intel/sys/acpi/acpredef.h
 usr/src/uts/intel/sys/acpi/acresrc.h
 usr/src/uts/intel/sys/acpi/acstruct.h
+usr/src/uts/intel/sys/acpi/actbinfo.h
 usr/src/uts/intel/sys/acpi/amlresrc.h
 usr/src/uts/intel/sys/acpi/platform/acwin64.h
+usr/src/uts/intel/sys/acpi/platform/aczephyr.h
 
 # bhyve sources
 syntax: glob

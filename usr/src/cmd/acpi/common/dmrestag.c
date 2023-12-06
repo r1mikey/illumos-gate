@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -384,6 +384,14 @@ static const ACPI_RESOURCE_TAG      AcpiDmGpioIoTags[] =
 
 /* Subtype tables for SerialBus descriptors */
 
+static const ACPI_RESOURCE_TAG      AcpiDmCsi2SerialBusTags[] =    /* ACPI 6.4 */
+{
+    {( 6 * 8) + 0,  ACPI_RESTAG_SLAVEMODE},
+    {( 7 * 8) + 0,  ACPI_RESTAG_PHYTYPE},
+    {( 7 * 8) + 2,  ACPI_RESTAG_LOCALPORT},
+    {0,             NULL}
+};
+
 static const ACPI_RESOURCE_TAG      AcpiDmI2cSerialBusTags[] =
 {
     {( 6 * 8) + 0,  ACPI_RESTAG_SLAVEMODE},
@@ -423,6 +431,7 @@ static const ACPI_RESOURCE_TAG      AcpiDmUartSerialBusTags[] =
     {(21 * 8),      ACPI_RESTAG_LINE},
     {0,             NULL}
 };
+
 
 /* Subtype tables for PinFunction descriptor */
 
@@ -471,6 +480,14 @@ static const ACPI_RESOURCE_TAG      AcpiDmIoFlagTags[] =
     {0,             NULL}
 };
 
+/* Subtype tables for ClockInput descriptor */
+
+static const ACPI_RESOURCE_TAG      AcpiDmClockInputTags[] =
+{
+    {( 6 * 8),      ACPI_RESTAG_FQD},
+    {( 8 * 8),      ACPI_RESTAG_FQN},
+    {0,             NULL}
+};
 
 /*
  * Dispatch table used to obtain the correct tag table for a descriptor.
@@ -522,6 +539,7 @@ static const ACPI_RESOURCE_TAG      *AcpiGbl_ResourceTags[] =
     NULL,                           /* 0x10, ACPI_RESOURCE_NAME_PIN_GROUP */
     AcpiDmPinGroupFunctionTags,     /* 0x11, ACPI_RESOURCE_NAME_PIN_GROUP_FUNCTION */
     AcpiDmPinConfigTags,            /* 0x12, ACPI_RESOURCE_NAME_PIN_GROUP_CONFIG - Same as PinConfig */
+    AcpiDmClockInputTags,           /* 0x13, ACPI_RESOURCE_NAME_CLOCK_INPUT */
 };
 
 /* GPIO Subtypes */
@@ -539,7 +557,8 @@ static const ACPI_RESOURCE_TAG      *AcpiGbl_SerialResourceTags[] =
     NULL,                           /* 0x00 Reserved */
     AcpiDmI2cSerialBusTags,         /* 0x01 I2C SerialBus */
     AcpiDmSpiSerialBusTags,         /* 0x02 SPI SerialBus */
-    AcpiDmUartSerialBusTags         /* 0x03 UART SerialBus */
+    AcpiDmUartSerialBusTags,        /* 0x03 UART SerialBus */
+    AcpiDmCsi2SerialBusTags         /* 0x04 CSI2 SerialBus */
 };
 
 /*
@@ -747,6 +766,7 @@ AcpiGetTagPathname (
     UINT8                   ResourceTableIndex;
     ACPI_SIZE               RequiredSize;
     char                    *Pathname;
+    char                    *PathnameEnd;
     AML_RESOURCE            *Aml;
     ACPI_PARSE_OBJECT       *Op;
     char                    *InternalPath;
@@ -809,24 +829,35 @@ AcpiGetTagPathname (
         RequiredSize, FALSE);
 
     /*
-     * Create the full path to the resource and tag by: remove the buffer name,
-     * append the resource descriptor name, append a dot, append the tag name.
+     * Create the full path to the resource and tag by:
+     *  1) Remove the buffer nameseg from the end of the pathname
+     *  2) Append the resource descriptor nameseg
+     *  3) Append a dot
+     *  4) Append the field tag nameseg
      *
-     * TBD: Always using the full path is a bit brute force, the path can be
+     * Always using the full path is a bit brute force, the path can be
      * often be optimized with carats (if the original buffer namepath is a
      * single nameseg). This doesn't really matter, because these paths do not
      * end up in the final compiled AML, it's just an appearance issue for the
      * disassembled code.
      */
-    Pathname[strlen (Pathname) - ACPI_NAME_SIZE] = 0;
-    strncat (Pathname, ResourceNode->Name.Ascii, ACPI_NAME_SIZE);
-    strcat (Pathname, ".");
-    strncat (Pathname, Tag, ACPI_NAME_SIZE);
+    PathnameEnd = Pathname + (RequiredSize - ACPI_NAMESEG_SIZE - 1);
+    ACPI_COPY_NAMESEG (PathnameEnd, ResourceNode->Name.Ascii);
+
+    PathnameEnd += ACPI_NAMESEG_SIZE;
+    *PathnameEnd = '.';
+
+    PathnameEnd++;
+    ACPI_COPY_NAMESEG (PathnameEnd, Tag);
 
     /* Internalize the namepath to AML format */
 
-    AcpiNsInternalizeName (Pathname, &InternalPath);
+    Status = AcpiNsInternalizeName (Pathname, &InternalPath);
     ACPI_FREE (Pathname);
+    if (ACPI_FAILURE (Status))
+    {
+        return (NULL);
+    }
 
     /* Update the Op with the symbol */
 
@@ -863,7 +894,7 @@ static void
 AcpiDmUpdateResourceName (
     ACPI_NAMESPACE_NODE     *ResourceNode)
 {
-    char                    Name[ACPI_NAME_SIZE];
+    char                    Name[ACPI_NAMESEG_SIZE];
 
 
     /* Ignore if a unique name has already been assigned */
@@ -906,7 +937,7 @@ AcpiDmUpdateResourceName (
  *
  * PARAMETERS:  BitIndex            - Index into the resource descriptor
  *              Resource            - Pointer to the raw resource data
- *              ResourceIndex       - Index correspoinding to the resource type
+ *              ResourceIndex       - Index corresponding to the resource type
  *
  * RETURN:      Pointer to the resource tag (ACPI_NAME). NULL if no match.
  *
@@ -975,7 +1006,7 @@ AcpiDmGetResourceTag (
 
     case ACPI_RESOURCE_NAME_SERIAL_BUS:
 
-        /* SerialBus has 3 subtypes: I2C, SPI, and UART */
+        /* SerialBus has 4 subtypes: I2C, SPI, UART, and CSI2 */
 
         if ((Resource->CommonSerialBus.Type == 0) ||
             (Resource->CommonSerialBus.Type > AML_RESOURCE_MAX_SERIALBUSTYPE))

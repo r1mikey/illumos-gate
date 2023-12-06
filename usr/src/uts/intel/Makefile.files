@@ -194,8 +194,9 @@ ACPICA_OBJS	+= \
 		   exconcat.o exconfig.o exconvrt.o excreate.o exdebug.o \
 		   exdump.o exfield.o exfldio.o exmisc.o exmutex.o exnames.o \
 		   exoparg1.o exoparg2.o exoparg3.o exoparg6.o exprep.o \
-		   exregion.o exresnte.o exresolv.o exresop.o exstore.o \
-		   exstoren.o exstorob.o exsystem.o extrace.o exutils.o \
+		   exregion.o exresnte.o exresolv.o exresop.o exserial.o \
+		   exstore.o exstoren.o exstorob.o exsystem.o extrace.o \
+		   exutils.o \
 		   \
 		   hwacpi.o hwesleep.o hwgpe.o hwpci.o hwregs.o hwsleep.o \
 		   hwtimer.o hwvalid.o hwxface.o hwxfsleep.o \
@@ -217,7 +218,7 @@ ACPICA_OBJS	+= \
 		   tbxface.o tbxfload.o tbxfroot.o \
 		   \
 		   utaddress.o utalloc.o utascii.o utbuffer.o utcache.o \
-		   utclib.o utcopy.o utdebug.o utdecode.o utdelete.o \
+		   utcksum.o utclib.o utcopy.o utdebug.o utdecode.o utdelete.o \
 		   uterror.o uteval.o utexcep.o utglobal.o uthex.o utids.o \
 		   utinit.o utlock.o utmath.o utmisc.o utmutex.o utnonansi.o \
 		   utobject.o utosi.o utownerid.o utpredef.o utresrc.o \

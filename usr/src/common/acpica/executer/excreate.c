@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -161,7 +161,6 @@
         ACPI_MODULE_NAME    ("excreate")
 
 
-#ifndef ACPI_NO_METHOD_EXECUTION
 /*******************************************************************************
  *
  * FUNCTION:    AcpiExCreateAlias
@@ -452,6 +451,7 @@ AcpiExCreateRegion (
     ObjDesc->Region.SpaceId = SpaceId;
     ObjDesc->Region.Address = 0;
     ObjDesc->Region.Length = 0;
+    ObjDesc->Region.Pointer = NULL;
     ObjDesc->Region.Node = Node;
     ObjDesc->Region.Handler = NULL;
     ObjDesc->Common.Flags &=
@@ -573,7 +573,6 @@ AcpiExCreatePowerResource (
     AcpiUtRemoveReference (ObjDesc);
     return_ACPI_STATUS (Status);
 }
-#endif
 
 
 /*******************************************************************************

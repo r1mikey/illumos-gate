@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -176,7 +176,7 @@ PrDumpPredefinedNames (
     PR_DEFINE_INFO          *DefineInfo;
 
 
-    DefineInfo = Gbl_DefineList;
+    DefineInfo = AslGbl_DefineList;
     while (DefineInfo)
     {
         DbgPrint (ASL_DEBUG_OUTPUT, PR_PREFIX_ID
@@ -223,9 +223,9 @@ PrAddDefine (
     DefineInfo = PrMatchDefine (Identifier);
     if (DefineInfo)
     {
-        DbgPrint (ASL_DEBUG_OUTPUT, PR_PREFIX_ID,
+        DbgPrint (ASL_DEBUG_OUTPUT, PR_PREFIX_ID
             "#define: name already exists: %s\n",
-            Gbl_CurrentLineNumber, Identifier);
+            AslGbl_CurrentLineNumber, Identifier);
 
         /*
          * Name already exists. This is only an error if the target name
@@ -257,13 +257,13 @@ PrAddDefine (
     DefineInfo->Identifier = IdentifierString;
     DefineInfo->Persist = Persist;
 
-    if (Gbl_DefineList)
+    if (AslGbl_DefineList)
     {
-        Gbl_DefineList->Previous = DefineInfo;
+        AslGbl_DefineList->Previous = DefineInfo;
     }
 
-    DefineInfo->Next = Gbl_DefineList;
-    Gbl_DefineList = DefineInfo;
+    DefineInfo->Next = AslGbl_DefineList;
+    AslGbl_DefineList = DefineInfo;
     return (DefineInfo);
 }
 
@@ -291,7 +291,7 @@ PrRemoveDefine (
 
     /* Match name and delete the node */
 
-    DefineInfo = Gbl_DefineList;
+    DefineInfo = AslGbl_DefineList;
     while (DefineInfo)
     {
         if (!strcmp (DefineName, DefineInfo->Identifier))
@@ -304,7 +304,7 @@ PrRemoveDefine (
             }
             else
             {
-                Gbl_DefineList = DefineInfo->Next;
+                AslGbl_DefineList = DefineInfo->Next;
             }
 
             if (DefineInfo->Next)
@@ -325,7 +325,7 @@ PrRemoveDefine (
      */
     DbgPrint (ASL_DEBUG_OUTPUT, PR_PREFIX_ID
         "#undef: could not find %s\n",
-        Gbl_CurrentLineNumber, DefineName);
+        AslGbl_CurrentLineNumber, DefineName);
 }
 
 
@@ -348,7 +348,7 @@ PrMatchDefine (
     PR_DEFINE_INFO          *DefineInfo;
 
 
-    DefineInfo = Gbl_DefineList;
+    DefineInfo = AslGbl_DefineList;
     while (DefineInfo)
     {
         if (!strcmp (MatchString, DefineInfo->Identifier))
@@ -393,16 +393,16 @@ PrAddMacro (
     UINT16                  UseCount = 0;
     UINT16                  ArgCount = 0;
     UINT32                  Depth = 1;
+    /*UINT32                  Depth = 1;*/
     UINT32                  EndOfArgList;
     char                    BufferChar;
 
-
     /* Find the end of the arguments list */
 
-    TokenOffset = Name - Gbl_MainTokenBuffer + strlen (Name) + 1;
+    TokenOffset = Name - AslGbl_MainTokenBuffer + strlen (Name) + 1;
     while (1)
     {
-        BufferChar = Gbl_CurrentLineBuffer[TokenOffset];
+        BufferChar = AslGbl_CurrentLineBuffer[TokenOffset];
         if (BufferChar == '(')
         {
             Depth++;
@@ -437,6 +437,7 @@ PrAddMacro (
     for (i = 0; i < PR_MAX_MACRO_ARGS; i++)
     {
         Token = PrGetNextToken (NULL, PR_MACRO_SEPARATORS, Next);
+
         if (!Token)
         {
             /* This is the case for a NULL macro body */
@@ -447,21 +448,20 @@ PrAddMacro (
 
         /* Don't go beyond the argument list */
 
-        TokenOffset = Token - Gbl_MainTokenBuffer + strlen (Token);
+        TokenOffset = Token - AslGbl_MainTokenBuffer + strlen (Token);
         if (TokenOffset > EndOfArgList)
         {
             break;
         }
 
         DbgPrint (ASL_DEBUG_OUTPUT, PR_PREFIX_ID
-            "Macro arg: %s \n",
-            Gbl_CurrentLineNumber, Token);
+            "Macro param: %s \n",
+            AslGbl_CurrentLineNumber, Token);
 
         Args[i].Name = UtLocalCalloc (strlen (Token) + 1);
         strcpy (Args[i].Name, Token);
 
         Args[i].UseCount = 0;
-
         ArgCount++;
         if (ArgCount >= PR_MAX_MACRO_ARGS)
         {
@@ -472,11 +472,10 @@ PrAddMacro (
 
     /* Get the macro body. Token now points to start of body */
 
-    MacroBodyOffset = Token - Gbl_MainTokenBuffer;
+    MacroBodyOffset = Token - AslGbl_MainTokenBuffer;
 
     /* Match each method arg in the macro body for later use */
 
-    Token = PrGetNextToken (NULL, PR_MACRO_SEPARATORS, Next);
     while (Token)
     {
         /* Search the macro arg list for matching arg */
@@ -494,14 +493,16 @@ PrAddMacro (
                 UseCount = Args[i].UseCount;
 
                 Args[i].Offset[UseCount] =
-                    (Token - Gbl_MainTokenBuffer) - MacroBodyOffset;
+                    (Token - AslGbl_MainTokenBuffer) - MacroBodyOffset;
+
 
                 DbgPrint (ASL_DEBUG_OUTPUT, PR_PREFIX_ID
                     "Macro Arg #%u: %s UseCount %u Offset %u \n",
-                    Gbl_CurrentLineNumber, i, Token,
+                    AslGbl_CurrentLineNumber, i, Token,
                     UseCount+1, Args[i].Offset[UseCount]);
 
                 Args[i].UseCount++;
+
                 if (Args[i].UseCount >= PR_MAX_ARG_INSTANCES)
                 {
                     PrError (ASL_ERROR, ASL_MSG_TOO_MANY_ARGUMENTS,
@@ -516,7 +517,7 @@ PrAddMacro (
         Token = PrGetNextToken (NULL, PR_MACRO_SEPARATORS, Next);
     }
 
-    BodyInSource = &Gbl_CurrentLineBuffer[MacroBodyOffset];
+    BodyInSource = &AslGbl_CurrentLineBuffer[MacroBodyOffset];
 
 
 AddMacroToList:
@@ -528,7 +529,7 @@ AddMacroToList:
     {
         DbgPrint (ASL_DEBUG_OUTPUT, PR_PREFIX_ID
             "#define: macro name already exists: %s\n",
-            Gbl_CurrentLineNumber, Name);
+            AslGbl_CurrentLineNumber, Name);
 
         /* Error only if not exactly the same macro */
 
@@ -544,7 +545,7 @@ AddMacroToList:
 
     DbgPrint (ASL_DEBUG_OUTPUT, PR_PREFIX_ID
         "Macro body: %s \n",
-        Gbl_CurrentLineNumber, BodyInSource);
+        AslGbl_CurrentLineNumber, BodyInSource);
 
     /* Add macro to the #define list */
 
@@ -596,11 +597,12 @@ PrDoMacroInvocation (
     UINT32                  TokenOffset;
     UINT32                  Length;
     UINT32                  i;
-
+    UINT32                  Diff1;
+    UINT32                  Diff2;
 
     /* Take a copy of the macro body for expansion */
 
-    strcpy (Gbl_MacroTokenBuffer, DefineInfo->Body);
+    strcpy (AslGbl_MacroTokenBuffer, DefineInfo->Body);
 
     /* Replace each argument within the prototype body */
 
@@ -610,6 +612,7 @@ PrDoMacroInvocation (
         /* This macro has no arguments */
 
         Token = PrGetNextToken (NULL, PR_MACRO_ARGUMENTS, Next);
+
         if (!Token)
         {
             goto BadInvocation;
@@ -619,8 +622,8 @@ PrDoMacroInvocation (
         Length = Token - MacroStart + strlen (Token) + 1;
 
         PrReplaceData (
-            &Gbl_CurrentLineBuffer[TokenOffset], Length,
-            Gbl_MacroTokenBuffer, strlen (Gbl_MacroTokenBuffer));
+            &AslGbl_CurrentLineBuffer[TokenOffset], Length,
+            AslGbl_MacroTokenBuffer, strlen (AslGbl_MacroTokenBuffer));
         return;
     }
 
@@ -634,31 +637,43 @@ PrDoMacroInvocation (
             goto BadInvocation;
         }
 
+        /*
+         * Avoid optimizing using just 1 signed int due to specific
+         * non-portable implementations of signed ints
+         */
+        Diff1 = strlen (Args->Name) > strlen (Token) ? strlen (Args->Name) -
+            strlen (Token) : 0;
+
+        Diff2 = strlen (Args->Name) < strlen (Token) ? strlen (Token) -
+            strlen (Args->Name) : 0;
+
         /* Replace all instances of this argument */
 
         for (i = 0; i < Args->UseCount; i++)
         {
-            /* Offset zero indicates "arg not used" */
-            /* TBD: Not really needed now, with UseCount available */
+            /*
+             * To test the output of the preprocessed macro function that
+             * is passed to the compiler
+             */
 
-            if (Args->Offset[i] == 0)
-            {
-                break;
-            }
+             /*
+              * fprintf (stderr, "Current token = %s \t Current arg_name = %s \
+              * \t strlen (Token) = %u \t strlen (Args->Name) = %u \t Offset = %u \
+              * \t UseCount = %u \t", Token, Args->Name, strlen (Token), \
+              *     strlen (Args->Name), Args->Offset[i], Args->UseCount);
+              */
 
-            PrReplaceData (
-                &Gbl_MacroTokenBuffer[Args->Offset[i]], strlen (Args->Name),
-                Token, strlen (Token));
+            AslGbl_MacroTokenReplaceBuffer = (char *) calloc ((strlen (AslGbl_MacroTokenBuffer)), sizeof (char));
+
+            PrReplaceResizeSubstring (Args, Diff1, Diff2, i, Token);
 
             DbgPrint (ASL_DEBUG_OUTPUT, PR_PREFIX_ID
                 "ExpandArg: %s \n",
-                Gbl_CurrentLineNumber, Gbl_MacroTokenBuffer);
+                AslGbl_CurrentLineNumber, AslGbl_MacroTokenBuffer);
         }
 
         Args++;
     }
-
-    /* TBD: need to make sure macro was not invoked with too many arguments */
 
     if (!Token)
     {
@@ -671,11 +686,10 @@ PrDoMacroInvocation (
     Length = Token - MacroStart + strlen (Token) + 1;
 
     PrReplaceData (
-        &Gbl_CurrentLineBuffer[TokenOffset], Length,
-        Gbl_MacroTokenBuffer, strlen (Gbl_MacroTokenBuffer));
+        &AslGbl_CurrentLineBuffer[TokenOffset], Length,
+        AslGbl_MacroTokenBuffer, strlen (AslGbl_MacroTokenBuffer));
 
     return;
-
 
 BadInvocation:
     PrError (ASL_ERROR, ASL_MSG_INVALID_INVOCATION,
@@ -683,6 +697,6 @@ BadInvocation:
 
     DbgPrint (ASL_DEBUG_OUTPUT, PR_PREFIX_ID
         "Bad macro invocation: %s \n",
-        Gbl_CurrentLineNumber, Gbl_MacroTokenBuffer);
+        AslGbl_CurrentLineNumber, AslGbl_MacroTokenBuffer);
     return;
 }

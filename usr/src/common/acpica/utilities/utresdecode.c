@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -240,6 +240,14 @@ const char                      *AcpiGbl_MtpDecode[] =
     "AddressRangeNVS"
 };
 
+const char                      *AcpiGbl_PhyDecode[] =
+{
+    "Type C",
+    "Type D",
+    "Unknown Type",
+    "Unknown Type"
+};
+
 const char                      *AcpiGbl_RngDecode[] =
 {
     "InvalidRanges",
@@ -331,7 +339,8 @@ const char                      *AcpiGbl_SbtDecode[] =
     "/* UNKNOWN serial bus type */",
     "I2C",
     "SPI",
-    "UART"
+    "UART",
+    "CSI2"
 };
 
 /* I2C serial bus access mode */
@@ -456,6 +465,19 @@ const char                      *AcpiGbl_PtypDecode[] =
     "Slew Rate",
     "Input Debounce",
     "Input Schmitt Trigger",
+};
+
+const char                      *AcpiGbl_ClockInputMode[] =
+{
+    "Fixed",
+    "Variable",
+};
+
+const char                      *AcpiGbl_ClockInputScale[] =
+{
+    "Hz",
+    "KHz",
+    "MHz",
 };
 
 #endif

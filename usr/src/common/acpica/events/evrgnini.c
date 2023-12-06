@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -158,12 +158,6 @@
 #define _COMPONENT          ACPI_EVENTS
         ACPI_MODULE_NAME    ("evrgnini")
 
-/* Local prototypes */
-
-static BOOLEAN
-AcpiEvIsPciRootBridge (
-    ACPI_NAMESPACE_NODE     *Node);
-
 
 /*******************************************************************************
  *
@@ -189,6 +183,7 @@ AcpiEvSystemMemoryRegionSetup (
 {
     ACPI_OPERAND_OBJECT     *RegionDesc = (ACPI_OPERAND_OBJECT *) Handle;
     ACPI_MEM_SPACE_CONTEXT  *LocalRegionContext;
+    ACPI_MEM_MAPPING        *Mm;
 
 
     ACPI_FUNCTION_TRACE (EvSystemMemoryRegionSetup);
@@ -200,12 +195,14 @@ AcpiEvSystemMemoryRegionSetup (
         {
             LocalRegionContext = (ACPI_MEM_SPACE_CONTEXT *) *RegionContext;
 
-            /* Delete a cached mapping if present */
+            /* Delete memory mappings if present */
 
-            if (LocalRegionContext->MappedLength)
+            while (LocalRegionContext->FirstMm)
             {
-                AcpiOsUnmapMemory (LocalRegionContext->MappedLogicalAddress,
-                    LocalRegionContext->MappedLength);
+                Mm = LocalRegionContext->FirstMm;
+                LocalRegionContext->FirstMm = Mm->NextMm;
+                AcpiOsUnmapMemory(Mm->LogicalAddress, Mm->Length);
+                ACPI_FREE(Mm);
             }
             ACPI_FREE (LocalRegionContext);
             *RegionContext = NULL;
@@ -369,7 +366,6 @@ AcpiEvPciConfigRegionSetup (
                          * root bridge. Still need to return a context object
                          * for the new PCI_Config operation region, however.
                          */
-                        Status = AE_OK;
                     }
                     else
                     {
@@ -490,7 +486,7 @@ AcpiEvPciConfigRegionSetup (
  *
  ******************************************************************************/
 
-static BOOLEAN
+BOOLEAN
 AcpiEvIsPciRootBridge (
     ACPI_NAMESPACE_NODE     *Node)
 {
@@ -599,6 +595,64 @@ AcpiEvCmosRegionSetup (
     ACPI_FUNCTION_TRACE (EvCmosRegionSetup);
 
 
+    return_ACPI_STATUS (AE_OK);
+}
+
+
+/*******************************************************************************
+ *
+ * FUNCTION:    AcpiEvDataTableRegionSetup
+ *
+ * PARAMETERS:  Handle              - Region we are interested in
+ *              Function            - Start or stop
+ *              HandlerContext      - Address space handler context
+ *              RegionContext       - Region specific context
+ *
+ * RETURN:      Status
+ *
+ * DESCRIPTION: Setup a DataTableRegion
+ *
+ * MUTEX:       Assumes namespace is not locked
+ *
+ ******************************************************************************/
+
+ACPI_STATUS
+AcpiEvDataTableRegionSetup (
+    ACPI_HANDLE             Handle,
+    UINT32                  Function,
+    void                    *HandlerContext,
+    void                    **RegionContext)
+{
+    ACPI_OPERAND_OBJECT     *RegionDesc = (ACPI_OPERAND_OBJECT *) Handle;
+    ACPI_DATA_TABLE_MAPPING *LocalRegionContext;
+
+
+    ACPI_FUNCTION_TRACE (EvDataTableRegionSetup);
+
+
+    if (Function == ACPI_REGION_DEACTIVATE)
+    {
+        if (*RegionContext)
+        {
+            ACPI_FREE (*RegionContext);
+            *RegionContext = NULL;
+        }
+        return_ACPI_STATUS (AE_OK);
+    }
+
+    /* Create a new context */
+
+    LocalRegionContext = ACPI_ALLOCATE_ZEROED (sizeof (ACPI_DATA_TABLE_MAPPING));
+    if (!(LocalRegionContext))
+    {
+        return_ACPI_STATUS (AE_NO_MEMORY);
+    }
+
+    /* Save the data table pointer for use in the handler */
+
+    LocalRegionContext->Pointer = RegionDesc->Region.Pointer;
+
+    *RegionContext = LocalRegionContext;
     return_ACPI_STATUS (AE_OK);
 }
 
@@ -728,24 +782,6 @@ AcpiEvInitializeRegion (
             case ACPI_TYPE_THERMAL:
 
                 HandlerObj = ObjDesc->CommonNotify.Handler;
-                break;
-
-            case ACPI_TYPE_METHOD:
-                /*
-                 * If we are executing module level code, the original
-                 * Node's object was replaced by this Method object and we
-                 * saved the handler in the method object.
-                 *
-                 * Note: Only used for the legacy MLC support. Will
-                 * be removed in the future.
-                 *
-                 * See AcpiNsExecModuleCode
-                 */
-                if (!AcpiGbl_ExecuteTablesAsMethods &&
-                    ObjDesc->Method.InfoFlags & ACPI_METHOD_MODULE_LEVEL)
-                {
-                    HandlerObj = ObjDesc->Method.Dispatch.Handler;
-                }
                 break;
 
             default:

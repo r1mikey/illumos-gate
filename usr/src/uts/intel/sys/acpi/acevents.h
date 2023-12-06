@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -245,7 +245,8 @@ AcpiEvMaskGpe (
 
 ACPI_STATUS
 AcpiEvAddGpeReference (
-    ACPI_GPE_EVENT_INFO     *GpeEventInfo);
+    ACPI_GPE_EVENT_INFO     *GpeEventInfo,
+    BOOLEAN                 ClearOnEnable);
 
 ACPI_STATUS
 AcpiEvRemoveGpeReference (
@@ -457,6 +458,13 @@ AcpiEvPciBarRegionSetup (
     void                    **RegionContext);
 
 ACPI_STATUS
+AcpiEvDataTableRegionSetup (
+    ACPI_HANDLE             Handle,
+    UINT32                  Function,
+    void                    *HandlerContext,
+    void                    **RegionContext);
+
+ACPI_STATUS
 AcpiEvDefaultRegionSetup (
     ACPI_HANDLE             Handle,
     UINT32                  Function,
@@ -466,6 +474,10 @@ AcpiEvDefaultRegionSetup (
 ACPI_STATUS
 AcpiEvInitializeRegion (
     ACPI_OPERAND_OBJECT     *RegionObj);
+
+BOOLEAN
+AcpiEvIsPciRootBridge (
+    ACPI_NAMESPACE_NODE     *Node);
 
 
 /*
