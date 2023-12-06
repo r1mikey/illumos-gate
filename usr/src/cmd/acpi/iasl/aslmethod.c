@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -151,6 +151,7 @@
 
 #include "aslcompiler.h"
 #include "aslcompiler.y.h"
+#include "acnamesp.h"
 #include "acparser.h"
 #include "amlcode.h"
 
@@ -165,6 +166,10 @@ static void
 MtCheckNamedObjectInMethod (
     ACPI_PARSE_OBJECT       *Op,
     ASL_METHOD_INFO         *MethodInfo);
+
+static void
+MtCheckStaticOperationRegionInMethod (
+    ACPI_PARSE_OBJECT       *Op);
 
 
 /*******************************************************************************
@@ -197,13 +202,18 @@ MtMethodAnalysisWalkBegin (
     char                    ArgName[] = "Arg0";
     ACPI_PARSE_OBJECT       *ArgNode;
     ACPI_PARSE_OBJECT       *NextType;
-    ACPI_PARSE_OBJECT       *NextParamType;
     UINT8                   ActualArgs = 0;
+    BOOLEAN                 HidExists;
+    BOOLEAN                 AdrExists;
+    BOOLEAN                 PrsExists;
+    BOOLEAN                 CrsExists;
+    BOOLEAN                 SrsExists;
+    BOOLEAN                 DisExists;
 
 
     /* Build cross-reference output file if requested */
 
-    if (Gbl_CrossReferenceOutput)
+    if (AslGbl_CrossReferenceOutput)
     {
         OtXrefWalkPart1 (Op, Level, MethodInfo);
     }
@@ -212,7 +222,7 @@ MtMethodAnalysisWalkBegin (
     {
     case PARSEOP_METHOD:
 
-        TotalMethods++;
+        AslGbl_TotalMethods++;
 
         /* Create and init method info */
 
@@ -228,7 +238,7 @@ MtMethodAnalysisWalkBegin (
          * 1) _PS0 - One of these must exist: _PS1, _PS2, _PS3
          * 2) _PS1/_PS2/_PS3: A _PS0 must exist
          */
-        if (ACPI_COMPARE_NAME (METHOD_NAME__PS0, Op->Asl.NameSeg))
+        if (ACPI_COMPARE_NAMESEG (METHOD_NAME__PS0, Op->Asl.NameSeg))
         {
             /* For _PS0, one of _PS1/_PS2/_PS3 must exist */
 
@@ -241,19 +251,19 @@ MtMethodAnalysisWalkBegin (
             }
         }
         else if (
-            ACPI_COMPARE_NAME (METHOD_NAME__PS1, Op->Asl.NameSeg) ||
-            ACPI_COMPARE_NAME (METHOD_NAME__PS2, Op->Asl.NameSeg) ||
-            ACPI_COMPARE_NAME (METHOD_NAME__PS3, Op->Asl.NameSeg))
+            ACPI_COMPARE_NAMESEG (METHOD_NAME__PS1, Op->Asl.NameSeg) ||
+            ACPI_COMPARE_NAMESEG (METHOD_NAME__PS2, Op->Asl.NameSeg) ||
+            ACPI_COMPARE_NAMESEG (METHOD_NAME__PS3, Op->Asl.NameSeg))
         {
             /* For _PS1/_PS2/_PS3, a _PS0 must exist */
 
             if (!ApFindNameInScope (METHOD_NAME__PS0, Op))
             {
-                sprintf (MsgBuffer,
+                sprintf (AslGbl_MsgBuffer,
                     "%4.4s requires _PS0 in same scope", Op->Asl.NameSeg);
 
                 AslError (ASL_WARNING, ASL_MSG_MISSING_DEPENDENCY, Op,
-                    MsgBuffer);
+                    AslGbl_MsgBuffer);
             }
         }
 
@@ -280,50 +290,38 @@ MtMethodAnalysisWalkBegin (
         Next = Next->Asl.Next;
 
         NextType = Next->Asl.Child;
-        while (NextType)
-        {
-            /* Get and map each of the ReturnTypes */
 
-            MethodInfo->ValidReturnTypes |= AnMapObjTypeToBtype (NextType);
-            NextType->Asl.ParseOpcode = PARSEOP_DEFAULT_ARG;
-            NextType = NextType->Asl.Next;
-        }
+        MethodInfo->ValidReturnTypes = MtProcessTypeOp (NextType);
+        Op->Asl.AcpiBtype |= MethodInfo->ValidReturnTypes;
 
         /* Get the ParameterType node */
 
         Next = Next->Asl.Next;
 
         NextType = Next->Asl.Child;
-        while (NextType)
+        if (!NextType)
         {
-            if (NextType->Asl.ParseOpcode == PARSEOP_DEFAULT_ARG)
-            {
-                NextParamType = NextType->Asl.Child;
-                while (NextParamType)
-                {
-                    MethodInfo->ValidArgTypes[ActualArgs] |=
-                        AnMapObjTypeToBtype (NextParamType);
-
-                    NextParamType->Asl.ParseOpcode = PARSEOP_DEFAULT_ARG;
-                    NextParamType = NextParamType->Asl.Next;
-                }
-            }
-            else
-            {
-                MethodInfo->ValidArgTypes[ActualArgs] =
-                    AnMapObjTypeToBtype (NextType);
-
-                NextType->Asl.ParseOpcode = PARSEOP_DEFAULT_ARG;
-                ActualArgs++;
-            }
-
-            NextType = NextType->Asl.Next;
+            /*
+             * The optional parameter types list was omitted  at the source
+             * level. Use the Argument count parameter instead.
+             */
+            ActualArgs = MethodInfo->NumArguments;
+        }
+        else
+        {
+            ActualArgs = MtProcessParameterTypeList (NextType,
+                MethodInfo->ValidArgTypes);
+            MethodInfo->NumArguments = ActualArgs;
+            ArgNode->Asl.Value.Integer |= ActualArgs;
         }
 
         if ((MethodInfo->NumArguments) &&
             (MethodInfo->NumArguments != ActualArgs))
         {
-            /* error: Param list did not match number of args */
+            sprintf (AslGbl_MsgBuffer,
+                "Length = %u", ActualArgs);
+            AslError (ASL_ERROR, ASL_MSG_ARG_COUNT_MISMATCH,
+                Op->Asl.Child->Asl.Next, AslGbl_MsgBuffer);
         }
 
         /* Allow numarguments == 0 for Function() */
@@ -535,11 +533,82 @@ MtMethodAnalysisWalkBegin (
 
     case PARSEOP_DEVICE:
 
-        if (!ApFindNameInDeviceTree (METHOD_NAME__HID, Op) &&
-            !ApFindNameInDeviceTree (METHOD_NAME__ADR, Op))
+        /* Check usage of _HID and _ADR objects */
+
+        HidExists = ApFindNameInDeviceTree (METHOD_NAME__HID, Op);
+        AdrExists = ApFindNameInDeviceTree (METHOD_NAME__ADR, Op);
+
+        if (!HidExists && !AdrExists)
+        {
+            AslError (ASL_ERROR, ASL_MSG_MISSING_DEPENDENCY, Op,
+                "Device object requires a _HID or _ADR");
+        }
+        else if (HidExists && AdrExists)
+        {
+            /*
+             * According to the ACPI spec, "A device object must contain
+             * either an _HID object or an _ADR object, but should not contain
+             * both".
+             */
+            AslError (ASL_WARNING, ASL_MSG_MULTIPLE_TYPES, Op,
+                "Device object requires either a _HID or _ADR, but not both");
+        }
+
+        /*
+         * Check usage of _CRS, _DIS, _PRS, and _SRS objects (July 2021).
+         *
+         * Under the Device Object:
+         *
+         * 1) If _PRS present, must have _CRS and _SRS
+         * 2) If _SRS present, must have _PRS (_PRS requires _CRS and _SRS)
+         * 3) If _DIS present, must have _SRS (_SRS requires _PRS, _PRS requires _CRS and _SRS)
+         * 4) If _SRS present, probably should have a _DIS (Remark only)
+         */
+        CrsExists = ApFindNameInDeviceTree (METHOD_NAME__CRS, Op);
+        DisExists = ApFindNameInDeviceTree (METHOD_NAME__DIS, Op);
+        PrsExists = ApFindNameInDeviceTree (METHOD_NAME__PRS, Op);
+        SrsExists = ApFindNameInDeviceTree (METHOD_NAME__SRS, Op);
+
+        /* 1) If _PRS is present, must have a _CRS and _SRS */
+
+        if (PrsExists)
+        {
+            if (!CrsExists)
+            {
+                AslError (ASL_WARNING, ASL_MSG_MISSING_DEPENDENCY, Op,
+                    "Device has a _PRS, missing a _CRS, required");
+            }
+            if (!SrsExists)
+            {
+                AslError (ASL_WARNING, ASL_MSG_MISSING_DEPENDENCY, Op,
+                    "Device has a _PRS, missing a _SRS, required");
+            }
+        }
+
+        /* 2) If _SRS is present, must have _PRS (_PRS requires _CRS and _SRS) */
+
+        if ((SrsExists) && (!PrsExists))
         {
             AslError (ASL_WARNING, ASL_MSG_MISSING_DEPENDENCY, Op,
-                "Device object requires a _HID or _ADR in same scope");
+                "Device has a _SRS, missing a _PRS, required");
+        }
+
+        /* 3) If _DIS is present, must have a _SRS */
+
+        if ((DisExists) && (!SrsExists))
+        {
+            AslError (ASL_WARNING, ASL_MSG_MISSING_DEPENDENCY, Op,
+                "Device has a _DIS, missing a _SRS, required");
+        }
+
+        /*
+         * 4) If _SRS is present, should have a _DIS (_PRS requires _CRS
+         * and _SRS)  Remark only.
+         */
+        if ((SrsExists) && (!DisExists))
+        {
+            AslError (ASL_REMARK, ASL_MSG_MISSING_DEPENDENCY, Op,
+                "Device has a _SRS, no corresponding _DIS");
         }
         break;
 
@@ -560,6 +629,8 @@ MtMethodAnalysisWalkBegin (
             AslError (ASL_ERROR, ASL_MSG_RESERVED_USE,
                 Op, Op->Asl.ExternalName);
         }
+
+        MtCheckStaticOperationRegionInMethod (Op);
         break;
 
     case PARSEOP_NAME:
@@ -570,7 +641,7 @@ MtMethodAnalysisWalkBegin (
 
         /* Special typechecking for _HID */
 
-        if (!strcmp (METHOD_NAME__HID, Op->Asl.NameSeg))
+        if (ACPI_COMPARE_NAMESEG (METHOD_NAME__HID, Op->Asl.NameSeg))
         {
             Next = Op->Asl.Child->Asl.Next;
             AnCheckId (Next, ASL_TYPE_HID);
@@ -578,7 +649,7 @@ MtMethodAnalysisWalkBegin (
 
         /* Special typechecking for _CID */
 
-        else if (!strcmp (METHOD_NAME__CID, Op->Asl.NameSeg))
+        else if (ACPI_COMPARE_NAMESEG (METHOD_NAME__CID, Op->Asl.NameSeg))
         {
             Next = Op->Asl.Child->Asl.Next;
 
@@ -614,6 +685,81 @@ MtMethodAnalysisWalkBegin (
 
 /*******************************************************************************
  *
+ * FUNCTION:    MtProcessTypeOp
+ *
+ * PARAMETERS:  Op                  - Op representing a btype
+ *
+ * RETURN:      Btype represented by Op
+ *
+ * DESCRIPTION: Process a parse object that represents single parameter type or
+ *              a return type in method, function, and external declarations.
+ *
+ ******************************************************************************/
+
+UINT32
+MtProcessTypeOp (
+    ACPI_PARSE_OBJECT       *TypeOp)
+{
+    UINT32                  Btype = ACPI_BTYPE_ANY;
+
+
+    while (TypeOp)
+    {
+        Btype |= AnMapObjTypeToBtype (TypeOp);
+        TypeOp->Asl.ParseOpcode = PARSEOP_DEFAULT_ARG;
+        TypeOp = TypeOp->Asl.Next;
+    }
+
+    return (Btype);
+}
+
+
+/*******************************************************************************
+ *
+ * FUNCTION:    MtProcessParameterTypeList
+ *
+ * PARAMETERS:  Op                  - Op representing a btype
+ *
+ * RETURN:      Btype represented by Op
+ *
+ * DESCRIPTION: Process a parse object that represents a parameter type list in
+ *              method, function, and external declarations.
+ *
+ ******************************************************************************/
+
+UINT8
+MtProcessParameterTypeList (
+    ACPI_PARSE_OBJECT       *ParamTypeOp,
+    UINT32                  *TypeList)
+{
+    UINT8                   ParameterCount = 0;
+
+
+    if (ParamTypeOp && ParamTypeOp->Asl.ParseOpcode != PARSEOP_DEFAULT_ARG)
+    {
+        /* Special case for a single parameter without braces */
+
+        TypeList[ParameterCount] =
+            MtProcessTypeOp (ParamTypeOp);
+
+        return (1);
+    }
+
+    while (ParamTypeOp)
+    {
+        TypeList[ParameterCount] =
+            MtProcessTypeOp (ParamTypeOp->Asl.Child);
+
+        ParameterCount++;
+        ParamTypeOp = ParamTypeOp->Asl.Next;
+    }
+
+    return (ParameterCount);
+}
+
+
+/*******************************************************************************
+ *
  * FUNCTION:    MtCheckNamedObjectInMethod
  *
  * PARAMETERS:  Op                  - Current parser op
@@ -633,6 +779,7 @@ MtCheckNamedObjectInMethod (
     ASL_METHOD_INFO         *MethodInfo)
 {
     const ACPI_OPCODE_INFO  *OpInfo;
+    char                    *ExternalPath;
 
 
     /* We don't care about actual method declarations or scopes */
@@ -651,29 +798,102 @@ MtCheckNamedObjectInMethod (
     }
 
     OpInfo = AcpiPsGetOpcodeInfo (Op->Asl.AmlOpcode);
-    if (OpInfo->Class == AML_CLASS_NAMED_OBJECT)
+    if ((OpInfo->Class == AML_CLASS_NAMED_OBJECT) && (Op->Asl.AmlOpcode != AML_FIELD_OP))
     {
         /*
          * 1) Mark the method as a method that creates named objects.
          *
-         * 2) If the method is non-serialized, emit a remark that the method
+         * 2) Issue a remark indicating the inefficiency of creating named
+         * objects within a method (Except for compiler-emitted temporary
+         * variables).
+         *
+         * 3) If the method is non-serialized, emit a remark that the method
          * should be serialized.
          *
          * Reason: If a thread blocks within the method for any reason, and
          * another thread enters the method, the method will fail because
          * an attempt will be made to create the same object twice.
+         *
+         * Note: The Field opcode is disallowed here because Field() does not
+         * create a new named object.
          */
+        ExternalPath = AcpiNsGetNormalizedPathname (MethodInfo->Op->Asl.Node, TRUE);
+
+        /* No error for compiler temp variables (name starts with "_T_") */
+
+        if ((Op->Asl.NameSeg[0] != '_') &&
+            (Op->Asl.NameSeg[1] != 'T') &&
+            (Op->Asl.NameSeg[2] != '_'))
+        {
+            AslError (ASL_REMARK, ASL_MSG_NAMED_OBJECT_CREATION, Op,
+                ExternalPath);
+        }
+
         MethodInfo->CreatesNamedObjects = TRUE;
         if (!MethodInfo->ShouldBeSerialized)
         {
             AslError (ASL_REMARK, ASL_MSG_SERIALIZED_REQUIRED, MethodInfo->Op,
-                "due to creation of named objects within");
+                ExternalPath);
 
             /* Emit message only ONCE per method */
 
             MethodInfo->ShouldBeSerialized = TRUE;
         }
+
+        if (ExternalPath)
+        {
+            ACPI_FREE (ExternalPath);
+        }
     }
+}
+
+
+/*******************************************************************************
+ *
+ * FUNCTION:    MtCheckStaticOperationRegionInMethod
+ *
+ * PARAMETERS:  Op                  - Current parser op
+ *
+ * RETURN:      None
+ *
+ * DESCRIPTION: Warns if an Operation Region with static address or length
+ *              is declared inside a control method
+ *
+ ******************************************************************************/
+
+static void
+MtCheckStaticOperationRegionInMethod(
+    ACPI_PARSE_OBJECT*       Op)
+{
+    ACPI_PARSE_OBJECT*       AddressOp;
+    ACPI_PARSE_OBJECT*       LengthOp;
+
+
+    if (Op->Asl.ParseOpcode != PARSEOP_OPERATIONREGION)
+    {
+        return;
+    }
+
+    /*
+     * OperationRegion should have 4 arguments defined. At this point, we
+     * assume that the parse tree is well-formed.
+     */
+    AddressOp = Op->Asl.Child->Asl.Next->Asl.Next;
+    LengthOp = Op->Asl.Child->Asl.Next->Asl.Next->Asl.Next;
+
+    if (UtGetParentMethodOp (Op) &&
+        AddressOp->Asl.ParseOpcode == PARSEOP_INTEGER &&
+        LengthOp->Asl.ParseOpcode == PARSEOP_INTEGER)
+    {
+        /*
+         * At this point, a static operation region declared inside of a
+         * control method has been found. Throw a warning because this is
+         * highly inefficient.
+         */
+        AslError(ASL_WARNING, ASL_MSG_STATIC_OPREGION_IN_METHOD, Op, NULL);
+    }
+
+    return;
 }
 
 
@@ -698,6 +918,7 @@ MtMethodAnalysisWalkEnd (
 {
     ASL_ANALYSIS_WALK_INFO  *WalkInfo = (ASL_ANALYSIS_WALK_INFO *) Context;
     ASL_METHOD_INFO         *MethodInfo = WalkInfo->MethodStack;
+    char                    *ExternalPath;
 
 
     switch (Op->Asl.ParseOpcode)
@@ -750,8 +971,15 @@ MtMethodAnalysisWalkEnd (
         if (MethodInfo->NumReturnNoValue &&
             MethodInfo->NumReturnWithValue)
         {
+            ExternalPath = AcpiNsGetNormalizedPathname (Op->Asl.Node, TRUE);
+
             AslError (ASL_WARNING, ASL_MSG_RETURN_TYPES, Op,
-                Op->Asl.ExternalName);
+                ExternalPath);
+
+            if (ExternalPath)
+            {
+                ACPI_FREE (ExternalPath);
+            }
         }
 
         /*

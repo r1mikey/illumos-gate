@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -303,16 +303,16 @@ AcpiUtRepairName (
      * Special case for the root node. This can happen if we get an
      * error during the execution of module-level code.
      */
-    if (ACPI_COMPARE_NAME (Name, ACPI_ROOT_PATHNAME))
+    if (ACPI_COMPARE_NAMESEG (Name, ACPI_ROOT_PATHNAME))
     {
         return;
     }
 
-    ACPI_MOVE_NAME (&OriginalName, Name);
+    ACPI_COPY_NAMESEG (&OriginalName, &Name[0]);
 
     /* Check each character in the name */
 
-    for (i = 0; i < ACPI_NAME_SIZE; i++)
+    for (i = 0; i < ACPI_NAMESEG_SIZE; i++)
     {
         if (AcpiUtValidNameChar (Name[i], i))
         {
@@ -321,10 +321,10 @@ AcpiUtRepairName (
 
         /*
          * Replace a bad character with something printable, yet technically
-         * still invalid. This prevents any collisions with existing "good"
+         * "odd". This prevents any collisions with existing "good"
          * names in the namespace.
          */
-        Name[i] = '*';
+        Name[i] = '_';
         FoundBadChar = TRUE;
     }
 
@@ -335,8 +335,8 @@ AcpiUtRepairName (
         if (!AcpiGbl_EnableInterpreterSlack)
         {
             ACPI_WARNING ((AE_INFO,
-                "Invalid character(s) in name (0x%.8X), repaired: [%4.4s]",
-                OriginalName, Name));
+                "Invalid character(s) in name (0x%.8X) %p, repaired: [%4.4s]",
+                OriginalName, Name, &Name[0]));
         }
         else
         {

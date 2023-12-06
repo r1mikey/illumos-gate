@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -705,7 +705,7 @@ AcpiDsCallControlMethod (
     if (!Info)
     {
         Status = AE_NO_MEMORY;
-        goto Cleanup;
+        goto PopWalkState;
     }
 
     Info->Parameters = &ThisWalkState->Operands[0];
@@ -717,8 +717,10 @@ AcpiDsCallControlMethod (
     ACPI_FREE (Info);
     if (ACPI_FAILURE (Status))
     {
-        goto Cleanup;
+        goto PopWalkState;
     }
+
+    NextWalkState->MethodNestingDepth = ThisWalkState->MethodNestingDepth + 1;
 
     /*
      * Delete the operands on the previous walkstate operand stack
@@ -738,6 +740,16 @@ AcpiDsCallControlMethod (
         "**** Begin nested execution of [%4.4s] **** WalkState=%p\n",
         MethodNode->Name.Ascii, NextWalkState));
 
+    ThisWalkState->MethodPathname = AcpiNsGetNormalizedPathname (MethodNode, TRUE);
+    ThisWalkState->MethodIsNested = TRUE;
+
+    /* Optional object evaluation log */
+
+    ACPI_DEBUG_PRINT_RAW ((ACPI_DB_EVALUATION,
+        "%-26s:  %*s%s\n", "   Nested method call",
+        NextWalkState->MethodNestingDepth * 3, " ",
+        &ThisWalkState->MethodPathname[1]));
+
     /* Invoke an internal method if necessary */
 
     if (ObjDesc->Method.InfoFlags & ACPI_METHOD_INTERNAL_ONLY)
@@ -751,6 +763,12 @@ AcpiDsCallControlMethod (
 
     return_ACPI_STATUS (Status);
 
+
+PopWalkState:
+
+    /* On error, pop the walk state to be deleted from thread */
+
+    AcpiDsPopWalkState(Thread);
 
 Cleanup:
 

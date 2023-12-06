@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -171,6 +171,7 @@ extern const char                       *AcpiGbl_MaxDecode[];
 extern const char                       *AcpiGbl_MemDecode[];
 extern const char                       *AcpiGbl_MinDecode[];
 extern const char                       *AcpiGbl_MtpDecode[];
+extern const char                       *AcpiGbl_PhyDecode[];
 extern const char                       *AcpiGbl_RngDecode[];
 extern const char                       *AcpiGbl_RwDecode[];
 extern const char                       *AcpiGbl_ShrDecode[];
@@ -195,6 +196,8 @@ extern const char                       *AcpiGbl_SbDecode[];
 extern const char                       *AcpiGbl_FcDecode[];
 extern const char                       *AcpiGbl_PtDecode[];
 extern const char                       *AcpiGbl_PtypDecode[];
+extern const char                       *AcpiGbl_ClockInputMode[];
+extern const char                       *AcpiGbl_ClockInputScale[];
 #endif
 
 /*
@@ -290,10 +293,11 @@ typedef struct acpi_pkg_info
 
 /* AcpiUtDumpBuffer */
 
-#define DB_BYTE_DISPLAY     1
-#define DB_WORD_DISPLAY     2
-#define DB_DWORD_DISPLAY    4
-#define DB_QWORD_DISPLAY    8
+#define DB_BYTE_DISPLAY      0x01
+#define DB_WORD_DISPLAY      0x02
+#define DB_DWORD_DISPLAY     0x04
+#define DB_QWORD_DISPLAY     0x08
+#define DB_DISPLAY_DATA_ONLY 0x10
 
 
 /*
@@ -313,6 +317,31 @@ AcpiUtCheckAndRepairAscii (
     UINT8                   *Name,
     char                    *RepairedName,
     UINT32                  Count);
+
+
+/*
+ * utcksum - Checksum utilities
+ */
+UINT8
+AcpiUtGenerateChecksum (
+    void                    *Table,
+    UINT32                  Length,
+    UINT8                   OriginalChecksum);
+
+UINT8
+AcpiUtChecksum (
+    UINT8                   *Buffer,
+    UINT32                  Length);
+
+ACPI_STATUS
+AcpiUtVerifyCdatChecksum (
+    ACPI_TABLE_CDAT         *CdatTable,
+    UINT32                  Length);
+
+ACPI_STATUS
+AcpiUtVerifyChecksum (
+    ACPI_TABLE_HEADER       *Table,
+    UINT32                  Length);
 
 
 /*
@@ -360,6 +389,10 @@ AcpiUtRemoveLeadingZeros (
 
 BOOLEAN
 AcpiUtDetectHexPrefix (
+    char                    **String);
+
+void
+AcpiUtRemoveHexPrefix (
     char                    **String);
 
 BOOLEAN
@@ -1190,30 +1223,33 @@ AcpiUtDeleteAddressLists (
 /*
  * utxferror - various error/warning output functions
  */
+ACPI_PRINTF_LIKE(5)
 void ACPI_INTERNAL_VAR_XFACE
 AcpiUtPredefinedWarning (
     const char              *ModuleName,
     UINT32                  LineNumber,
     char                    *Pathname,
-    UINT8                   NodeFlags,
+    UINT16                  NodeFlags,
     const char              *Format,
     ...);
 
+ACPI_PRINTF_LIKE(5)
 void ACPI_INTERNAL_VAR_XFACE
 AcpiUtPredefinedInfo (
     const char              *ModuleName,
     UINT32                  LineNumber,
     char                    *Pathname,
-    UINT8                   NodeFlags,
+    UINT16                  NodeFlags,
     const char              *Format,
     ...);
 
+ACPI_PRINTF_LIKE(5)
 void ACPI_INTERNAL_VAR_XFACE
 AcpiUtPredefinedBiosError (
     const char              *ModuleName,
     UINT32                  LineNumber,
     char                    *Pathname,
-    UINT8                   NodeFlags,
+    UINT16                  NodeFlags,
     const char              *Format,
     ...);
 
@@ -1259,6 +1295,11 @@ void
 AcpiUtConvertStringToUuid (
     char                    *InString,
     UINT8                   *UuidBuffer);
+
+ACPI_STATUS
+AcpiUtConvertUuidToString (
+    char                    *UuidBuffer,
+    char                    *OutString);
 #endif
 
 #endif /* _ACUTILS_H */

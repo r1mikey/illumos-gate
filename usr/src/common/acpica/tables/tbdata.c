@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -243,14 +243,28 @@ AcpiTbInitTableDescriptor (
 {
 
     /*
-     * Initialize the table descriptor. Set the pointer to NULL, since the
-     * table is not fully mapped at this time.
+     * Initialize the table descriptor. Set the pointer to NULL for external
+     * tables, since the table is not fully mapped at this time.
      */
     memset (TableDesc, 0, sizeof (ACPI_TABLE_DESC));
     TableDesc->Address = Address;
     TableDesc->Length = Table->Length;
     TableDesc->Flags = Flags;
     ACPI_MOVE_32_TO_32 (TableDesc->Signature.Ascii, Table->Signature);
+
+    switch (TableDesc->Flags & ACPI_TABLE_ORIGIN_MASK)
+    {
+    case ACPI_TABLE_ORIGIN_INTERNAL_VIRTUAL:
+    case ACPI_TABLE_ORIGIN_EXTERNAL_VIRTUAL:
+
+        TableDesc->Pointer = Table;
+        break;
+
+    case ACPI_TABLE_ORIGIN_INTERNAL_PHYSICAL:
+    default:
+
+        break;
+    }
 }
 
 
@@ -290,8 +304,7 @@ AcpiTbAcquireTable (
     case ACPI_TABLE_ORIGIN_INTERNAL_VIRTUAL:
     case ACPI_TABLE_ORIGIN_EXTERNAL_VIRTUAL:
 
-        Table = ACPI_CAST_PTR (ACPI_TABLE_HEADER,
-            ACPI_PHYSADDR_TO_PTR (TableDesc->Address));
+        Table = TableDesc->Pointer;
         break;
 
     default:
@@ -359,6 +372,8 @@ AcpiTbReleaseTable (
  * PARAMETERS:  TableDesc           - Table descriptor to be acquired
  *              Address             - Address of the table
  *              Flags               - Allocation flags of the table
+ *              Table               - Pointer to the table (required for virtual
+ *                                    origins, optional for physical)
  *
  * RETURN:      Status
  *
@@ -373,9 +388,10 @@ ACPI_STATUS
 AcpiTbAcquireTempTable (
     ACPI_TABLE_DESC         *TableDesc,
     ACPI_PHYSICAL_ADDRESS   Address,
-    UINT8                   Flags)
+    UINT8                   Flags,
+    ACPI_TABLE_HEADER       *Table)
 {
-    ACPI_TABLE_HEADER       *TableHeader;
+    BOOLEAN                 MappedTable = FALSE;
 
 
     switch (Flags & ACPI_TABLE_ORIGIN_MASK)
@@ -384,37 +400,43 @@ AcpiTbAcquireTempTable (
 
         /* Get the length of the full table from the header */
 
-        TableHeader = AcpiOsMapMemory (Address, sizeof (ACPI_TABLE_HEADER));
-        if (!TableHeader)
+        if (!Table)
         {
-            return (AE_NO_MEMORY);
+            Table = AcpiOsMapMemory (Address, sizeof (ACPI_TABLE_HEADER));
+            if (!Table)
+            {
+                return (AE_NO_MEMORY);
+            }
+
+            MappedTable = TRUE;
         }
 
-        AcpiTbInitTableDescriptor (TableDesc, Address, Flags, TableHeader);
-        AcpiOsUnmapMemory (TableHeader, sizeof (ACPI_TABLE_HEADER));
-        return (AE_OK);
+        break;
 
     case ACPI_TABLE_ORIGIN_INTERNAL_VIRTUAL:
     case ACPI_TABLE_ORIGIN_EXTERNAL_VIRTUAL:
 
-        TableHeader = ACPI_CAST_PTR (ACPI_TABLE_HEADER,
-            ACPI_PHYSADDR_TO_PTR (Address));
-        if (!TableHeader)
+        if (!Table)
         {
-            return (AE_NO_MEMORY);
+            return (AE_BAD_PARAMETER);
         }
 
-        AcpiTbInitTableDescriptor (TableDesc, Address, Flags, TableHeader);
-        return (AE_OK);
+        break;
 
     default:
 
-        break;
+        /* Table is not valid yet */
+
+        return (AE_NO_MEMORY);
     }
 
-    /* Table is not valid yet */
+    AcpiTbInitTableDescriptor (TableDesc, Address, Flags, Table);
+    if (MappedTable)
+    {
+        AcpiOsUnmapMemory (Table, sizeof (ACPI_TABLE_HEADER));
+    }
 
-    return (AE_NO_MEMORY);
+    return (AE_OK);
 }
 
 
@@ -513,7 +535,20 @@ AcpiTbInvalidateTable (
 
     AcpiTbReleaseTable (TableDesc->Pointer, TableDesc->Length,
         TableDesc->Flags);
-    TableDesc->Pointer = NULL;
+
+    switch (TableDesc->Flags & ACPI_TABLE_ORIGIN_MASK)
+    {
+    case ACPI_TABLE_ORIGIN_INTERNAL_PHYSICAL:
+
+        TableDesc->Pointer = NULL;
+        break;
+
+    case ACPI_TABLE_ORIGIN_INTERNAL_VIRTUAL:
+    case ACPI_TABLE_ORIGIN_EXTERNAL_VIRTUAL:
+    default:
+
+        break;
+    }
 
     return_VOID;
 }
@@ -676,7 +711,7 @@ AcpiTbVerifyTempTable (
     /* If a particular signature is expected (DSDT/FACS), it must match */
 
     if (Signature &&
-        !ACPI_COMPARE_NAME (&TableDesc->Signature, Signature))
+        !ACPI_COMPARE_NAMESEG (&TableDesc->Signature, Signature))
     {
         ACPI_BIOS_ERROR ((AE_INFO,
             "Invalid signature 0x%X for ACPI table, expected [%s]",
@@ -689,7 +724,7 @@ AcpiTbVerifyTempTable (
     {
         /* Verify the checksum */
 
-        Status = AcpiTbVerifyChecksum (TableDesc->Pointer, TableDesc->Length);
+        Status = AcpiUtVerifyChecksum (TableDesc->Pointer, TableDesc->Length);
         if (ACPI_FAILURE (Status))
         {
             ACPI_EXCEPTION ((AE_INFO, AE_NO_MEMORY,
@@ -711,9 +746,9 @@ AcpiTbVerifyTempTable (
             {
                 if (Status != AE_CTRL_TERMINATE)
                 {
-                    ACPI_EXCEPTION ((AE_INFO, AE_NO_MEMORY,
+                    ACPI_EXCEPTION ((AE_INFO, Status,
                         "%4.4s 0x%8.8X%8.8X"
-                        " Table is duplicated",
+                        " Table is already loaded",
                         AcpiUtValidNameseg (TableDesc->Signature.Ascii) ?
                             TableDesc->Signature.Ascii : "????",
                         ACPI_FORMAT_UINT64 (TableDesc->Address)));
@@ -973,6 +1008,7 @@ AcpiTbDeleteNamespaceByOwner (
     {
         return_ACPI_STATUS (Status);
     }
+
     AcpiNsDeleteNamespaceByOwner (OwnerId);
     AcpiUtReleaseWriteLock (&AcpiGbl_NamespaceRwLock);
     return_ACPI_STATUS (Status);
@@ -1189,19 +1225,10 @@ AcpiTbLoadTable (
     }
 
     Status = AcpiNsLoadTable (TableIndex, ParentNode);
-
-    /*
-     * This case handles the legacy option that groups all module-level
-     * code blocks together and defers execution until all of the tables
-     * are loaded. Execute all of these blocks at this time.
-     * Execute any module-level code that was detected during the table
-     * load phase.
-     *
-     * Note: this option is deprecated and will be eliminated in the
-     * future. Use of this option can cause problems with AML code that
-     * depends upon in-order immediate execution of module-level code.
-     */
-    AcpiNsExecModuleCodeList ();
+    if (ACPI_FAILURE (Status))
+    {
+        return_ACPI_STATUS (Status);
+    }
 
     /*
      * Update GPEs for any new _Lxx/_Exx methods. Ignore errors. The host is
@@ -1227,6 +1254,9 @@ AcpiTbLoadTable (
  *
  * PARAMETERS:  Address                 - Physical address of the table
  *              Flags                   - Allocation flags of the table
+ *              Table                   - Pointer to the table (required for
+ *                                        virtual origins, optional for
+ *                                        physical)
  *              Override                - Whether override should be performed
  *              TableIndex              - Where table index is returned
  *
@@ -1240,6 +1270,7 @@ ACPI_STATUS
 AcpiTbInstallAndLoadTable (
     ACPI_PHYSICAL_ADDRESS   Address,
     UINT8                   Flags,
+    ACPI_TABLE_HEADER       *Table,
     BOOLEAN                 Override,
     UINT32                  *TableIndex)
 {
@@ -1252,7 +1283,7 @@ AcpiTbInstallAndLoadTable (
 
     /* Install the table and load it into the namespace */
 
-    Status = AcpiTbInstallStandardTable (Address, Flags, TRUE,
+    Status = AcpiTbInstallStandardTable (Address, Flags, Table, TRUE,
         Override, &i);
     if (ACPI_FAILURE (Status))
     {

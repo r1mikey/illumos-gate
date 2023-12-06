@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -472,7 +472,7 @@ AcpiTbParseFadt (
      * Validate the FADT checksum before we copy the table. Ignore
      * checksum error as we want to try to get the DSDT and FACS.
      */
-    (void) AcpiTbVerifyChecksum (Table, Length);
+    (void) AcpiUtVerifyChecksum (Table, Length);
 
     /* Create a local copy of the FADT in common ACPI 2.0+ format */
 
@@ -486,7 +486,7 @@ AcpiTbParseFadt (
 
     AcpiTbInstallStandardTable (
         (ACPI_PHYSICAL_ADDRESS) AcpiGbl_FADT.XDsdt,
-        ACPI_TABLE_ORIGIN_INTERNAL_PHYSICAL, FALSE, TRUE,
+        ACPI_TABLE_ORIGIN_INTERNAL_PHYSICAL, NULL, FALSE, TRUE,
         &AcpiGbl_DsdtIndex);
 
     /* If Hardware Reduced flag is set, there is no FACS */
@@ -497,14 +497,14 @@ AcpiTbParseFadt (
         {
             AcpiTbInstallStandardTable (
                 (ACPI_PHYSICAL_ADDRESS) AcpiGbl_FADT.Facs,
-                ACPI_TABLE_ORIGIN_INTERNAL_PHYSICAL, FALSE, TRUE,
+                ACPI_TABLE_ORIGIN_INTERNAL_PHYSICAL, NULL, FALSE, TRUE,
                 &AcpiGbl_FacsIndex);
         }
         if (AcpiGbl_FADT.XFacs)
         {
             AcpiTbInstallStandardTable (
                 (ACPI_PHYSICAL_ADDRESS) AcpiGbl_FADT.XFacs,
-                ACPI_TABLE_ORIGIN_INTERNAL_PHYSICAL, FALSE, TRUE,
+                ACPI_TABLE_ORIGIN_INTERNAL_PHYSICAL, NULL, FALSE, TRUE,
                 &AcpiGbl_XFacsIndex);
         }
     }
@@ -740,7 +740,7 @@ AcpiTbConvertFadt (
                  * 64-bit X length field.
                  * Note: If the legacy length field is > 0xFF bits, ignore
                  * this check. (GPE registers can be larger than the
-                 * 64-bit GAS structure can accomodate, 0xFF bits).
+                 * 64-bit GAS structure can accommodate, 0xFF bits).
                  */
                 if ((ACPI_MUL_8 (Length) <= ACPI_UINT8_MAX) &&
                     (Address64->BitWidth != ACPI_MUL_8 (Length)))

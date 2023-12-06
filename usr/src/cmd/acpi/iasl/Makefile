@@ -8,6 +8,7 @@
 # source.  A copy of the CDDL is also available via the Internet at
 # http://www.illumos.org/license/CDDL.
 #
+# Copyright 2023 Michael van der Westhuizen
 # Copyright 2020 Joyent, Inc.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 #
@@ -60,7 +61,7 @@ OBJS += psargs.o psloop.o psobject.o psopcode.o psopinfo.o psparse.o psscope.o p
 # usr/src/common/acpica/tables
 OBJS +=	tbdata.o tbfadt.o tbinstal.o tbprint.o tbutils.o tbxface.o
 # usr/src/common/acpica/utilities
-OBJS += utaddress.o utalloc.o utascii.o utbuffer.o utcache.o utcopy.o \
+OBJS += utaddress.o utalloc.o utascii.o utbuffer.o utcache.o utcksum.o utcopy.o \
 	utdebug.o utdecode.o utdelete.o uterror.o utexcep.o utglobal.o uthex.o \
 	utinit.o utlock.o utmath.o utmisc.o utmutex.o utnonansi.o utobject.o \
 	utownerid.o utpredef.o utresdecode.o utresrc.o utstate.o \
@@ -93,11 +94,14 @@ INTERMEDIATES = \
 	aslcompiler.y \
 	aslcompilerlex.c \
 	aslcompilerparse.c \
+	dtcompilerparserlex.c \
+	dtcompilerparserparse.c \
 	dtparserlex.c \
 	dtparserparse.c \
 	prparserlex.c \
 	prparserparse.c \
 	aslcompiler.y.h \
+	dtcompilerparser.y.h \
 	dtparser.y.h \
 	prparser.y.h
 
@@ -107,13 +111,17 @@ SMATCH=off
 CPPFLAGS += -I$(SRC)/uts/intel/sys/acpi -DACPI_ASL_COMPILER -I.
 CPPFLAGS += -DACPI_DATE=\"`$(ECHO) $(VERSION) | sed -e 's/ /_/g'`\"
 
-LEX_C_FILES = aslcompilerlex.c dtparserlex.c prparserlex.c
-YACC_C_FILES = aslcompilerparse.c dtparserparse.c prparserparse.c
-YACC_H_FILES = aslcompiler.y.h dtparser.y.h prparser.y.h
+LEX_C_FILES = aslcompilerlex.c dtcompilerparserlex.c dtparserlex.c prparserlex.c
+YACC_C_FILES = aslcompilerparse.c dtcompilerparserparse.c dtparserparse.c prparserparse.c
+YACC_H_FILES = aslcompiler.y.h dtcompilerparser.y.h dtparser.y.h prparser.y.h
 YACC_FILES = $(YACC_C_FILES) $(YACC_H_FILES)
 
 aslcompilerlex.c aslcompilerparse.c aslcompiler.y.h := PARSER = AslCompiler
 aslcompilerlex.c aslcompilerparse.c aslcompiler.y.h := LY_BASE = aslcompiler
+
+dtcompilerparserlex.c dtcompilerparserparse.c dtcompilerparser.y.h := PARSER = DtCompilerParser
+dtcompilerparserlex.c dtcompilerparserparse.c dtcompilerparser.y.h := LY_BASE = dtcompilerparser
+dtcompilerparserlex.c := LFLAGS = -i
 
 dtparserlex.c dtparserparse.c dtparser.y.h := PARSER = DtParser
 dtparserlex.c dtparserparse.c dtparser.y.h := LY_BASE = dtparser
@@ -131,6 +139,8 @@ OBJS += $(LEX_C_FILES:.c=.o) $(YACC_C_FILES:.c=.o)
 
 # We are using stack pointer value there
 utdebug.o := CERRWARN += -_gcc=-Wno-dangling-pointer
+# New warnings to squash
+dttable2.o dmtbdump2.o := CERRWARN += -_gcc=-Wno-implicit-fallthrough
 
 GM4FLAGS = -P
 LFLAGS = -i -s

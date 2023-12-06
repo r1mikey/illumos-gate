@@ -9,7 +9,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -158,7 +158,9 @@
 #include "acinterp.h"
 #include "acnamesp.h"
 #include "acdebug.h"
-
+#ifdef ACPI_EXEC_APP
+#include "aecommon.h"
+#endif
 
 #define _COMPONENT          ACPI_DISPATCHER
         ACPI_MODULE_NAME    ("dswexec")
@@ -171,7 +173,7 @@ static ACPI_EXECUTE_OP      AcpiGbl_OpTypeDispatch [] =
     AcpiExOpcode_0A_0T_1R,
     AcpiExOpcode_1A_0T_0R,
     AcpiExOpcode_1A_0T_1R,
-    AcpiExOpcode_1A_1T_0R,
+    NULL,   /* Was: AcpiExOpcode_1A_0T_0R (Was for Load operator) */
     AcpiExOpcode_1A_1T_1R,
     AcpiExOpcode_2A_0T_0R,
     AcpiExOpcode_2A_0T_1R,
@@ -506,7 +508,10 @@ AcpiDsExecEndOp (
     UINT32                  OpClass;
     ACPI_PARSE_OBJECT       *NextOp;
     ACPI_PARSE_OBJECT       *FirstArg;
-
+#ifdef ACPI_EXEC_APP
+    char                    *Namepath;
+    ACPI_OPERAND_OBJECT     *ObjDesc;
+#endif
 
     ACPI_FUNCTION_TRACE_PTR (DsExecEndOp, WalkState);
 
@@ -568,9 +573,11 @@ AcpiDsExecEndOp (
 
         /*
          * All opcodes require operand resolution, with the only exceptions
-         * being the ObjectType and SizeOf operators.
+         * being the ObjectType and SizeOf operators as well as opcodes that
+         * take no arguments.
          */
-        if (!(WalkState->OpInfo->Flags & AML_NO_OPERAND_RESOLVE))
+        if (!(WalkState->OpInfo->Flags & AML_NO_OPERAND_RESOLVE) &&
+            (WalkState->OpInfo->Flags & AML_HAS_ARGS))
         {
             /* Resolve all operands */
 
@@ -721,6 +728,29 @@ AcpiDsExecEndOp (
             }
 
             Status = AcpiDsEvalBufferFieldOperands (WalkState, Op);
+            if (ACPI_FAILURE (Status))
+            {
+                break;
+            }
+
+#ifdef ACPI_EXEC_APP
+            /*
+             * AcpiExec support for namespace initialization file (initialize
+             * BufferFields in this code.)
+             */
+            Namepath = AcpiNsGetExternalPathname (Op->Common.Node);
+            Status = AeLookupInitFileEntry (Namepath, &ObjDesc);
+            if (ACPI_SUCCESS (Status))
+            {
+                Status = AcpiExWriteDataToField (ObjDesc, Op->Common.Node->Object, NULL);
+                if (ACPI_FAILURE (Status))
+                {
+                    ACPI_EXCEPTION ((AE_INFO, Status, "While writing to buffer field"));
+                }
+            }
+            ACPI_FREE (Namepath);
+            Status = AE_OK;
+#endif
             break;
 
 
@@ -748,8 +778,7 @@ AcpiDsExecEndOp (
                     break;
                 }
 
-                /* Fall through */
-                /*lint -fallthrough */
+                ACPI_FALLTHROUGH;
 
             case AML_INT_EVAL_SUBTREE_OP:
 
