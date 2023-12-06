@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -183,7 +183,7 @@
 
 #define PR_PREFIX_ID            "Pr(%.4u) - "             /* Used for debug output */
 
-#define THIS_TOKEN_OFFSET(t)    ((t-Gbl_MainTokenBuffer) + 1)
+#define THIS_TOKEN_OFFSET(t)    ((AslGbl_MainTokenBuffer - t) + 1)
 
 
 /*
@@ -247,21 +247,23 @@ typedef struct directive_info
 /*
  * Globals
  */
+PR_EXTERN char                  PR_INIT_GLOBAL (*AslGbl_MainTokenBuffer, NULL); /* [ASL_LINE_BUFFER_SIZE]; */
+PR_EXTERN char                  PR_INIT_GLOBAL (*AslGbl_MacroTokenBuffer, NULL); /* [ASL_LINE_BUFFER_SIZE]; */
+PR_EXTERN char                  PR_INIT_GLOBAL (*AslGbl_MacroTokenReplaceBuffer, NULL); /* [ASL_LINE_BUFFER_SIZE]; */
+PR_EXTERN char                  PR_INIT_GLOBAL (*AslGbl_ExpressionTokenBuffer, NULL); /* [ASL_LINE_BUFFER_SIZE]; */
+
+PR_EXTERN UINT32                AslGbl_PreprocessorLineNumber;
+PR_EXTERN int                   AslGbl_IfDepth;
+PR_EXTERN PR_FILE_NODE          *AslGbl_InputFileList;
+PR_EXTERN BOOLEAN               PR_INIT_GLOBAL (AslGbl_PreprocessorError, FALSE);
+PR_EXTERN BOOLEAN               PR_INIT_GLOBAL (AslGbl_IgnoringThisCodeBlock, FALSE);
+PR_EXTERN PR_DEFINE_INFO        PR_INIT_GLOBAL (*AslGbl_DefineList, NULL);
+PR_EXTERN DIRECTIVE_INFO        PR_INIT_GLOBAL (*AslGbl_DirectiveStack, NULL);
+
 #if 0 /* TBD for macros */
 PR_EXTERN char                  PR_INIT_GLOBAL (*XXXEvalBuffer, NULL); /* [ASL_LINE_BUFFER_SIZE]; */
 #endif
 
-PR_EXTERN char                  PR_INIT_GLOBAL (*Gbl_MainTokenBuffer, NULL); /* [ASL_LINE_BUFFER_SIZE]; */
-PR_EXTERN char                  PR_INIT_GLOBAL (*Gbl_MacroTokenBuffer, NULL); /* [ASL_LINE_BUFFER_SIZE]; */
-PR_EXTERN char                  PR_INIT_GLOBAL (*Gbl_ExpressionTokenBuffer, NULL); /* [ASL_LINE_BUFFER_SIZE]; */
-
-PR_EXTERN UINT32                Gbl_PreprocessorLineNumber;
-PR_EXTERN int                   Gbl_IfDepth;
-PR_EXTERN PR_FILE_NODE          *Gbl_InputFileList;
-PR_EXTERN PR_DEFINE_INFO        PR_INIT_GLOBAL (*Gbl_DefineList, NULL);
-PR_EXTERN BOOLEAN               PR_INIT_GLOBAL (Gbl_PreprocessorError, FALSE);
-PR_EXTERN BOOLEAN               PR_INIT_GLOBAL (Gbl_IgnoringThisCodeBlock, FALSE);
-PR_EXTERN DIRECTIVE_INFO        PR_INIT_GLOBAL (*Gbl_DirectiveStack, NULL);
 
 /*
  * prscan - Preprocessor entry
@@ -354,7 +356,7 @@ PrEvaluateExpression (
 
 
 /*
- * prutils - Preprocesor utilities
+ * prutils - Preprocessor utilities
  */
 char *
 PrGetNextToken (
@@ -369,6 +371,14 @@ PrError (
     UINT32                  Column);
 
 void
+PrReplaceResizeSubstring(
+    PR_MACRO_ARG            *Args,
+    UINT32                  Diff1,
+    UINT32                  Diff2,
+    UINT32                  i,
+    char                    *Token);
+
+char *
 PrReplaceData (
     char                    *Buffer,
     UINT32                  LengthToRemove,

@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -474,7 +474,6 @@ AnFormatBtype (
             strcat (Buffer, "|");
         }
 
-        First = FALSE;
         strcat (Buffer, "Resource");
     }
 }
@@ -502,10 +501,11 @@ AnGetBtype (
     ACPI_PARSE_OBJECT       *ReferencedNode;
     UINT32                  ThisNodeBtype = 0;
 
+    ACPI_FUNCTION_NAME (AnGetBtype);
 
     if (!Op)
     {
-        AcpiOsPrintf ("Null Op in AnGetBtype\n");
+        AcpiOsPrintf ("Null Op in %s\n",  ACPI_GET_FUNCTION_NAME);
         return (ACPI_UINT32_MAX);
     }
 
@@ -673,7 +673,7 @@ AnMapObjTypeToBtype (
  *
  * PARAMETERS:  Btype               - Bitfield of ACPI types
  *
- * RETURN:      The Etype corresponding the the Btype
+ * RETURN:      The Etype corresponding the Btype
  *
  * DESCRIPTION: Convert a bitfield type to an encoded type
  *

@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -219,25 +219,19 @@ AcpiLoadTables (
             "While loading namespace from ACPI tables"));
     }
 
-    if (AcpiGbl_ExecuteTablesAsMethods || !AcpiGbl_GroupModuleLevelCode)
+    /*
+     * Initialize the objects in the namespace that remain uninitialized.
+     * This runs the executable AML that may be part of the declaration of
+     * these name objects:
+     *     OperationRegions, BufferFields, Buffers, and Packages.
+     *
+     */
+    Status = AcpiNsInitializeObjects ();
+    if (ACPI_SUCCESS (Status))
     {
-        /*
-         * If the module-level code support is enabled, initialize the objects
-         * in the namespace that remain uninitialized. This runs the executable
-         * AML that may be part of the declaration of these name objects:
-         *     OperationRegions, BufferFields, Buffers, and Packages.
-         *
-         * Note: The module-level code is optional at this time, but will
-         * become the default in the future.
-         */
-        Status = AcpiNsInitializeObjects ();
-        if (ACPI_FAILURE (Status))
-        {
-            return_ACPI_STATUS (Status);
-        }
+        AcpiGbl_NamespaceInitialized = TRUE;
     }
 
-    AcpiGbl_NamespaceInitialized = TRUE;
     return_ACPI_STATUS (Status);
 }
 
@@ -281,7 +275,7 @@ AcpiTbLoadNamespace (
     Table = &AcpiGbl_RootTableList.Tables[AcpiGbl_DsdtIndex];
 
     if (!AcpiGbl_RootTableList.CurrentTableCount ||
-        !ACPI_COMPARE_NAME (Table->Signature.Ascii, ACPI_SIG_DSDT) ||
+        !ACPI_COMPARE_NAMESEG (Table->Signature.Ascii, ACPI_SIG_DSDT) ||
          ACPI_FAILURE (AcpiTbValidateTable (Table)))
     {
         Status = AE_NO_ACPI_TABLES;
@@ -340,9 +334,9 @@ AcpiTbLoadNamespace (
         Table = &AcpiGbl_RootTableList.Tables[i];
 
         if (!Table->Address ||
-            (!ACPI_COMPARE_NAME (Table->Signature.Ascii, ACPI_SIG_SSDT) &&
-             !ACPI_COMPARE_NAME (Table->Signature.Ascii, ACPI_SIG_PSDT) &&
-             !ACPI_COMPARE_NAME (Table->Signature.Ascii, ACPI_SIG_OSDT)) ||
+            (!ACPI_COMPARE_NAMESEG (Table->Signature.Ascii, ACPI_SIG_SSDT) &&
+             !ACPI_COMPARE_NAMESEG (Table->Signature.Ascii, ACPI_SIG_PSDT) &&
+             !ACPI_COMPARE_NAMESEG (Table->Signature.Ascii, ACPI_SIG_OSDT)) ||
             ACPI_FAILURE (AcpiTbValidateTable (Table)))
         {
             continue;
@@ -402,9 +396,7 @@ UnlockAndExit:
  *
  * FUNCTION:    AcpiInstallTable
  *
- * PARAMETERS:  Address             - Address of the ACPI table to be installed.
- *              Physical            - Whether the address is a physical table
- *                                    address or not
+ * PARAMETERS:  Table               - Pointer to the ACPI table to be installed.
  *
  * RETURN:      Status
  *
@@ -416,28 +408,17 @@ UnlockAndExit:
 
 ACPI_STATUS ACPI_INIT_FUNCTION
 AcpiInstallTable (
-    ACPI_PHYSICAL_ADDRESS   Address,
-    BOOLEAN                 Physical)
+    ACPI_TABLE_HEADER       *Table)
 {
     ACPI_STATUS             Status;
-    UINT8                   Flags;
     UINT32                  TableIndex;
 
 
     ACPI_FUNCTION_TRACE (AcpiInstallTable);
 
 
-    if (Physical)
-    {
-        Flags = ACPI_TABLE_ORIGIN_INTERNAL_PHYSICAL;
-    }
-    else
-    {
-        Flags = ACPI_TABLE_ORIGIN_EXTERNAL_VIRTUAL;
-    }
-
-    Status = AcpiTbInstallStandardTable (Address, Flags,
-        FALSE, FALSE, &TableIndex);
+    Status = AcpiTbInstallStandardTable (ACPI_PTR_TO_PHYSADDR (Table),
+        ACPI_TABLE_ORIGIN_EXTERNAL_VIRTUAL, Table, FALSE, FALSE, &TableIndex);
 
     return_ACPI_STATUS (Status);
 }
@@ -447,10 +428,46 @@ ACPI_EXPORT_SYMBOL_INIT (AcpiInstallTable)
 
 /*******************************************************************************
  *
+ * FUNCTION:    AcpiInstallPhysicalTable
+ *
+ * PARAMETERS:  Address             - Address of the ACPI table to be installed.
+ *
+ * RETURN:      Status
+ *
+ * DESCRIPTION: Dynamically install an ACPI table.
+ *              Note: This function should only be invoked after
+ *                    AcpiInitializeTables() and before AcpiLoadTables().
+ *
+ ******************************************************************************/
+
+ACPI_STATUS ACPI_INIT_FUNCTION
+AcpiInstallPhysicalTable (
+    ACPI_PHYSICAL_ADDRESS   Address)
+{
+    ACPI_STATUS             Status;
+    UINT32                  TableIndex;
+
+
+    ACPI_FUNCTION_TRACE (AcpiInstallPhysicalTable);
+
+
+    Status = AcpiTbInstallStandardTable (Address,
+        ACPI_TABLE_ORIGIN_INTERNAL_PHYSICAL, NULL, FALSE, FALSE, &TableIndex);
+
+    return_ACPI_STATUS (Status);
+}
+
+ACPI_EXPORT_SYMBOL_INIT (AcpiInstallPhysicalTable)
+
+
+/*******************************************************************************
+ *
  * FUNCTION:    AcpiLoadTable
  *
  * PARAMETERS:  Table               - Pointer to a buffer containing the ACPI
  *                                    table to be loaded.
+ *              TableIdx            - Pointer to a UINT32 for storing the table
+ *                                    index, might be NULL
  *
  * RETURN:      Status
  *
@@ -464,7 +481,8 @@ ACPI_EXPORT_SYMBOL_INIT (AcpiInstallTable)
 
 ACPI_STATUS
 AcpiLoadTable (
-    ACPI_TABLE_HEADER       *Table)
+    ACPI_TABLE_HEADER       *Table,
+    UINT32                  *TableIdx)
 {
     ACPI_STATUS             Status;
     UINT32                  TableIndex;
@@ -484,7 +502,19 @@ AcpiLoadTable (
 
     ACPI_INFO (("Host-directed Dynamic ACPI Table Load:"));
     Status = AcpiTbInstallAndLoadTable (ACPI_PTR_TO_PHYSADDR (Table),
-        ACPI_TABLE_ORIGIN_EXTERNAL_VIRTUAL, FALSE, &TableIndex);
+        ACPI_TABLE_ORIGIN_EXTERNAL_VIRTUAL, Table, FALSE, &TableIndex);
+    if (TableIdx)
+    {
+        *TableIdx = TableIndex;
+    }
+
+    if (ACPI_SUCCESS (Status))
+    {
+        /* Complete the initialization/resolution of new objects */
+
+        AcpiNsInitializeObjects ();
+    }
+
     return_ACPI_STATUS (Status);
 }
 
@@ -562,7 +592,7 @@ AcpiUnloadParentTable (
          * only these types can contain AML and thus are the only types
          * that can create namespace objects.
          */
-        if (ACPI_COMPARE_NAME (
+        if (ACPI_COMPARE_NAMESEG (
                 AcpiGbl_RootTableList.Tables[i].Signature.Ascii,
                 ACPI_SIG_DSDT))
         {
@@ -581,3 +611,42 @@ AcpiUnloadParentTable (
 }
 
 ACPI_EXPORT_SYMBOL (AcpiUnloadParentTable)
+
+
+/*******************************************************************************
+ *
+ * FUNCTION:    AcpiUnloadTable
+ *
+ * PARAMETERS:  TableIndex          - Index as returned by AcpiLoadTable
+ *
+ * RETURN:      Status
+ *
+ * DESCRIPTION: Via the TableIndex representing an SSDT or OEMx table, unloads
+ *              the table and deletes all namespace objects associated with
+ *              that table. Unloading of the DSDT is not allowed.
+ *              Note: Mainly intended to support hotplug removal of SSDTs.
+ *
+ ******************************************************************************/
+
+ACPI_STATUS
+AcpiUnloadTable (
+    UINT32                  TableIndex)
+{
+    ACPI_STATUS             Status;
+
+
+    ACPI_FUNCTION_TRACE (AcpiUnloadTable);
+
+
+    if (TableIndex == 1)
+    {
+        /* TableIndex==1 means DSDT is the owner. DSDT cannot be unloaded */
+
+        return_ACPI_STATUS (AE_TYPE);
+    }
+
+    Status = AcpiTbUnloadTable (TableIndex);
+    return_ACPI_STATUS (Status);
+}
+
+ACPI_EXPORT_SYMBOL (AcpiUnloadTable)

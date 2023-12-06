@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -261,8 +261,8 @@ PrError (
     UINT32                  Column)
 {
 #if 0
-    AcpiOsPrintf ("%s (%u) : %s", Gbl_Files[ASL_FILE_INPUT].Filename,
-        Gbl_CurrentLineNumber, Gbl_CurrentLineBuffer);
+    AcpiOsPrintf ("%s (%u) : %s", AslGbl_Files[ASL_FILE_INPUT].Filename,
+        AslGbl_CurrentLineNumber, AslGbl_CurrentLineBuffer);
 #endif
 
 
@@ -274,11 +274,243 @@ PrError (
     /* TBD: Need Logical line number? */
 
     AslCommonError2 (Level, MessageId,
-        Gbl_CurrentLineNumber, Column,
-        Gbl_CurrentLineBuffer,
-        Gbl_Files[ASL_FILE_INPUT].Filename, "Preprocessor");
+        AslGbl_CurrentLineNumber, Column,
+        AslGbl_CurrentLineBuffer,
+        AslGbl_Files[ASL_FILE_INPUT].Filename, "Preprocessor");
 
-    Gbl_PreprocessorError = TRUE;
+    AslGbl_PreprocessorError = TRUE;
+}
+
+
+/*******************************************************************************
+ *
+ * FUNCTION:    PrReplaceResizeSubstring
+ *
+ * PARAMETERS:  Args                - Struct containing name, offset & usecount
+ *              Diff1               - Difference in lengths when new < old
+ *              Diff2               - Difference in lengths when new > old
+*               i                   - The curr. no. of iteration of replacement
+ *              Token               - Substring that replaces Args->Name
+ *
+ * RETURN:      None
+ *
+ * DESCRIPTION: Advanced substring replacement in a string using resized buffer.
+ *
+ ******************************************************************************/
+
+void
+PrReplaceResizeSubstring(
+    PR_MACRO_ARG            *Args,
+    UINT32                  Diff1,
+    UINT32                  Diff2,
+    UINT32                  i,
+    char                    *Token)
+{
+    UINT32                  b, PrevOffset;
+    char                    *temp;
+    char                    macro_sep[64];
+
+
+    AslGbl_MacroTokenReplaceBuffer = (char *) realloc (AslGbl_MacroTokenReplaceBuffer,
+        (2 * (strlen (AslGbl_MacroTokenBuffer))));
+
+    strcpy (macro_sep, "~,() {}!*/%+-<>=&^|\"\t\n");
+
+    /*
+     * When the replacement argument (during invocation) length
+     * < replaced parameter (in the macro function definition
+     * and its expansion) length
+     */
+    if (Diff1 != 0)
+    {
+        /*
+         * We save the offset value to reset it after replacing each
+         * instance of each arg and setting the offset value to
+         * the start of the arg to be replaced since it changes
+         * with each iteration when arg length != token length
+         */
+        PrevOffset = Args->Offset[i];
+        temp = strstr (AslGbl_MacroTokenBuffer, Args->Name);
+
+ResetHere1:
+        temp = strstr (temp, Args->Name);
+        Args->Offset[i] = strlen (AslGbl_MacroTokenBuffer) -
+            strlen (temp);
+        if (Args->Offset[i] == 0)
+        {
+            goto JumpHere1;
+        }
+        if ((strchr (macro_sep, AslGbl_MacroTokenBuffer[(Args->Offset[i] - 1)])) &&
+            (strchr (macro_sep, AslGbl_MacroTokenBuffer[(Args->Offset[i] + strlen (Args->Name))])))
+        {
+            Args->Offset[i] += 0;
+        }
+        else
+        {
+            temp += strlen (Args->Name);
+            goto ResetHere1;
+        }
+
+        /*
+         * For now, we simply set the extra char positions (generated
+         * due to longer name replaced by shorter name) to whitespace
+         * chars so it will be ignored during compilation
+         */
+JumpHere1:
+        b = strlen (Token) + Args->Offset[i];
+        memset (&AslGbl_MacroTokenBuffer[b], ' ', Diff1);
+
+# if 0
+
+    /* Work in progress as of 03/08/2023 - experimental 'if' block
+     * to test code for removing extra whitespaces from the macro
+     * replacement when replacement arg < replaced param
+     */
+        char Buff[8192];
+        /* char* Replace; */
+        /* Replace = Buff; */
+
+        for (j = 0; j < strlen (AslGbl_MacroTokenBuffer); j++)
+        {
+            Buff[j] = AslGbl_MacroTokenBuffer[j];
+        }
+        Buff[strlen (AslGbl_MacroTokenBuffer)] = '\0';
+        //fprintf (stderr, "Buff: %s\n", Buff);
+
+        UINT32 len = strlen (Buff);
+
+        for (j = 0; j < len; j++)
+        {
+            if (Buff[0] == ' ')
+            {
+                for (j = 0; j < (len - 1); j++)
+                {
+                    Buff[j] = Buff[j + 1];
+                }
+                Buff[j] = '\0';
+                len--;
+                j = -1;
+                continue;
+            }
+
+            if (Buff[j] == ' ' && Buff[j + 1] == ' ')
+            {
+                for (k = 0; k < (len - 1); k++)
+                {
+                    Buff[j] = Buff[j + 1];
+                }
+                Buff[j] = '\0';
+                len--;
+                j--;
+            }
+        }
+        //fprintf(stderr, "Buff: %s\n", Buff);
+
+        for (k = 0; k < strlen (Buff); k++)
+        {
+            AslGbl_MacroTokenBuffer[k] = Buff[k];
+        }
+#endif
+
+        PrReplaceData (
+            &AslGbl_MacroTokenBuffer[Args->Offset[i]],
+            strlen (Token), Token, strlen (Token));
+
+        temp = NULL;
+        Args->Offset[i] = PrevOffset;
+    }
+
+    /*
+     * When the replacement argument (during invocation) length
+     * > replaced parameter (in the macro function definition
+     * and its expansion) length
+     */
+    else if (Diff2 != 0)
+    {
+        /* Doing the same thing with offset value as for prev case */
+
+        PrevOffset = Args->Offset[i];
+        temp = strstr (AslGbl_MacroTokenBuffer, Args->Name);
+
+ResetHere2:
+        temp = strstr (temp, Args->Name);
+        Args->Offset[i] = strlen (AslGbl_MacroTokenBuffer) -
+            strlen (temp);
+        if (Args->Offset[i] == 0)
+        {
+            goto JumpHere2;
+        }
+        if ((strchr (macro_sep, AslGbl_MacroTokenBuffer[(Args->Offset[i] - 1)])) &&
+            (strchr (macro_sep, AslGbl_MacroTokenBuffer[(Args->Offset[i] + strlen (Args->Name))])))
+        {
+            Args->Offset[i] += 0;
+        }
+        else
+        {
+            temp+= strlen (Args->Name);
+            goto ResetHere2;
+        }
+
+        /*
+         * We will need to allocate some extra space in our buffer to
+         * accommodate the increase in the replacement string length
+         * over the shorter outgoing arg string and do the replacement
+         * at the correct offset value which is resetted every iteration
+         */
+JumpHere2:
+        strncpy (AslGbl_MacroTokenReplaceBuffer, AslGbl_MacroTokenBuffer, Args->Offset[i]);
+        strcat (AslGbl_MacroTokenReplaceBuffer, Token);
+        strcat (AslGbl_MacroTokenReplaceBuffer, (AslGbl_MacroTokenBuffer +
+            (Args->Offset[i] + strlen (Args->Name))));
+
+        strcpy (AslGbl_MacroTokenBuffer, AslGbl_MacroTokenReplaceBuffer);
+
+        temp = NULL;
+        Args->Offset[i] = PrevOffset;
+    }
+
+    /*
+     * When the replacement argument (during invocation) length =
+     * replaced parameter (in the macro function definition and
+     * its expansion) length
+     */
+    else
+    {
+
+        /*
+         * We still need to reset the offset for each iteration even when
+         * arg and param lengths are same since any macro func invocation
+         * could use various cases for each separate arg-param pair
+         */
+        PrevOffset = Args->Offset[i];
+        temp = strstr (AslGbl_MacroTokenBuffer, Args->Name);
+
+ResetHere3:
+        temp = strstr (temp, Args->Name);
+        Args->Offset[i] = strlen (AslGbl_MacroTokenBuffer) -
+            strlen (temp);
+        if (Args->Offset[i] == 0)
+        {
+            goto JumpHere3;
+        }
+        if ((strchr (macro_sep, AslGbl_MacroTokenBuffer[(Args->Offset[i] - 1)])) &&
+            (strchr (macro_sep, AslGbl_MacroTokenBuffer[(Args->Offset[i] + strlen (Args->Name))])))
+        {
+            Args->Offset[i] += 0;
+        }
+        else
+        {
+            temp += strlen (Args->Name);
+            goto ResetHere3;
+        }
+
+JumpHere3:
+        PrReplaceData (
+            &AslGbl_MacroTokenBuffer[Args->Offset[i]],
+            strlen (Args->Name), Token, strlen (Token));
+        temp = NULL;
+        Args->Offset[i] = PrevOffset;
+    }
 }
 
 
@@ -291,13 +523,13 @@ PrError (
  *              BufferToAdd         - Data to be inserted into target buffer
  *              LengthToAdd         - Length of BufferToAdd
  *
- * RETURN:      None
+ * RETURN:      Pointer to where the buffer is replaced with data
  *
  * DESCRIPTION: Generic buffer data replacement.
  *
  ******************************************************************************/
 
-void
+char *
 PrReplaceData (
     char                    *Buffer,
     UINT32                  LengthToRemove,
@@ -325,12 +557,14 @@ PrReplaceData (
         }
     }
 
+
     /* Now we can move in the new data */
 
     if (LengthToAdd > 0)
     {
         memmove (Buffer, BufferToAdd, LengthToAdd);
     }
+    return (Buffer + LengthToAdd);
 }
 
 
@@ -358,7 +592,7 @@ PrOpenIncludeFile (
 
     /* Start the actual include file on the next line */
 
-    Gbl_CurrentLineOffset++;
+    AslGbl_CurrentLineOffset++;
 
     /* Attempt to open the include file */
     /* If the file specifies an absolute path, just open it */
@@ -385,7 +619,7 @@ PrOpenIncludeFile (
      * Construct the file pathname from the global directory name.
      */
     IncludeFile = PrOpenIncludeWithPrefix (
-        Gbl_DirectoryPath, Filename, OpenMode, FullPathname);
+        AslGbl_DirectoryPath, Filename, OpenMode, FullPathname);
     if (IncludeFile)
     {
         return (IncludeFile);
@@ -395,7 +629,7 @@ PrOpenIncludeFile (
      * Second, search for the file within the (possibly multiple)
      * directories specified by the -I option on the command line.
      */
-    NextDir = Gbl_IncludeDirList;
+    NextDir = AslGbl_IncludeDirList;
     while (NextDir)
     {
         IncludeFile = PrOpenIncludeWithPrefix (
@@ -411,7 +645,7 @@ PrOpenIncludeFile (
     /* We could not open the include file after trying very hard */
 
 ErrorExit:
-    sprintf (Gbl_MainTokenBuffer, "%s, %s", Filename, strerror (errno));
+    sprintf (AslGbl_MainTokenBuffer, "%s, %s", Filename, strerror (errno));
     PrError (ASL_ERROR, ASL_MSG_INCLUDE_FILE_OPEN, 0);
     return (NULL);
 }
@@ -448,14 +682,13 @@ PrOpenIncludeWithPrefix (
 
     DbgPrint (ASL_PARSE_OUTPUT, PR_PREFIX_ID
         "Include: Opening file - \"%s\"\n",
-        Gbl_CurrentLineNumber, Pathname);
+        AslGbl_CurrentLineNumber, Pathname);
 
     /* Attempt to open the file, push if successful */
 
     IncludeFile = fopen (Pathname, OpenMode);
     if (!IncludeFile)
     {
-        fprintf (stderr, "Could not open include file %s\n", Pathname);
         return (NULL);
     }
 
@@ -490,33 +723,33 @@ PrPushInputFileStack (
     PR_FILE_NODE            *Fnode;
 
 
-    Gbl_HasIncludeFiles = TRUE;
+    AslGbl_HasIncludeFiles = TRUE;
 
     /* Save the current state in an Fnode */
 
     Fnode = UtLocalCalloc (sizeof (PR_FILE_NODE));
 
-    Fnode->File = Gbl_Files[ASL_FILE_INPUT].Handle;
-    Fnode->Next = Gbl_InputFileList;
-    Fnode->Filename = Gbl_Files[ASL_FILE_INPUT].Filename;
-    Fnode->CurrentLineNumber = Gbl_CurrentLineNumber;
+    Fnode->File = AslGbl_Files[ASL_FILE_INPUT].Handle;
+    Fnode->Next = AslGbl_InputFileList;
+    Fnode->Filename = AslGbl_Files[ASL_FILE_INPUT].Filename;
+    Fnode->CurrentLineNumber = AslGbl_CurrentLineNumber;
 
     /* Push it on the stack */
 
-    Gbl_InputFileList = Fnode;
+    AslGbl_InputFileList = Fnode;
 
     DbgPrint (ASL_PARSE_OUTPUT, PR_PREFIX_ID
         "Push InputFile Stack: handle %p\n\n",
-        Gbl_CurrentLineNumber, InputFile);
+        AslGbl_CurrentLineNumber, InputFile);
 
     /* Reset the global line count and filename */
 
-    Gbl_Files[ASL_FILE_INPUT].Filename =
+    AslGbl_Files[ASL_FILE_INPUT].Filename =
         UtLocalCacheCalloc (strlen (Filename) + 1);
-    strcpy (Gbl_Files[ASL_FILE_INPUT].Filename, Filename);
+    strcpy (AslGbl_Files[ASL_FILE_INPUT].Filename, Filename);
 
-    Gbl_Files[ASL_FILE_INPUT].Handle = InputFile;
-    Gbl_CurrentLineNumber = 1;
+    AslGbl_Files[ASL_FILE_INPUT].Handle = InputFile;
+    AslGbl_CurrentLineNumber = 1;
 
     /* Emit a new #line directive for the include file */
 
@@ -546,10 +779,10 @@ PrPopInputFileStack (
     PR_FILE_NODE            *Fnode;
 
 
-    Fnode = Gbl_InputFileList;
+    Fnode = AslGbl_InputFileList;
     DbgPrint (ASL_PARSE_OUTPUT, "\n" PR_PREFIX_ID
         "Pop InputFile Stack, Fnode %p\n\n",
-        Gbl_CurrentLineNumber, Fnode);
+        AslGbl_CurrentLineNumber, Fnode);
 
     if (!Fnode)
     {
@@ -558,22 +791,22 @@ PrPopInputFileStack (
 
     /* Close the current include file */
 
-    fclose (Gbl_Files[ASL_FILE_INPUT].Handle);
+    fclose (AslGbl_Files[ASL_FILE_INPUT].Handle);
 
     /* Update the top-of-stack */
 
-    Gbl_InputFileList = Fnode->Next;
+    AslGbl_InputFileList = Fnode->Next;
 
     /* Reset global line counter and filename */
 
-    Gbl_Files[ASL_FILE_INPUT].Filename = Fnode->Filename;
-    Gbl_Files[ASL_FILE_INPUT].Handle = Fnode->File;
-    Gbl_CurrentLineNumber = Fnode->CurrentLineNumber;
+    AslGbl_Files[ASL_FILE_INPUT].Filename = Fnode->Filename;
+    AslGbl_Files[ASL_FILE_INPUT].Handle = Fnode->File;
+    AslGbl_CurrentLineNumber = Fnode->CurrentLineNumber;
 
     /* Emit a new #line directive after the include file */
 
     FlPrintFile (ASL_FILE_PREPROCESSOR, "#line %u \"%s\"\n",
-        Gbl_CurrentLineNumber, Fnode->Filename);
+        AslGbl_CurrentLineNumber, Fnode->Filename);
 
     /* All done with this node */
 

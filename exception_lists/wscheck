@@ -37,6 +37,11 @@ usr/src/uts/common/sys/scsi/adapters/mpi/*
 usr/src/contrib/*
 usr/src/cmd/ast/libshell/misc/shell_styleguide.docbook
 
+# acpica upstream sources
+usr/src/uts/intel/io/acpica/changes.txt
+usr/src/uts/intel/sys/acpi/acpredef.h
+usr/src/uts/intel/sys/acpi/platform/aczephyr.h
+
 # bhyve sources
 usr/src/cmd/bhyve/acpi.[ch]
 usr/src/cmd/bhyve/ahci.h

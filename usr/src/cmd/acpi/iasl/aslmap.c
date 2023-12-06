@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -233,17 +233,18 @@ const ASL_MAPPING_ENTRY     AslKeywordMapping [] =
 
                                             /*  AML Opcode                  Value                           Flags               Btype */
 
-/* ACCESSAS */                  OP_TABLE_ENTRY (AML_INT_ACCESSFIELD_OP,     0,                              0,                  0),
-/* ACCESSATTRIB_BLOCK */        OP_TABLE_ENTRY (AML_BYTE_OP,                AML_FIELD_ATTRIB_BLOCK,         0,                  0),
-/* ACCESSATTRIB_BLOCK_CALL */   OP_TABLE_ENTRY (AML_BYTE_OP,                AML_FIELD_ATTRIB_BLOCK_CALL,    0,                  0),
-/* ACCESSATTRIB_BYTE */         OP_TABLE_ENTRY (AML_BYTE_OP,                AML_FIELD_ATTRIB_BYTE,          0,                  0),
-/* ACCESSATTRIB_MULTIBYTE */    OP_TABLE_ENTRY (AML_BYTE_OP,                AML_FIELD_ATTRIB_MULTIBYTE,     0,                  0),
-/* ACCESSATTRIB_QUICK */        OP_TABLE_ENTRY (AML_BYTE_OP,                AML_FIELD_ATTRIB_QUICK,         0,                  0),
-/* ACCESSATTRIB_RAW_BYTES */    OP_TABLE_ENTRY (AML_BYTE_OP,                AML_FIELD_ATTRIB_RAW_BYTES,     0,                  0),
-/* ACCESSATTRIB_RAW_PROCESS */  OP_TABLE_ENTRY (AML_BYTE_OP,                AML_FIELD_ATTRIB_RAW_PROCESS,   0,                  0),
-/* ACCESSATTRIB_SND_RCV */      OP_TABLE_ENTRY (AML_BYTE_OP,                AML_FIELD_ATTRIB_SEND_RCV,      0,                  0),
-/* ACCESSATTRIB_WORD */         OP_TABLE_ENTRY (AML_BYTE_OP,                AML_FIELD_ATTRIB_WORD,          0,                  0),
-/* ACCESSATTRIB_WORD_CALL */    OP_TABLE_ENTRY (AML_BYTE_OP,                AML_FIELD_ATTRIB_WORD_CALL,     0,                  0),
+/* ACCESSAS */                          OP_TABLE_ENTRY (AML_INT_ACCESSFIELD_OP, 0,                                      0,      0),
+/* ACCESSATTRIB_BLOCK */                OP_TABLE_ENTRY (AML_BYTE_OP,            AML_FIELD_ATTRIB_BLOCK,                 0,      0),
+/* ACCESSATTRIB_BLOCK_PROCESS_CALL */   OP_TABLE_ENTRY (AML_BYTE_OP,            AML_FIELD_ATTRIB_BLOCK_PROCESS_CALL,    0,      0),
+/* ACCESSATTRIB_BYTE */                 OP_TABLE_ENTRY (AML_BYTE_OP,            AML_FIELD_ATTRIB_BYTE,                  0,      0),
+/* ACCESSATTRIB_BYTES */                OP_TABLE_ENTRY (AML_BYTE_OP,            AML_FIELD_ATTRIB_BYTES,                 0,      0),
+/* ACCESSATTRIB_QUICK */                OP_TABLE_ENTRY (AML_BYTE_OP,            AML_FIELD_ATTRIB_QUICK,                 0,      0),
+/* ACCESSATTRIB_RAW_BYTES */            OP_TABLE_ENTRY (AML_BYTE_OP,            AML_FIELD_ATTRIB_RAW_BYTES,             0,      0),
+/* ACCESSATTRIB_RAW_PROCESS_BYTES */    OP_TABLE_ENTRY (AML_BYTE_OP,            AML_FIELD_ATTRIB_RAW_PROCESS_BYTES,     0,      0),
+/* ACCESSATTRIB_SEND_RECEIVE */         OP_TABLE_ENTRY (AML_BYTE_OP,            AML_FIELD_ATTRIB_SEND_RECEIVE,          0,      0),
+/* ACCESSATTRIB_WORD */                 OP_TABLE_ENTRY (AML_BYTE_OP,            AML_FIELD_ATTRIB_WORD,                  0,      0),
+/* ACCESSATTRIB_PROCESS_CALL */         OP_TABLE_ENTRY (AML_BYTE_OP,            AML_FIELD_ATTRIB_PROCESS_CALL,          0,      0),
+
 /* ACCESSTYPE_ANY */            OP_TABLE_ENTRY (AML_BYTE_OP,                AML_FIELD_ACCESS_ANY,           0,                  0),
 /* ACCESSTYPE_BUF */            OP_TABLE_ENTRY (AML_BYTE_OP,                AML_FIELD_ACCESS_BUFFER,        0,                  0),
 /* ACCESSTYPE_BYTE */           OP_TABLE_ENTRY (AML_BYTE_OP,                AML_FIELD_ACCESS_BYTE,          0,                  0),
@@ -345,6 +346,7 @@ const ASL_MAPPING_ENTRY     AslKeywordMapping [] =
 /* FUNCTION */                  OP_TABLE_ENTRY (AML_METHOD_OP,              0,                              OP_AML_PACKAGE,     0),
 /* GPIOINT */                   OP_TABLE_ENTRY (AML_DEFAULT_ARG_OP,         0,                              0,                  0),
 /* GPIOIO */                    OP_TABLE_ENTRY (AML_DEFAULT_ARG_OP,         0,                              0,                  0),
+/* CSI2SERIALBUS */             OP_TABLE_ENTRY (AML_DEFAULT_ARG_OP,         0,                              0,                  0),
 /* I2CSERIALBUS */              OP_TABLE_ENTRY (AML_DEFAULT_ARG_OP,         0,                              0,                  0),
 /* I2CSERIALBUSV2 */            OP_TABLE_ENTRY (AML_DEFAULT_ARG_OP,         0,                              0,                  0),
 /* IF */                        OP_TABLE_ENTRY (AML_IF_OP,                  0,                              OP_AML_PACKAGE,     0),
@@ -377,8 +379,8 @@ const ASL_MAPPING_ENTRY     AslKeywordMapping [] =
 /* LLESSEQUAL */                OP_TABLE_ENTRY (AML_LOGICAL_LESS_EQUAL_OP,  0,                              0,                  ACPI_BTYPE_INTEGER),
 /* LNOT */                      OP_TABLE_ENTRY (AML_LOGICAL_NOT_OP,         0,                              0,                  ACPI_BTYPE_INTEGER),
 /* LNOTEQUAL */                 OP_TABLE_ENTRY (AML_LOGICAL_NOT_EQUAL_OP,   0,                              0,                  ACPI_BTYPE_INTEGER),
-/* LOAD */                      OP_TABLE_ENTRY (AML_LOAD_OP,                0,                              0,                  0),
-/* LOADTABLE */                 OP_TABLE_ENTRY (AML_LOAD_TABLE_OP,          0,                              0,                  ACPI_BTYPE_DDB_HANDLE),
+/* LOAD */                      OP_TABLE_ENTRY (AML_LOAD_OP,                0,                              0,                  ACPI_BTYPE_INTEGER),
+/* LOADTABLE */                 OP_TABLE_ENTRY (AML_LOAD_TABLE_OP,          0,                              0,                  ACPI_BTYPE_INTEGER),
 /* LOCAL0 */                    OP_TABLE_ENTRY (AML_LOCAL0,                 0,                              0,                  ACPI_BTYPE_OBJECTS_AND_REFS),
 /* LOCAL1 */                    OP_TABLE_ENTRY (AML_LOCAL1,                 0,                              0,                  ACPI_BTYPE_OBJECTS_AND_REFS),
 /* LOCAL2 */                    OP_TABLE_ENTRY (AML_LOCAL2,                 0,                              0,                  ACPI_BTYPE_OBJECTS_AND_REFS),
@@ -460,6 +462,12 @@ const ASL_MAPPING_ENTRY     AslKeywordMapping [] =
 /* PIN_PULLDEFAULT */           OP_TABLE_ENTRY (AML_BYTE_OP,                0,                              0,                  0),
 /* PIN_PULLDOWN */              OP_TABLE_ENTRY (AML_BYTE_OP,                2,                              0,                  0),
 /* PIN_PULLUP */                OP_TABLE_ENTRY (AML_BYTE_OP,                1,                              0,                  0),
+/* CLOCKINPUT */                OP_TABLE_ENTRY (AML_DEFAULT_ARG_OP,         0,                              0,                  0),
+/* CLOCK_HZ */                  OP_TABLE_ENTRY (AML_BYTE_OP,                0,                              0,                  0),
+/* CLOCK_KHZ */                 OP_TABLE_ENTRY (AML_BYTE_OP,                1,                              0,                  0),
+/* CLOCK_MHZ */                 OP_TABLE_ENTRY (AML_BYTE_OP,                2,                              0,                  0),
+/* CLOCK_FIXED */               OP_TABLE_ENTRY (AML_BYTE_OP,                0,                              0,                  0),
+/* CLOCK_VARIABLE */            OP_TABLE_ENTRY (AML_BYTE_OP,                1,                              0,                  0),
 /* POWERRESOURCE */             OP_TABLE_ENTRY (AML_POWER_RESOURCE_OP,      0,                              OP_AML_PACKAGE,     0),
 /* PROCESSOR */                 OP_TABLE_ENTRY (AML_PROCESSOR_OP,           0,                              OP_AML_PACKAGE,     0),
 /* QWORDCONST */                OP_TABLE_ENTRY (AML_RAW_DATA_QWORD,         0,                              0,                  ACPI_BTYPE_INTEGER),
@@ -484,6 +492,7 @@ const ASL_MAPPING_ENTRY     AslKeywordMapping [] =
 /* REGIONSPACE_PCC */           OP_TABLE_ENTRY (AML_RAW_DATA_BYTE,          ACPI_ADR_SPACE_PLATFORM_COMM,   0,                  0),
 /* REGIONSPACE_PCI */           OP_TABLE_ENTRY (AML_RAW_DATA_BYTE,          ACPI_ADR_SPACE_PCI_CONFIG,      0,                  0),
 /* REGIONSPACE_PCIBAR */        OP_TABLE_ENTRY (AML_RAW_DATA_BYTE,          ACPI_ADR_SPACE_PCI_BAR_TARGET,  0,                  0),
+/* REGIONSPACE_PRM */           OP_TABLE_ENTRY (AML_RAW_DATA_BYTE,          ACPI_ADR_SPACE_PLATFORM_RT,     0,                  0),
 /* REGIONSPACE_SMBUS */         OP_TABLE_ENTRY (AML_RAW_DATA_BYTE,          ACPI_ADR_SPACE_SMBUS,           0,                  0),
 /* REGISTER */                  OP_TABLE_ENTRY (AML_BYTE_OP,                0,                              0,                  0),
 /* RELEASE */                   OP_TABLE_ENTRY (AML_RELEASE_OP,             0,                              0,                  0),
@@ -536,7 +545,7 @@ const ASL_MAPPING_ENTRY     AslKeywordMapping [] =
 /* TYPE_TRANSLATION */          OP_TABLE_ENTRY (AML_BYTE_OP,                1,                              0,                  0),
 /* UART_SERIALBUS */            OP_TABLE_ENTRY (AML_DEFAULT_ARG_OP,         0,                              0,                  0),
 /* UART_SERIALBUSV2 */          OP_TABLE_ENTRY (AML_DEFAULT_ARG_OP,         0,                              0,                  0),
-/* UNICODE */                   OP_TABLE_ENTRY (AML_BUFFER_OP,              0,                              OP_AML_PACKAGE,     0),
+/* UNICODE */                   OP_TABLE_ENTRY (AML_BUFFER_OP,              0,                              OP_AML_PACKAGE,     ACPI_BTYPE_BUFFER),
 /* UNLOAD */                    OP_TABLE_ENTRY (AML_UNLOAD_OP,              0,                              0,                  0),
 /* UPDATERULE_ONES */           OP_TABLE_ENTRY (AML_BYTE_OP,                AML_FIELD_UPDATE_WRITE_AS_ONES, 0,                  0),
 /* UPDATERULE_PRESERVE */       OP_TABLE_ENTRY (AML_BYTE_OP,                AML_FIELD_UPDATE_PRESERVE,      0,                  0),

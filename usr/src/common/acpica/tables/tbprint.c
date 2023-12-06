@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -152,6 +152,8 @@
 #include "acpi.h"
 #include "accommon.h"
 #include "actables.h"
+#include "acdisasm.h"
+#include "acutils.h"
 
 #define _COMPONENT          ACPI_TABLES
         ACPI_MODULE_NAME    ("tbprint")
@@ -192,7 +194,7 @@ AcpiTbFixString (
 
     while (Length && *String)
     {
-        if (!isprint ((int) *String))
+        if (!isprint ((int) (UINT8) *String))
         {
             *String = '?';
         }
@@ -225,10 +227,10 @@ AcpiTbCleanupTableHeader (
 
     memcpy (OutHeader, Header, sizeof (ACPI_TABLE_HEADER));
 
-    AcpiTbFixString (OutHeader->Signature, ACPI_NAME_SIZE);
+    AcpiTbFixString (OutHeader->Signature, ACPI_NAMESEG_SIZE);
     AcpiTbFixString (OutHeader->OemId, ACPI_OEM_ID_SIZE);
     AcpiTbFixString (OutHeader->OemTableId, ACPI_OEM_TABLE_ID_SIZE);
-    AcpiTbFixString (OutHeader->AslCompilerId, ACPI_NAME_SIZE);
+    AcpiTbFixString (OutHeader->AslCompilerId, ACPI_NAMESEG_SIZE);
 }
 
 
@@ -253,7 +255,7 @@ AcpiTbPrintTableHeader (
     ACPI_TABLE_HEADER       LocalHeader;
 
 
-    if (ACPI_COMPARE_NAME (Header->Signature, ACPI_SIG_FACS))
+    if (ACPI_COMPARE_NAMESEG (Header->Signature, ACPI_SIG_FACS))
     {
         /* FACS only has signature and length fields */
 
@@ -261,7 +263,8 @@ AcpiTbPrintTableHeader (
             Header->Signature, ACPI_FORMAT_UINT64 (Address),
             Header->Length));
     }
-    else if (ACPI_VALIDATE_RSDP_SIG (Header->Signature))
+    else if (ACPI_VALIDATE_RSDP_SIG (ACPI_CAST_PTR (ACPI_TABLE_RSDP,
+        Header)->Signature))
     {
         /* RSDP has no common fields */
 
@@ -290,91 +293,4 @@ AcpiTbPrintTableHeader (
             LocalHeader.OemTableId, LocalHeader.OemRevision,
             LocalHeader.AslCompilerId, LocalHeader.AslCompilerRevision));
     }
-}
-
-
-/*******************************************************************************
- *
- * FUNCTION:    AcpiTbValidateChecksum
- *
- * PARAMETERS:  Table               - ACPI table to verify
- *              Length              - Length of entire table
- *
- * RETURN:      Status
- *
- * DESCRIPTION: Verifies that the table checksums to zero. Optionally returns
- *              exception on bad checksum.
- *
- ******************************************************************************/
-
-ACPI_STATUS
-AcpiTbVerifyChecksum (
-    ACPI_TABLE_HEADER       *Table,
-    UINT32                  Length)
-{
-    UINT8                   Checksum;
-
-
-    /*
-     * FACS/S3PT:
-     * They are the odd tables, have no standard ACPI header and no checksum
-     */
-
-    if (ACPI_COMPARE_NAME (Table->Signature, ACPI_SIG_S3PT) ||
-        ACPI_COMPARE_NAME (Table->Signature, ACPI_SIG_FACS))
-    {
-        return (AE_OK);
-    }
-
-    /* Compute the checksum on the table */
-
-    Checksum = AcpiTbChecksum (ACPI_CAST_PTR (UINT8, Table), Length);
-
-    /* Checksum ok? (should be zero) */
-
-    if (Checksum)
-    {
-        ACPI_BIOS_WARNING ((AE_INFO,
-            "Incorrect checksum in table [%4.4s] - 0x%2.2X, "
-            "should be 0x%2.2X",
-            Table->Signature, Table->Checksum,
-            (UINT8) (Table->Checksum - Checksum)));
-
-#if (ACPI_CHECKSUM_ABORT)
-        return (AE_BAD_CHECKSUM);
-#endif
-    }
-
-    return (AE_OK);
-}
-
-
-/*******************************************************************************
- *
- * FUNCTION:    AcpiTbChecksum
- *
- * PARAMETERS:  Buffer          - Pointer to memory region to be checked
- *              Length          - Length of this memory region
- *
- * RETURN:      Checksum (UINT8)
- *
- * DESCRIPTION: Calculates circular checksum of memory region.
- *
- ******************************************************************************/
-
-UINT8
-AcpiTbChecksum (
-    UINT8                   *Buffer,
-    UINT32                  Length)
-{
-    UINT8                   Sum = 0;
-    UINT8                   *End = Buffer + Length;
-
-
-    while (Buffer < End)
-    {
-        Sum = (UINT8) (Sum + *(Buffer++));
-    }
-
-    return (Sum);
 }

@@ -11,7 +11,7 @@ NoEcho('
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -190,7 +190,8 @@ ResourceMacroList
     ;
 
 ResourceMacroTerm
-    : DMATerm                       {}
+    : Csi2SerialBusTerm             {}
+    | DMATerm                       {}
     | DWordIOTerm                   {}
     | DWordMemoryTerm               {}
     | DWordSpaceTerm                {}
@@ -213,6 +214,7 @@ ResourceMacroTerm
     | Memory32Term                  {}
     | PinConfigTerm                 {}
     | PinFunctionTerm               {}
+    | ClockInputTerm                {}
     | PinGroupTerm                  {}
     | PinGroupConfigTerm            {}
     | PinGroupFunctionTerm          {}
@@ -232,6 +234,23 @@ ResourceMacroTerm
     | WordIOTerm                    {}
     | WordSpaceTerm                 {}
     ;
+
+Csi2SerialBusTerm
+    : PARSEOP_CSI2_SERIALBUS
+        PARSEOP_OPEN_PAREN          {$<n>$ = TrCreateLeafOp (PARSEOP_CSI2_SERIALBUS);}
+        OptionalSlaveMode_First     {UtCheckIntegerRange ($4, 0x00, 0x01);} /* 04: SlaveMode */
+        ',' ByteConstExpr           {UtCheckIntegerRange ($7, 0x00, 0x03);} /* 07: PhyType */
+        OptionalByteConstExpr       {UtCheckIntegerRange ($9, 0x00, 0xFC);} /* 09: LocalPortInstance */
+        ',' StringData              /* 12: ResourceSource */
+        ',' ByteConstExpr           /* 14: ResourceSourceIndex */
+        OptionalResourceType        /* 15; ResourceType (ResourceUsage) */
+        OptionalNameString          /* 16: DescriptorName */
+        OptionalBuffer_Last         /* 17: VendorData */
+        PARSEOP_CLOSE_PAREN         {$$ = TrLinkOpChildren ($<n>3,8,
+                                        $4,$7,$9,$12,$14,$15,$16,$17);}
+    | PARSEOP_CSI2_SERIALBUS
+        PARSEOP_OPEN_PAREN
+        error PARSEOP_CLOSE_PAREN   {$$ = AslDoError(); yyclearin;}
 
 DMATerm
     : PARSEOP_DMA
@@ -648,6 +667,21 @@ PinFunctionTerm
         error PARSEOP_CLOSE_PAREN   {$$ = AslDoError(); yyclearin;}
     ;
 
+ClockInputTerm
+    : PARSEOP_CLOCKINPUT
+        PARSEOP_OPEN_PAREN          {$<n>$ = TrCreateLeafOp (PARSEOP_CLOCKINPUT);}
+        DWordConstExpr              /* 04: FrequencyNumerator */
+        ',' WordConstExpr           /* 06: FrequencyDivisor */
+        ',' ClockScaleKeyword       /* 08: Scale */
+        ',' ClockModeKeyword        /* 10: Mode*/
+        OptionalStringData          /* 11: ResourceSource */
+        OptionalByteConstExpr       /* 12: ResourceSourceIndex */
+        PARSEOP_CLOSE_PAREN         {$$ = TrLinkOpChildren ($<n>3,6,$4,$6,$8,$10,$11,$12);}
+    | PARSEOP_CLOCKINPUT
+        PARSEOP_OPEN_PAREN
+        error PARSEOP_CLOSE_PAREN   {$$ = AslDoError(); yyclearin;}
+    ;
+
 PinGroupTerm
     : PARSEOP_PINGROUP
         PARSEOP_OPEN_PAREN          {$<n>$ = TrCreateLeafOp (PARSEOP_PINGROUP);}
@@ -866,7 +900,7 @@ UartSerialBusTerm
         OptionalBitsPerByte         /* 05: BitsPerByte */
         OptionalStopBits            /* 06: StopBits */
         ',' ByteConstExpr           /* 08: LinesInUse */
-        OptionalEndian              /* 09: Endianess */
+        OptionalEndian              /* 09: Endianness */
         OptionalParityType          /* 10: Parity */
         OptionalFlowControl         /* 11: FlowControl */
         ',' WordConstExpr           /* 13: Rx BufferSize */
@@ -891,7 +925,7 @@ UartSerialBusTermV2
         OptionalBitsPerByte         /* 05: BitsPerByte */
         OptionalStopBits            /* 06: StopBits */
         ',' ByteConstExpr           /* 08: LinesInUse */
-        OptionalEndian              /* 09: Endianess */
+        OptionalEndian              /* 09: Endianness */
         OptionalParityType          /* 10: Parity */
         OptionalFlowControl         /* 11: FlowControl */
         ',' WordConstExpr           /* 13: Rx BufferSize */

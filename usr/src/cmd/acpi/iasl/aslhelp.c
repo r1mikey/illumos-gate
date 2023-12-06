@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2023, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -209,6 +209,7 @@ Usage (
     ACPI_OPTION ("-vx <messageid>", "Expect a specific warning, remark, or error");
     ACPI_OPTION ("-w <1|2|3>",      "Set warning reporting level");
     ACPI_OPTION ("-we",             "Report warnings as errors");
+    ACPI_OPTION ("-ww <messageid>", "Report specific warning or remark as error");
 
     printf ("\nAML Bytecode Generation (*.aml):\n");
     ACPI_OPTION ("-oa",             "Disable all optimizations (compatibility mode)");
@@ -246,6 +247,7 @@ Usage (
     ACPI_OPTION ("",                "  (Original comments are passed through to ASL+ file)");
 
     printf ("\nData Table Compiler:\n");
+    ACPI_OPTION ("-tp",             "Compile tables with flex/bison prototype");
     ACPI_OPTION ("-G",              "Compile custom table that contains generic operators");
     ACPI_OPTION ("-T <sig list>|ALL",   "Create ACPI table template/example files");
     ACPI_OPTION ("-T <count>",      "Emit DSDT and <count> SSDTs to same file");
@@ -260,6 +262,7 @@ Usage (
     ACPI_OPTION ("",                "  (Obtain DSDT from current system if no input file)");
     ACPI_OPTION ("-df",             "Force disassembler to assume table contains valid AML");
     ACPI_OPTION ("-dl",             "Emit legacy ASL code only (no C-style operators)");
+    ACPI_OPTION ("-ds <signature(4)>", "Specify a table signature(4) (CDAT table only)");
     ACPI_OPTION ("-e  <f1 f2 ...>", "Include ACPI table(s) for external symbol resolution");
     ACPI_OPTION ("-fe <file>",      "Specify external symbol declaration file");
     ACPI_OPTION ("-in",             "Ignore NoOp opcodes");
