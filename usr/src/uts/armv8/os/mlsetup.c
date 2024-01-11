@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2023 Michael van der Westhuizen
+ * Copyright 2024 Michael van der Westhuizen
  * Copyright 2017 Hayashi Naoyuki
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
@@ -53,7 +53,8 @@
 #include <sys/kdi.h>
 #include <sys/cpupart.h>
 #include <sys/cpuinfo.h>
-#include <sys/psciinfo.h>
+#include <sys/smcccinfo.h>
+#include <sys/smccc.h>
 #include <sys/psci.h>
 
 #include <sys/debug.h>
@@ -202,9 +203,11 @@ mlsetup(struct regs *rp)
 	max_ncpus = boot_max_ncpus = boot_ncpus;
 
 	/*
-	 * Gather PSCI configuration from the firmware and initialize PSCI.
+	 * Gather SMCCC configuration from the firmware and initialize both
+	 * SMCCC and PSCI.
 	 */
-	psciinfo_init();
+	smcccinfo_init();
+	smccc_init();
 	psci_init();
 
 	/*

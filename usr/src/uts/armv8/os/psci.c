@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2023 Michael van der Westhuizen
+ * Copyright 2024 Michael van der Westhuizen
  * Copyright 2017 Hayashi Naoyuki
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
@@ -29,189 +29,165 @@
 #include <sys/promif.h>
 #include <sys/ddi.h>
 #include <sys/sunddi.h>
-#include <sys/psciinfo.h>
+#include <sys/smcccinfo.h>
+#include <sys/smccc.h>
 
-static uint32_t pcsi_version_id = 0x84000000;
+static psci_version_t psci_version_number = PSCI_NOT_IMPLEMENTED;
 static uint32_t psci_cpu_suspend_id = PSCI_CPU_SUSPEND_ID;
 static uint32_t psci_cpu_off_id = PSCI_CPU_OFF_ID;
 static uint32_t psci_cpu_on_id = PSCI_CPU_ON_ID;
-static uint32_t psci_affinity_info_id = 0xc4000004;
 static uint32_t psci_migrate_id = PSCI_MIGRATE_ID;
-static uint32_t psci_migrate_info_type_id = 0x84000006;
-static uint32_t psci_migrate_info_up_cpu_id = 0xc4000007;
-static uint32_t psci_system_off_id = 0x84000008;
-static uint32_t psci_system_reset_id = 0x84000009;
-static uint32_t psci_features_id = 0x8400000a;
-static uint32_t psci_cpu_freeze_id = 0x8400000b;
-static uint32_t psci_cpu_default_suspend_id = 0xc400000c;
-static uint32_t psci_node_hw_state_id = 0xc400000d;
-static uint32_t psci_system_suspend_id = 0xc400000e;
-static uint32_t psci_set_suspend_mode_id = 0x8400000f;
-static uint32_t psci_stat_residency_id = 0xc4000010;
-static uint32_t psci_stat_count_id = 0xc4000011;
 
-static boolean_t psci_initialized = B_FALSE;
-static boolean_t pcsi_method_is_hvc = B_FALSE;
+#define	PSCI32_CALL0(name, fid)			smccc32_args_t name = {	\
+							.w0 = (fid),	\
+						};			\
+						smccc32_call(&name)
+#define	PSCI32_CALL1(name, fid, a0)		smccc32_args_t name = {	\
+							.w0 = (fid),	\
+							.w1 = (a0),	\
+						};			\
+						smccc32_call(&name)
+#define	PSCI32_RES_TO_INT32(name)		((int32_t)(name.w0))
 
-static inline uint64_t
-psci_smc64(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3)
-{
-	register uint64_t x0 __asm__("x0") = a0;
-	register uint64_t x1 __asm__("x1") = a1;
-	register uint64_t x2 __asm__("x2") = a2;
-	register uint64_t x3 __asm__("x3") = a3;
-
-	__asm__ volatile("smc #0"
-	    : "+r"(x0), "+r"(x1), "+r"(x2), "+r"(x3)
-	    :
-	    :
-	    "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11",
-	    "x12", "x13", "x14", "x15", "x16", "x17", "x18", "memory", "cc");
-
-	return (x0);
-}
-
-static inline uint64_t
-psci_hvc64(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3)
-{
-	register uint64_t x0 __asm__("x0") = a0;
-	register uint64_t x1 __asm__("x1") = a1;
-	register uint64_t x2 __asm__("x2") = a2;
-	register uint64_t x3 __asm__("x3") = a3;
-
-	__asm__ volatile("hvc #0"
-	    : "+r"(x0), "+r"(x1), "+r"(x2), "+r"(x3)
-	    :
-	    :
-	    "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11",
-	    "x12", "x13", "x14", "x15", "x16", "x17", "x18", "memory", "cc");
-
-	return (x0);
-}
-
-static uint64_t
-psci_call_raw(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3)
-{
-	if (pcsi_method_is_hvc) {
-		return (psci_hvc64(a0, a1, a2, a3));
-	}
-
-	return (psci_smc64(a0, a1, a2, a3));
-}
-
-static uint64_t
-psci_call(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3)
-{
-	/*
-	 * We may get here very early if panicking, attempt to be useful, and
-	 * not panic recursively
-	 */
-	if (!panicstr)
-		VERIFY(psci_initialized);
-
-	if (panicstr != NULL && !psci_initialized) {
-		prom_printf("ERROR: attempted PSCI call before "
-		    "it's initialized\n");
-		return (0);
-	} else {
-		return (psci_call_raw(a0, a1, a2, a3));
-	}
-}
+#define	PSCI64_CALL0(name, fid)			smccc64_args_t name = {	\
+							.x0 = (fid),	\
+						};			\
+						smccc64_call(&name)
+#define	PSCI64_CALL1(name, fid, a0)		smccc64_args_t name = {	\
+							.x0 = (fid),	\
+							.x1 = (a0),	\
+						};			\
+						smccc64_call(&name)
+#define	PSCI64_CALL2(name, fid, a0, a1)		smccc64_args_t name = {	\
+							.x0 = (fid),	\
+							.x1 = (a0),	\
+							.x2 = (a1),	\
+						};			\
+						smccc64_call(&name)
+#define	PSCI64_CALL3(name, fid, a0, a1, a2)	smccc64_args_t name = {	\
+							.x0 = (fid),	\
+							.x1 = (a0),	\
+							.x2 = (a1),	\
+							.x3 = (a2)	\
+						};			\
+						smccc64_call(&name)
+#define	PSCI64_CALL4(name, fid, a0, a1, a2, a3)	smccc64_args_t name = {	\
+							.x0 = (fid),	\
+							.x1 = (a0),	\
+							.x2 = (a1),	\
+							.x3 = (a2),	\
+							.x4 = (a3)	\
+						};			\
+						smccc64_call(&name)
+#define	PSCI64_RES_TO_INT64(name)		((int32_t)((uint32_t)name.x0))
 
 void
 psci_init(void)
 {
-	const struct psciinfo *pi;
+	const psciinfo_t *pi;
 
 	pi = psciinfo_get();
 	VERIFY(pi != NULL);
-
-	if (pi->pi_version == PSCI_NOT_IMPLEMENTED) {
-		prom_printf("WARNING: PSCI not implemented\n");
-		psci_initialized = B_FALSE;
-		return;
-	}
-
-	switch (pi->pi_conduit) {
-	case PSCI_CONDUIT_SMC:
-		pcsi_method_is_hvc = B_FALSE;
-		break;
-	case PSCI_CONDUIT_HVC:
-		pcsi_method_is_hvc = B_TRUE;
-		break;
-	}
 
 	psci_cpu_suspend_id = pi->pi_cpu_suspend_id;
 	psci_cpu_off_id = pi->pi_cpu_off_id;
 	psci_cpu_on_id = pi->pi_cpu_on_id;
 	psci_migrate_id = pi->pi_migrate_id;
+	psci_version_number = pi->pi_version;
 
-	psci_initialized = B_TRUE;
+	if (psci_version_number == PSCI_NOT_IMPLEMENTED) {
+		prom_printf("WARNING: PSCI not implemented\n");
+		return;
+	}
+
+	VERIFY(psci_version_number != PSCI_VERSION_DEFERRED);
 }
 
 uint32_t
 psci_version(void)
 {
-	return (psci_call(pcsi_version_id, 0, 0, 0));
+	PSCI32_CALL0(res, PSCI_VERSION_ID);
+	return (PSCI32_RES_TO_INT32(res));
 }
 
-int32_t
+int64_t
 psci_cpu_suspend(uint32_t power_state, uint64_t entry_point_address,
     uint64_t context_id)
 {
-	return (psci_call(psci_cpu_suspend_id, power_state, entry_point_address,
-	    context_id));
+	PSCI64_CALL3(res, psci_cpu_suspend_id,
+	    power_state, entry_point_address, context_id);
+	return (PSCI64_RES_TO_INT64(res));
 }
 
 int32_t
 psci_cpu_off(void)
 {
-	return (psci_call(psci_cpu_off_id, 0, 0, 0));
+	PSCI32_CALL0(res, psci_cpu_off_id);
+	return (PSCI32_RES_TO_INT32(res));
 }
 
-int32_t
+int64_t
 psci_cpu_on(uint64_t target_cpu, uint64_t entry_point_address,
     uint64_t context_id)
 {
-	return (psci_call(psci_cpu_on_id, target_cpu, entry_point_address,
-	    context_id));
+	PSCI64_CALL3(res, psci_cpu_on_id,
+	    target_cpu, entry_point_address, context_id);
+	return (PSCI64_RES_TO_INT64(res));
 }
 
-int32_t
+int64_t
 psci_affinity_info(uint64_t target_affinity, uint32_t lowest_affinity_level)
 {
-	return (psci_call(psci_affinity_info_id, target_affinity,
-	    lowest_affinity_level, 0));
+	PSCI64_CALL2(res, PSCI_AFFINITY_INFO_ID,
+	    target_affinity, lowest_affinity_level);
+	return (PSCI64_RES_TO_INT64(res));
 }
 
-int32_t
+int64_t
 psci_migrate(uint64_t target_cpu)
 {
-	return (psci_call(psci_migrate_id, target_cpu, 0, 0));
+	PSCI64_CALL1(res, psci_migrate_id, target_cpu);
+	return (PSCI64_RES_TO_INT64(res));
 }
 
 int32_t
 psci_migrate_info_type(void)
 {
-	return (psci_call(psci_migrate_info_type_id, 0, 0, 0));
+	PSCI32_CALL0(res, PSCI_MIGRATE_INFO_TYPE_ID);
+	return (PSCI32_RES_TO_INT32(res));
 }
 
 uint64_t
 psci_migrate_info_up_cpu(void)
 {
-	return (psci_call(psci_migrate_info_up_cpu_id, 0, 0, 0));
+	PSCI64_CALL0(res, PSCI_MIGRATE_INFO_UP_CPU_ID);
+	return (res.x0);
 }
 
 void
 psci_system_off(void)
 {
-	psci_call(psci_system_off_id, 0, 0, 0);
+	PSCI32_CALL0(res, PSCI_SYSTEM_OFF_ID);
+
+	/* If we've got here we were asked to power off and could not, spin. */
+	for (;;)
+		__asm__("wfi");
 }
 
 void
 psci_system_reset(void)
 {
-	psci_call(psci_system_reset_id, 0, 0, 0);
+	PSCI32_CALL0(res, PSCI_SYSTEM_RESET_ID);
+
+	/* If we've got here we were asked to reset and could not, spin. */
+	for (;;)
+		__asm__("wfi");
+}
+
+void
+psci_system_reset2(uint32_t reset_type, uint64_t cookie)
+{
+	PSCI64_CALL2(res, PSCI_SYSTEM_RESET2_ID, reset_type, cookie);
 
 	/* If we've got here we were asked to reset and could not, spin. */
 	for (;;)
@@ -219,51 +195,89 @@ psci_system_reset(void)
 }
 
 int32_t
+psci_mem_protect(boolean_t enable)
+{
+	PSCI32_CALL1(res, PSCI_MEM_PROTECT_ID, enable ? 1 : 0);
+	return (PSCI32_RES_TO_INT32(res));
+}
+
+int64_t
+psci_mem_protect_check_range(uint64_t base, uint64_t length)
+{
+	PSCI64_CALL2(res, PSCI_MEM_PROTECT_CHECK_RANGE_ID, base, length);
+	return (PSCI64_RES_TO_INT64(res));
+}
+
+int32_t
 psci_features(uint32_t psci_func_id)
 {
-	return (psci_call(psci_features_id, psci_func_id, 0, 0));
+	PSCI32_CALL1(res, PSCI_FEATURES_ID, psci_func_id);
+	return (PSCI32_RES_TO_INT32(res));
 }
 
 int32_t
 psci_cpu_freeze(void)
 {
-	return (psci_call(psci_cpu_freeze_id, 0, 0, 0));
+	PSCI32_CALL0(res, PSCI_CPU_FREEZE_ID);
+	return (PSCI32_RES_TO_INT32(res));
 }
 
-int32_t
+int64_t
 psci_cpu_default_suspend(uint64_t entry_point_address, uint64_t context_id)
 {
-	return (psci_call(psci_cpu_default_suspend_id, entry_point_address,
-	    context_id, 0));
+	PSCI64_CALL2(res, PSCI_CPU_DEFAULT_SUSPEND_ID,
+	    entry_point_address, context_id);
+	return (PSCI64_RES_TO_INT64(res));
 }
 
-int32_t
+int64_t
 psci_node_hw_state(uint64_t target_cpu, uint32_t power_level)
 {
-	return (psci_call(psci_node_hw_state_id, target_cpu, power_level, 0));
+	PSCI64_CALL2(res, PSCI_NODE_HW_STATE_ID, target_cpu, power_level);
+	return (PSCI64_RES_TO_INT64(res));
 }
 
-int32_t
+int64_t
 psci_system_suspend(uint64_t entry_point_address, uint64_t context_id)
 {
-	return (psci_call(psci_system_suspend_id, entry_point_address,
-	    context_id, 0));
+	PSCI64_CALL2(res, PSCI_SYSTEM_SUSPEND_ID,
+	    entry_point_address, context_id);
+	return (PSCI64_RES_TO_INT64(res));
 }
 
 int32_t
 psci_set_suspend_mode(uint32_t mode)
 {
-	return (psci_call(psci_set_suspend_mode_id, mode, 0, 0));
+	PSCI32_CALL1(res, PSCI_SET_SUSPEND_MODE_ID, mode);
+	return (PSCI32_RES_TO_INT32(res));
 }
 
 uint64_t
 psci_stat_residency(uint64_t target_cpu, uint32_t power_state)
 {
-	return (psci_call(psci_stat_residency_id, target_cpu, power_state, 0));
+	PSCI64_CALL2(res, PSCI_STAT_RESIDENCY_ID, target_cpu, power_state);
+	return (res.x0);
 }
 
 uint64_t
 psci_stat_count(uint64_t target_cpu, uint32_t power_state)
 {
-	return (psci_call(psci_stat_count_id, target_cpu, power_state, 0));
+	PSCI64_CALL2(res, PSCI_STAT_COUNT_ID, target_cpu, power_state);
+	return (res.x0);
+}
+
+int64_t
+psci_clean_inv_memregion(uint64_t base, uint64_t length,
+    uint64_t timeout, uint32_t flags)
+{
+	PSCI64_CALL4(res, PSCI_CLEAN_INV_MEMREGION_ID,
+	    base, length, timeout, flags);
+	return (PSCI64_RES_TO_INT64(res));
+}
+
+int32_t
+psci_clean_inv_memregion_attributes(uint32_t flags)
+{
+	PSCI32_CALL1(res, PSCI_CLEAN_INV_MEMREGION_ATTRIBUTES_ID, flags);
+	return (PSCI32_RES_TO_INT32(res));
 }

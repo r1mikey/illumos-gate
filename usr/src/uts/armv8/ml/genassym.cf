@@ -19,6 +19,7 @@ include <sys/systm.h>
 include <sys/dtrace.h>
 include <sys/privregs.h>
 include <asm/controlregs.h>
+include <sys/smccc.h>
 
 define	MODS_SIZE		sizeof(struct mod_stub_info)
 define	MODS_INSTFCN		offsetof(struct mod_stub_info, mods_func_adr)
@@ -265,3 +266,18 @@ define	ESR_EC_SHIFT	ESR_EC_SHIFT
 define	ESR_ISS_MASK	ESR_ISS_MASK
 define	T_SVC		T_SVC
 define	T_AST		T_AST
+
+define	REGOFF_SMCCC32_W0	offsetof(smccc32_args_t, w0)
+define	REGOFF_SMCCC32_W2	offsetof(smccc32_args_t, w2)
+define	REGOFF_SMCCC32_W4	offsetof(smccc32_args_t, w4)
+define	REGOFF_SMCCC32_W6	offsetof(smccc32_args_t, w6)
+
+define	REGOFF_SMCCC64_X0	offsetof(smccc64_args_t, x0)
+define	REGOFF_SMCCC64_X2	offsetof(smccc64_args_t, x2)
+define	REGOFF_SMCCC64_X4	offsetof(smccc64_args_t, x4)
+define	REGOFF_SMCCC64_X6	offsetof(smccc64_args_t, x6)
+define	REGOFF_SMCCC64_X8	offsetof(smccc64_args_t, x8)
+define	REGOFF_SMCCC64_X10	offsetof(smccc64_args_t, x10)
+define	REGOFF_SMCCC64_X12	offsetof(smccc64_args_t, x12)
+define	REGOFF_SMCCC64_X14	offsetof(smccc64_args_t, x14)
+define	REGOFF_SMCCC64_X16	offsetof(smccc64_args_t, x16)

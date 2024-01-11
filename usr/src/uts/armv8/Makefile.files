@@ -26,7 +26,7 @@
 
 CORE_OBJS_FDT =			\
 	cpuinfo_fdt.o		\
-	psciinfo_fdt.o
+	smcccinfo_fdt.o
 
 CORE_OBJS +=			\
 	aarch64_subr.o		\
@@ -48,6 +48,7 @@ CORE_OBJS +=			\
 	avintr.o		\
 	exceptions.o		\
 	swtch.o			\
+	smccc_impl.o		\
 	gic.o			\
 	intr.o			\
 	machdep.o		\
@@ -72,6 +73,7 @@ CORE_OBJS +=			\
 	notes.o			\
 	hold_page.o		\
 	ssp.o			\
+	smccc.o			\
 	psci.o			\
 	arch_timer.o		\
 	earlybsa.o		\
@@ -91,6 +93,7 @@ ASSYM_DEPS +=			\
 	aarch64_subr.o		\
 	copy.o			\
 	exceptions.o		\
+	smccc_impl.o		\
 	lock_prim.o		\
 	locore.o		\
 	swtch.o			\
