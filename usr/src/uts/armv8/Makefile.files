@@ -74,6 +74,7 @@ CORE_OBJS +=			\
 	hold_page.o		\
 	ssp.o			\
 	smccc.o			\
+	smccc_pci.o		\
 	psci.o			\
 	arch_timer.o		\
 	earlybsa.o		\

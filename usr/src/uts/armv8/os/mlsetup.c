@@ -56,6 +56,7 @@
 #include <sys/smcccinfo.h>
 #include <sys/smccc.h>
 #include <sys/psci.h>
+#include <sys/smccc_pci.h>
 
 #include <sys/debug.h>
 
@@ -203,12 +204,13 @@ mlsetup(struct regs *rp)
 	max_ncpus = boot_max_ncpus = boot_ncpus;
 
 	/*
-	 * Gather SMCCC configuration from the firmware and initialize both
-	 * SMCCC and PSCI.
+	 * Gather SMCCC configuration from the firmware and initialize SMCCC,
+	 * PSCI and the SMCCC PCI configuration space access API.
 	 */
 	smcccinfo_init();
 	smccc_init();
 	psci_init();
+	smccc_pci_init();
 
 	/*
 	 * Initialise CPU info for the boot processor and fill in accurate
