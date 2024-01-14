@@ -44,6 +44,7 @@
 #include <sys/gic.h>
 #include <sys/promif.h>
 #include <stdbool.h>
+#include <sys/smp_impldefs.h>
 
 
 static int
@@ -535,10 +536,12 @@ smpl_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 			cfg &= 0xFF;
 			switch (cfg) {
 			case 1:
-				gic_config_irq(hdlp->ih_vector, true);
+				psm_config_irq(hdlp->ih_vector,
+				    DDI_INTR_FLAG_EDGE);
 				break;
 			default:
-				gic_config_irq(hdlp->ih_vector, false);
+				psm_config_irq(hdlp->ih_vector,
+				    DDI_INTR_FLAG_LEVEL);
 				break;
 			}
 

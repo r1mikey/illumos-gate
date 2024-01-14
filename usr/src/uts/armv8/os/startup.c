@@ -93,7 +93,6 @@
 extern void brand_init(void);
 extern void pcf_init(void);
 extern void pg_init(void);
-extern void mach_init(void);
 #pragma weak set_platform_defaults
 extern void set_platform_defaults(void);
 extern time_t process_rtc_config_file(void);
@@ -197,7 +196,7 @@ static char *prm_dbg_str[] = {
 	"%s:%d: '%s' is 0x%llx\n"
 };
 
-int prom_debug = 0;
+int prom_debug = 1;	/* XXXARM: should be 0 */
 
 #define	ROUND_UP_PAGE(x)	\
 	((uintptr_t)P2ROUNDUP((uintptr_t)(x), (uintptr_t)MMU_PAGESIZE))
@@ -944,23 +943,35 @@ startup_end(void)
 	}
 
 	/*
+	 * XXXARM: umm... do we need the interrupt controller first?
+	 *
+	 * I'm pretty sure we can psm_install and picinitf at the end of
+	 * startup_modules, or at least before configure.
+	 */
+
+	/*
 	 * Configure the system.
 	 */
 	PRM_POINT("Calling configure()...");
 	configure();		/* set up devices */
 	PRM_POINT("configure() done");
 
+#if 0
 	/*
 	 * Set the isa_list string to the defined instruction sets we
 	 * support.
 	 */
+	PRM_POINT("cpu_intr_alloc()");
 	cpu_intr_alloc(CPU, NINTR_THREADS);
-
-	mach_init();
+	PRM_POINT("psm_install()");
+	psm_install();
 
 	PRM_POINT("Enabling interrupts");
-	set_base_spl();
+	/* set_base_spl(); */	/* XXXARM: should be 0 at this point? */
+	(*picinitf)();
+	/* enable_interrupts(); - but enable_irq does much more */
 	enable_irq();
+#endif
 
 	(void) add_avsoftintr((void *)&softlevel1_hdl, 1, softlevel1,
 	    "softlevel1", NULL, NULL); /* XXX to be moved later */
@@ -976,6 +987,7 @@ startup_end(void)
 	}
 	PRM_POINT("startup_end() done");
 }
+
 static void
 startup_kmem(void)
 {
@@ -1224,11 +1236,25 @@ startup_modules(void)
 	if (cpuinfo_init() != 0)
 		halt("Can't initialize CPU information");
 
+#if 1
 	/*
-	 * Set up the interrupt controller for the primary CPU
+	 * Load all platform specific modules
 	 */
-	if (gic_init() != 0)
-		halt("Can't initialize GIC");
+	PRM_POINT("startup_modules: calling psm_modload...");
+	psm_modload();
+
+#if 1
+	PRM_POINT("cpu_intr_alloc()");
+	cpu_intr_alloc(CPU, NINTR_THREADS);
+
+	PRM_POINT("psm_install()");
+	psm_install();
+
+	PRM_POINT("Enabling interrupts");
+	set_base_spl();
+	(*picinitf)();
+#endif
+#endif
 
 	if (modload("fs", "specfs") == -1)
 		halt("Can't load specfs");
@@ -1280,6 +1306,14 @@ startup_modules(void)
 	 */
 	PRM_POINT("startup_modules: calling prom_setup...");
 	prom_setup();
+
+#if 0
+	/*
+	 * Load all platform specific modules
+	 */
+	PRM_POINT("startup_modules: calling psm_modload...");
+	psm_modload();
+#endif
 
 	PRM_POINT("startup_modules() done");
 }

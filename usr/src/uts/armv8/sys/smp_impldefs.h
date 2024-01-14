@@ -31,6 +31,7 @@
 #include <sys/types.h>
 #include <sys/sunddi.h>
 #include <sys/cpuvar.h>
+#include <sys/psm_types.h>
 #include <sys/avintr.h>
 
 #ifdef	__cplusplus
@@ -40,11 +41,45 @@ extern "C" {
 /*
  *	External Reference Functions
  */
+extern void (*psminitf)();	/* psm init entry point */
+extern void (*picinitf)();	/* pic init entry point */
+extern int (*clkinitf)(int, int *);	/* clock init entry point */
+extern int (*ap_mlsetup)();		/* completes init of starting cpu */
+extern void (*send_dirintf)(cpuset_t, int);	/* send interprocessor intr */
+extern hrtime_t (*gethrtimef)();	/* get high resolution timer value */
+extern hrtime_t (*gethrtimeunscaledf)();	/* get high res timer unscaled value */
+extern void (*psm_shutdownf)(int, int);	/* machine dependent shutdown */
+extern void (*psm_preshutdownf)(int, int);	/* machine dependent pre-shutdown */
+extern void (*psm_notifyf)(int);	/* PSMI module notification */
+extern void (*psm_set_idle_cpuf)(processorid_t);	/* cpu changed to idle */
+extern void (*psm_unset_idle_cpuf)(processorid_t);	/* cpu out of idle */
+extern int (*psm_disable_intr)(processorid_t);	/* disable intr to cpu */
+extern void (*psm_enable_intr)(processorid_t);	/* enable intr to cpu */
+extern int (*psm_get_clockirq)(int);	/* get clock vector */
+extern int (*psm_get_ipivect)(int, int);	/* get interprocessor intr vec */
+extern int (*psm_clkinit)(int);	/* timer init entry point */
+extern int (*psm_cached_ipivect)(int, int);	/* get cached ipi vec */
+extern void (*psm_timer_reprogram)(hrtime_t);	/* timer reprogram */
+extern void (*psm_timer_enable)(void);	/* timer enable */
+extern void (*psm_timer_disable)(void);	/* timer disable */
+extern void (*psm_post_cyclic_setup)(void *arg);	/* psm cyclic setup */
+extern int (*psm_state)(psm_state_request_t *);	/* psm state save/restore */
+extern uchar_t (*psm_get_ioapicid)(uchar_t);	/* get io-apic id */
+extern uint32_t (*psm_get_localapicid)(uint32_t);	/* get local-apic id */
+extern uchar_t (*psm_xlate_vector_by_irq)(uchar_t);	/* get vector for an irq */
+
 extern int (*slvltovect)(int);	/* ipl interrupt priority level */
+
+extern int (*psm_intr_enter)(int, uint64_t *, uint32_t *);
+extern void (*psm_intr_exit)(int, uint64_t);
+
 extern int setlvl(int);	/* set intr pri represented by vect */
 extern void setlvlx(int);	/* set intr pri to specified level */
+extern void (*setspl)(int);	/* mask intr below or equal given ipl */
 extern int (*addspl)(int, int, int, int);	/* add intr mask of vector  */
 extern int (*delspl)(int, int, int, int);	/* delete intr mask of vector */
+extern int (*psm_config_irq)(uint32_t, int);
+/* ugh */
 extern int (*addintr)(void *, int, avfunc, char *, int, caddr_t, caddr_t,
     uint64_t *, dev_info_t *);	/* replacement of add_avintr */
 extern void (*remintr)(void *, int, avfunc, int); /* replace of rem_avintr */
@@ -55,6 +90,7 @@ extern void (*setsoftint)(int, struct av_softinfo *);
 /* kmdb private entry point */
 extern void (*kdisetsoftint)(int, struct av_softinfo *);
 
+/* XXXARM: add xc_serv again */
 extern void av_set_softint_pending();	/* set software interrupt pending */
 extern void kdi_av_set_softint_pending(); /* kmdb private entry point */
 
@@ -62,6 +98,9 @@ extern void kdi_av_set_softint_pending(); /* kmdb private entry point */
 extern caddr_t psm_map_phys(paddr_t, size_t, int);
 /* unmap the physical address given in psm_map_phys() from the addr	*/
 extern void psm_unmap_phys(caddr_t, size_t);
+
+extern void psm_install(void);
+extern void psm_modload(void);
 
 /*
  *	External Reference Data

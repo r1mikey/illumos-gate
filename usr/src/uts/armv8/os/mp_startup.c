@@ -356,8 +356,10 @@ mp_startup_boot(void)
 	write_vbar((uintptr_t)exception_vector);
 	isb();
 
-	/* Set up the GIC for the new additional CPU */
-	gic_cpu_init(cp);
+	/*
+	 * Perform machine-specific setup for the application processor.
+	 */
+	ap_mlsetup();
 
 	/*
 	 * Enable interrupts with spl set to LOCK_LEVEL. LOCK_LEVEL is the
@@ -681,8 +683,6 @@ start_other_cpus(int flag __unused)
 	CPUSET_ADD(cpu_ready_set, bootcpu);
 
 	cpu_pause_init();
-
-	xc_init();
 
 	if (mach_cpucontext_init() != 0)
 		prom_panic("mach_cpucontext_init fail");

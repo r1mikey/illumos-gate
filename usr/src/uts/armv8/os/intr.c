@@ -233,10 +233,7 @@ hilevel_intr_epilog(struct cpu *cpu, uint_t pil, uint_t oldpil, uint64_t ack)
 		cpu->cpu_intr_actv &= ~CPU_INTR_ACTV_INTR_STACK_MASK;
 	}
 
-	mcpu->mcpu_pri = oldpil;
-	gic_deactivate(ack);
-	setlvlx(oldpil);
-
+	psm_intr_exit(oldpil, ack);
 	return ((int)mask);
 }
 
@@ -360,9 +357,7 @@ intr_thread_epilog(struct cpu *cpu, uint64_t ack, uint_t oldpil)
 		 */
 		set_base_spl();
 		basespl = cpu->cpu_base_spl;
-		mcpu->mcpu_pri = basespl;
-		gic_deactivate(ack);
-		setlvlx(basespl);
+		psm_intr_exit(basespl, ack);
 		(void) splhigh();
 		(void) enable_interrupts();
 
@@ -386,9 +381,7 @@ intr_thread_epilog(struct cpu *cpu, uint64_t ack, uint_t oldpil)
 
 	basespl = cpu->cpu_base_spl;
 	pil = MAX(oldpil, basespl);
-	mcpu->mcpu_pri = pil;
-	gic_deactivate(ack);
-	setlvlx(pil);
+	psm_intr_exit(pil, ack);
 	t->t_intr_start = now;
 	write_tpidr_el1((uintptr_t)t);
 	cpu->cpu_thread = t;
@@ -807,7 +800,8 @@ cpu_intr_swtch_exit(kthread_id_t t)
  * Dispatch a high-level hardware interrupt.
  */
 static void
-dispatch_hilevel(uint64_t vector, uint64_t arg2 __unused)
+dispatch_hilevel(uint64_t vector, uint64_t a1 __unused,
+    uint64_t a2 __unused, uint64_t a3 __unused)
 {
 	(void) enable_interrupts();
 	av_dispatch_autovect(vector);
@@ -818,13 +812,14 @@ dispatch_hilevel(uint64_t vector, uint64_t arg2 __unused)
  * Dispatch a threaded hardware interrupt.
  */
 static void
-dispatch_hardint(uint64_t ack, uint64_t oldipl)
+dispatch_hardint(uint64_t ack, uint64_t vector, uint64_t oldipl,
+    uint64_t a3 __unused)
 {
-	uint_t vector = (uint_t)gic_ack_to_vector(ack);
+	uint_t vec = (uint_t)(vector & 0xFFFFFFFF);
 	struct cpu *cpu = CPU;
 
 	(void) enable_interrupts();
-	av_dispatch_autovect(vector);
+	av_dispatch_autovect(vec);
 	(void) disable_interrupts();
 
 	/*
@@ -838,7 +833,8 @@ dispatch_hardint(uint64_t ack, uint64_t oldipl)
  * Dispatch a software interrupt.
  */
 static void
-dispatch_softint(uint64_t oldpil, uint64_t arg2 __unused)
+dispatch_softint(uint64_t oldpil, uint64_t a1 __unused,
+    uint64_t a2 __unused, uint64_t a3 __unused)
 {
 	struct cpu *cpu = CPU;
 
@@ -876,7 +872,7 @@ dosoftint(struct regs *regs)
 		 */
 		if (newsp == NULL)
 			break;
-		switch_sp_and_call(oldipl, 0, dispatch_softint, newsp);
+		switch_sp_and_call(oldipl, 0, 0, 0, dispatch_softint, newsp);
 	}
 }
 
@@ -893,35 +889,11 @@ do_interrupt(struct regs *rp)
 	uint64_t ack;
 
 	ASSERT(interrupts_disabled());
-
 	cpu_idle_exit(CPU_IDLE_CB_FLAG_INTR);
 
-	ack = gic_acknowledge();
-	vector = (uint_t)gic_ack_to_vector(ack);
-
-	if (gic_is_spurious(vector))
+	if (psm_intr_enter(oldipl, &ack, &vector) != 0)
 		goto softints;
-
-	/*
-	 * Slew the interrupt priority and perform the running priority drop.
-	 */
-	newipl = (*setlvl)(vector);
-	gic_eoi(ack);
-
-	/*
-	 * If the new IPL is 0 we've hit a race, and there's no longer an
-	 * interrupt handler registered for this vector, so we deactivate the
-	 * interrupt and proceed to softints.
-	 */
-	if (newipl == 0) {
-		gic_deactivate(ack);
-		goto softints;
-	}
-
-	/*
-	 * We have a valid hardware interrupt, process it.
-	 */
-	cpu->cpu_pri = newipl;
+	newipl = cpu->cpu_pri;
 
 	if (newipl > LOCK_LEVEL) {
 		/*
@@ -939,9 +911,10 @@ do_interrupt(struct regs *rp)
 		 */
 		if (hilevel_intr_prolog(cpu, newipl, oldipl, rp) == 0) {
 			newsp = cpu->cpu_intr_stack;
-			switch_sp_and_call(vector, 0, dispatch_hilevel, newsp);
+			switch_sp_and_call(vector, 0, 0, 0,
+			    dispatch_hilevel, newsp);
 		} else {
-			dispatch_hilevel(vector, 0);
+			dispatch_hilevel(vector, 0, 0, 0);
 		}
 		(void) hilevel_intr_epilog(cpu, newipl, oldipl, ack);
 	} else {
@@ -953,7 +926,8 @@ do_interrupt(struct regs *rp)
 		 * never return here.
 		 */
 		newsp = intr_thread_prolog(cpu, (caddr_t)rp, newipl);
-		switch_sp_and_call(ack, oldipl, dispatch_hardint, newsp);
+		switch_sp_and_call(ack, vector, oldipl, 0,
+		    dispatch_hardint, newsp);
 	}
 
 softints:
@@ -1073,5 +1047,5 @@ send_dirint(int cpuid, int irq)
 	CPUSET_ZERO(cpuset);
 	CPUSET_ADD(cpuset, cpuid);
 
-	gic_send_ipi(cpuset, irq);
+	send_dirintf(cpuset, irq);
 }

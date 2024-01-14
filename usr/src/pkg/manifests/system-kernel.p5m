@@ -78,6 +78,7 @@ file path=etc/crypto/kcf.conf group=sys \
     original_name=SUNWckr:etc/crypto/kcf.conf preserve=true
 $(i386_ONLY)file path=etc/mach group=sys original_name=SUNWos86r:etc/mach \
     preserve=true
+$(aarch64_ONLY)file path=etc/mach group=sys preserve=true
 file path=etc/name_to_sysnum group=sys \
     original_name=SUNWckr:etc/name_to_sysnum preserve=renameold
 dir  path=etc/sock2path.d group=sys

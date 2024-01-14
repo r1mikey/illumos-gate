@@ -74,19 +74,22 @@ CORE_OBJS +=			\
 	ssp.o			\
 	psci.o			\
 	arch_timer.o		\
-	earlybsa.o		\
+	psm_implfuncs.o		\
 	$(CORE_OBJS_FDT)
 
 CORE_OBJS += $(PCI_STRING_OBJS)
+
+ARMBSA_OBJS +=			\
+		armbsa.o	\
+		bsafdt.o	\
+		gicv2.o		\
+		gicv3.o
 
 SIMPLEBUS_OBJS += simple-bus.o
 
 ROOTNEX_OBJS += rootnex.o
 
 NS16550A_OBJS += ns16550a.o
-
-GICV2_OBJS += gicv2.o
-GICV3_OBJS += gicv3.o
 
 ASSYM_DEPS +=			\
 	aarch64_subr.o		\

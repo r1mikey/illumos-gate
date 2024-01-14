@@ -321,7 +321,9 @@
 	/*
 	 * void
 	 * switch_sp_and_call(uint64_t a0, uint64_t a1,
-	 *     void (*func)(uint64_t a0, uint64_t a1), void *newsp);
+	 *     uint64_t a2, uint64_t a3,
+	 *     void (*func)(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3),
+	 *     void *newsp);
 	 */
 	ENTRY(switch_sp_and_call)
 	stp	fp, lr, [sp, #-16]!
@@ -329,14 +331,19 @@
 	/*
 	 * Set up the new stack - the old is in fp.
 	 */
-	mov	sp, x3
+	mov	sp, x5
 	/*
 	 * Call the function
 	 *
 	 * argument a0 is already in x0
 	 * argument a1 is already in x1
+	 * argument a2 is already in x2
+	 * argument a3 is already in x3
 	 */
-	blr	x2
+	blr	x4
+	/*
+	 * Move back to the caller's stack and perform a standard return.
+	 */
 	mov	sp, fp
 	ldp	fp, lr, [sp], #16
 	ret

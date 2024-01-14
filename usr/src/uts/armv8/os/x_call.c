@@ -233,7 +233,7 @@ xc_common(
 	cpuset = set;
 	CPUSET_DEL(cpuset, lcx);
 	if (!CPUSET_ISNULL(cpuset)) {
-		gic_send_ipi(cpuset, IRQ_IPI_HI);
+		send_dirintf(cpuset, IRQ_IPI_HI);
 	}
 
 	/*

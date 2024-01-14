@@ -102,9 +102,6 @@ gic_delspl(int irq, int ipl, int min_ipl, int max_ipl)
 	return (gic_ops.go_delspl(irq, ipl, min_ipl, max_ipl));
 }
 
-int (*addspl)(int, int, int, int) = gic_addspl;
-int (*delspl)(int, int, int, int) = gic_delspl;
-
 int
 setlvl(int irq)
 {

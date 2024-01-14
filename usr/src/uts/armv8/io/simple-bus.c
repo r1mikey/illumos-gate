@@ -43,6 +43,7 @@
 #include <sys/avintr.h>
 #include <sys/gic.h>
 #include <sys/promif.h>
+#include <sys/smp_impldefs.h>
 
 static int
 smpl_bus_map(dev_info_t *, dev_info_t *, ddi_map_req_t *, off_t, off_t, caddr_t *);
@@ -516,10 +517,12 @@ smpl_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 			cfg &= 0xFF;
 			switch (cfg) {
 			case 1:
-				gic_config_irq(hdlp->ih_vector, B_TRUE);
+				psm_config_irq(hdlp->ih_vector,
+				    DDI_INTR_FLAG_EDGE);
 				break;
 			default:
-				gic_config_irq(hdlp->ih_vector, B_FALSE);
+				psm_config_irq(hdlp->ih_vector,
+				    DDI_INTR_FLAG_LEVEL);
 				break;
 			}
 
