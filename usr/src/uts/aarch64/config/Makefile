@@ -46,7 +46,7 @@ include $(UTSBASE)/aarch64/Makefile.aarch64
 SRCDIR		= $(UTSBASE)/aarch64/os
 PATH2INST	= path_to_inst
 CONFIGFILES	= name_to_major minor_perm driver_aliases name_to_sysnum \
-		  driver_classes dacf.conf $(PATH2INST)
+		  driver_classes dacf.conf $(PATH2INST) mach
 SECCONFIG	= device_policy priv_names
 BOOTENVRC	= bootenv.rc
 FILEMODE	= 644

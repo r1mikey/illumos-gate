@@ -57,6 +57,12 @@
 extern void return_instr(void);
 
 uint_t cp_haltset_fanout = 0;
+
+/* this should be static, no? */
+void mach_init(void);
+
+void (*psminitf)()		= mach_init;
+
 int (*addintr)(void *, int, avfunc, char *, int, caddr_t, caddr_t, uint64_t *,
     dev_info_t *) = NULL;
 void (*remintr)(void *, int, avfunc, int) = NULL;

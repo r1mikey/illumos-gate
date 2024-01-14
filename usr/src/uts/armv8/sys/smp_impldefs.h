@@ -40,6 +40,7 @@ extern "C" {
 /*
  *	External Reference Functions
  */
+extern void (*psminitf)();	/* psm init entry point			*/
 extern int (*slvltovect)(int);	/* ipl interrupt priority level */
 extern int setlvl(int);	/* set intr pri represented by vect */
 extern void setlvlx(int);	/* set intr pri to specified level */
@@ -62,6 +63,9 @@ extern void kdi_av_set_softint_pending(); /* kmdb private entry point */
 extern caddr_t psm_map_phys(paddr_t, size_t, int);
 /* unmap the physical address given in psm_map_phys() from the addr	*/
 extern void psm_unmap_phys(caddr_t, size_t);
+
+extern void psm_install(void);
+extern void psm_modload(void);
 
 /*
  *	External Reference Data

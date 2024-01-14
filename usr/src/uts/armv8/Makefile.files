@@ -74,10 +74,12 @@ CORE_OBJS +=			\
 	ssp.o			\
 	psci.o			\
 	arch_timer.o		\
-	earlybsa.o		\
+	psm_implfuncs.o		\
 	$(CORE_OBJS_FDT)
 
 CORE_OBJS += $(PCI_STRING_OBJS)
+
+ARMBSA_OBJS += armbsa.o
 
 SIMPLEBUS_OBJS += simple-bus.o
 

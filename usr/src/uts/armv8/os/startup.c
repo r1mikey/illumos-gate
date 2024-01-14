@@ -958,12 +958,19 @@ startup_end(void)
 	 * Set the isa_list string to the defined instruction sets we
 	 * support.
 	 */
+	PRM_POINT("cpu_intr_alloc()");
 	cpu_intr_alloc(CPU, NINTR_THREADS);
+	PRM_POINT("psm_install()");
+	psm_install();
 
-	mach_init();
+	mach_init();	/* XXXARM: moves to PSM */
 
 	PRM_POINT("Enabling interrupts");
 	set_base_spl();
+	/*
+	 * (*picinitf)();
+	 * sti();
+	 */
 	enable_irq();
 
 	(void) add_avsoftintr((void *)&softlevel1_hdl, 1, softlevel1,
@@ -980,6 +987,7 @@ startup_end(void)
 	}
 	PRM_POINT("startup_end() done");
 }
+
 static void
 startup_kmem(void)
 {
@@ -1284,6 +1292,12 @@ startup_modules(void)
 	 */
 	PRM_POINT("startup_modules: calling prom_setup...");
 	prom_setup();
+
+	/*
+	 * Load all platform specific modules
+	 */
+	PRM_POINT("startup_modules: calling psm_modload...");
+	psm_modload();
 
 	PRM_POINT("startup_modules() done");
 }
