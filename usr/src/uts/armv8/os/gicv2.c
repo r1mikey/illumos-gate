@@ -492,6 +492,12 @@ gicv2_deactivate(uint64_t ack)
 	gicc_write(&conf, GICC_DIR, (uint32_t)(ack & 0xFFFFFFFF));
 }
 
+static uint64_t
+gicv2_pending_vector(void)
+{
+	return ((uint64_t)(gicc_read(&conf, GICC_HPPIR) & GICC_HPPIR_INTID));
+}
+
 /*
  * Return the target representing the current cpu from the GIC point of view
  * by reading the target field of a target specific interrupt.
@@ -836,6 +842,7 @@ _init(void)
 		 * Explicitly use the default "is special" handler.
 		 */
 		gic_ops.go_is_spurious = (gic_is_spurious_t)NULL;
+		gic_ops.go_pending_vector = gicv2_pending_vector;
 	}
 
 	return (mod_install(&modlinkage));

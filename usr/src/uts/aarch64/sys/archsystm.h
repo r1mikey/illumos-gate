@@ -116,9 +116,15 @@ restore_interrupts(uint64_t daif)
 }
 
 extern __GNU_INLINE boolean_t
+interrupts_enabled_for_cookie(uint64_t cookie)
+{
+	return (((cookie & DAIF_IRQ) == 0) ? B_TRUE : B_FALSE);
+}
+
+extern __GNU_INLINE boolean_t
 interrupts_enabled(void)
 {
-	return (((read_daif() & DAIF_IRQ) == 0) ? B_TRUE : B_FALSE);
+	return (interrupts_enabled_for_cookie(read_daif()));
 }
 
 extern __GNU_INLINE boolean_t

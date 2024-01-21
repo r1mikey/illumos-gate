@@ -943,6 +943,14 @@ read_icc_iar1_el1(void)
 	return (reg);
 }
 
+extern __GNU_INLINE uint64_t
+read_icc_hppir1_el1(void)
+{
+	uint64_t reg;
+	__asm__ __volatile__("mrs %0, icc_hppir1_el1":"=r"(reg)::"memory");
+	return (reg);
+}
+
 extern __GNU_INLINE void
 write_icc_eoir1_el1(uint64_t reg)
 {

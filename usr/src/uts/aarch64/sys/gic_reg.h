@@ -703,6 +703,7 @@ extern "C" {
 #define	ICC_IGRPEN1_EL1_Enable			0x0000000000000001
 
 #define	ICC_IAR1_INTID				0x0000000000FFFFFF
+#define	ICC_HPPIR1_EL1_INTID			(ICC_IAR1_INTID)
 
 /*
  * GIC Virtual CPU Interface

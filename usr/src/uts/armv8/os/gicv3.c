@@ -664,6 +664,12 @@ gicv3_deactivate(uint64_t ack)
 	write_icc_dir_el1(ack);
 }
 
+static uint64_t
+gicv3_pending_vector(void)
+{
+	return (read_icc_hppir1_el1() & ICC_HPPIR1_EL1_INTID);
+}
+
 /*
  * Private helper function to deallocate and unmap any allocated GIC
  * configuration.
@@ -1170,6 +1176,7 @@ _init(void)
 		 * Explicitly use the default "is special" handler.
 		 */
 		gic_ops.go_is_spurious = (gic_is_spurious_t)NULL;
+		gic_ops.go_pending_vector = gicv3_pending_vector;
 	}
 
 	return (mod_install(&modlinkage));

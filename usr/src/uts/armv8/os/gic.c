@@ -23,6 +23,7 @@
 
 static void stub_not_config(void);
 static void stub_setlvlx(int ipl);
+static uint64_t stub_pending_vector(void);
 
 /*
  * Used by implementations to ensure that they only fill in gic_ops when
@@ -43,7 +44,8 @@ gic_ops_t gic_ops = {
 	.go_ack_to_vector	= (gic_ack_to_vector_t)stub_not_config,
 	.go_eoi			= (gic_eoi_t)stub_not_config,
 	.go_deactivate		= (gic_deactivate_t)stub_not_config,
-	.go_is_spurious		= (gic_is_spurious_t)NULL
+	.go_is_spurious		= (gic_is_spurious_t)NULL,
+	.go_pending_vector	= (gic_pending_vector_t)stub_pending_vector
 };
 
 static void
@@ -70,6 +72,12 @@ stub_setlvlx(int ipl __unused)
 	 * so we just allow the calls to be no-ops prior to loading a GIC
 	 * implementation module.
 	 */
+}
+
+static uint64_t
+stub_pending_vector(void)
+{
+	return (GIC_INTID_SPURIOUS);
 }
 
 void
@@ -151,6 +159,12 @@ gic_is_spurious(uint32_t intid)
 		return (1);
 
 	return (0);
+}
+
+uint64_t
+gic_pending_vector(void)
+{
+	return (gic_ops.go_pending_vector());
 }
 
 /*

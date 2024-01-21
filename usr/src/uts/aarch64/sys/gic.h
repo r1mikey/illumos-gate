@@ -48,6 +48,7 @@ extern uint32_t gic_ack_to_vector(uint64_t ack);
 extern void gic_eoi(uint64_t ack);
 extern void gic_deactivate(uint64_t ack);
 extern int gic_is_spurious(uint32_t intid);
+extern uint64_t gic_pending_vector(void);
 
 /*
  * Types and data structure filled by GIC implementation modules
@@ -65,6 +66,7 @@ typedef uint32_t (*gic_ack_to_vector_t)(uint64_t ack);
 typedef void (*gic_eoi_t)(uint64_t ack);
 typedef void (*gic_deactivate_t)(uint64_t ack);
 typedef int (*gic_is_spurious_t)(uint32_t intid);
+typedef uint64_t (*gic_pending_vector_t)(void);
 
 typedef struct gic_ops {
 	gic_send_ipi_t		go_send_ipi;
@@ -80,6 +82,7 @@ typedef struct gic_ops {
 	gic_eoi_t		go_eoi;
 	gic_deactivate_t	go_deactivate;
 	gic_is_spurious_t	go_is_spurious;
+	gic_pending_vector_t	go_pending_vector;
 } gic_ops_t;
 
 extern gic_ops_t gic_ops;

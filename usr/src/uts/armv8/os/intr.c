@@ -883,7 +883,7 @@ dosoftint(struct regs *regs)
  * Interrupt service routine, called with interrupts disabled.
  */
 void
-do_interrupt(struct regs *rp)
+do_interrupt(struct regs *rp, boolean_t fake)
 {
 	struct cpu *cpu = CPU;
 	int newipl, oldipl = cpu->cpu_pri;
@@ -894,6 +894,12 @@ do_interrupt(struct regs *rp)
 	ASSERT(interrupts_disabled());
 
 	cpu_idle_exit(CPU_IDLE_CB_FLAG_INTR);
+
+	/*
+	 * If it's a fake softint call, go do it now.
+	 */
+	if (fake)
+		goto softints;
 
 	ack = gic_acknowledge();
 	vector = (uint_t)gic_ack_to_vector(ack);
@@ -974,6 +980,63 @@ getpil(void)
 	return (pil);
 }
 
+/*
+ * In the i86pc implementation this is a macro, and behaves slightly
+ * differently to this function.
+ *
+ * We make the decision to allow softint processing at do_splx time when:
+ * - Interrupts were enabled when do_splx was called AND
+ * - No pending interrupt has a higher priority that the new priority AND
+ * - There are pending soft interrupts of higher priority than our new priority
+ */
+static inline boolean_t
+can_fake_softint(uint64_t oldints, cpu_t *cpu, uint16_t newpri)
+{
+	uint_t pil;
+	uint16_t st_pending;
+	uint64_t vec;
+	uint_t vecipl;
+
+	/*
+	 * If interrupts were disabled at the time we ran do_splx we can't do
+	 * softints.
+	 */
+	if (!interrupts_enabled_for_cookie(oldints))
+		return (B_FALSE);
+
+	/*
+	 * If there's no pending interrupt with a higher priority than our new
+	 * priority then we can't do softints.
+	 */
+	st_pending = (uint16_t)(cpu->cpu_softinfo.st_pending & 0xFFFF);
+	pil = bsrw_insn(st_pending);
+	if (pil <= newpri)
+		return (B_FALSE);
+
+	/*
+	 * Get the pending interrupt vector - if there is none, then it's OK
+	 * to run softints now (all other conditions are satisfied).
+	 */
+	vec = gic_pending_vector();
+	if (gic_is_spurious(vec))
+		return (B_TRUE);
+
+	/*
+	 * If the pending interrupt has no priority (i.e. it's spurious due
+	 * to a race) or there's a softint with a higher priority than our
+	 * pending interrupt, then it's OK to run softints.
+	 */
+	vecipl = autovect[vec].avh_hi_pri;
+	if (vecipl == 0 || pil > vecipl)
+		return (B_TRUE);
+
+	/*
+	 * We did not meet all of our conditions, refuse to run softints at
+	 * this time.
+	 */
+	return (B_FALSE);
+}
+
 static int
 do_splx(int newpri)
 {
@@ -986,6 +1049,17 @@ do_splx(int newpri)
 		newpri = basepri;
 	cpu->cpu_m.mcpu_pri = newpri;
 	setlvlx(newpri);
+
+	/*
+	 * fakesoftint needs to build up a frame, then call do_interrupt
+	 *
+	 * The ASM is needed to set up a fake regs struct for do_interrupt
+	 * and create some safe stack space for a possible call to hat_switch
+	 * if a softint thread blocks, then restore all of that when
+	 * do_interrupt returns.
+	 */
+	if (can_fake_softint(s, cpu, newpri))
+		fakesoftint();
 
 	restore_interrupts(s);
 	return (curpri);

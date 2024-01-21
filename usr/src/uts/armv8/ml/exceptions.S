@@ -125,6 +125,7 @@ ALTENTRY(from_current_el_irq)
 	__SAVE_REGS
 	__SAVE_FRAME
 	mov	x0, sp
+	mov	x1, #0
 	bl	do_interrupt
 	b	_sys_rtt
 	CHECK_VECTOR_ENTRY(from_current_el_irq)
@@ -169,6 +170,7 @@ ALTENTRY(from_lower_el_aarch64_irq)
 	__SAVE_REGS
 	__TERMINATE_FRAME
 	mov	x0, sp
+	mov	x1, #0
 	bl	do_interrupt
 	b	_sys_rtt
 	CHECK_VECTOR_ENTRY(from_lower_el_aarch64_irq)
@@ -483,6 +485,38 @@ _sys_rtt_preempt:
 	strb	wzr, [x20, #T_PREEMPT_LK]
 	b	_sys_rtt_preempt_ret
 	SET_SIZE(_sys_rtt)
+
+	/*
+	 * Fake up a "struct regs" pointer and call do_interrupt with the
+	 * "fake" flag set.
+	 *
+	 * This drops through to softint processing, where the fake regs are
+	 * used as a marker for a temporary bit of stack space to use when
+	 * calling hat_switch during a call (in the dispatcher, if and when
+	 * a softint thread blocks).
+	 *
+	 * To make this a little safer (as I simply don't trust that we're
+	 * not going to trash in-use stack space - in-use by the the
+	 * do_interrupt call (do_interrupt and dosoftint - the rest is
+	 * executed on a softint-specific stack), we create 1k of stack
+	 * space below the fake regs, which is what would be used iff the
+	 * invoked thread happened to block.
+	 */
+	ENTRY(fakesoftint)
+	stp	fp, lr, [sp, #-0x10]!	/* push the frame */
+	mov	fp, sp			/* set up fp */
+	__SAVE_REGS
+	__SAVE_FRAME
+	mov	x0, sp			/* first arg is fake regs */
+	mov	x1, #1			/* fake boolean arg */
+	// sub	sp, sp, #0x400		/* a safe space */
+	bl	do_interrupt		/* do the call */
+	// add	sp, sp, #0x400		/* reclaim space */
+	// add	sp, sp, #REG_FRAME
+	mov	sp, fp			/* removes the struct regs */
+	ldp	fp, lr, [sp], #0x10	/* pop the frame */
+	ret
+	SET_SIZE(fakesoftint)
 
 	ENTRY(lwp_rtt_initial)
 	THREADP(x0)
