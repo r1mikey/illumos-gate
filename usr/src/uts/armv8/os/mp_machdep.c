@@ -56,6 +56,23 @@
 
 extern void return_instr(void);
 
+static int mach_intr_enter(int ipl, psm_intr_cookie_t *cookiep,
+    psm_intr_vector_t *vectorp, int *newipl, boolean_t *);
+static void mach_intr_exit(int ipl, psm_intr_cookie_t cookie);
+static void mach_send_ipi(cpuset_t cpus, psm_intr_vector_t vec);
+/* XXXARM: should hide behind intr_ops */
+static int mach_intr_set_type(psm_intr_vector_t vec, int irq_type);
+static int mach_apsetup(void);
+
+/* XXXARM: these should explode until set */
+int (*psm_intr_enter)(int, psm_intr_cookie_t *,
+    psm_intr_vector_t *, int *, boolean_t *) = mach_intr_enter;
+void (*psm_intr_exit)(int, psm_intr_cookie_t) = mach_intr_exit;
+void (*psm_send_ipi)(cpuset_t, psm_intr_vector_t) = mach_send_ipi;
+/* XXXARM: should hide behind intr_ops */
+int (*psm_intr_set_type)(psm_intr_vector_t, int) = mach_intr_set_type;
+int (*psm_apsetup)(void) = mach_apsetup;
+
 uint_t cp_haltset_fanout = 0;
 int (*addintr)(void *, int, avfunc, char *, int, caddr_t, caddr_t, uint64_t *,
     dev_info_t *) = NULL;
@@ -387,4 +404,83 @@ mach_init()
 	}
 
 	mp_cpus = cpumask;
+}
+
+static int
+mach_intr_enter(int ipl __unused, psm_intr_cookie_t *cookiep,
+    psm_intr_vector_t *vectorp, int *newipl, boolean_t *spurious)
+{
+	uint64_t ack;
+	uint32_t vector;
+	int nipl;
+
+	ASSERT(interrupts_disabled());
+
+	*spurious = B_TRUE;
+	ack = gic_acknowledge();
+	vector = gic_ack_to_vector(ack);
+
+	if (gic_is_spurious(vector))
+		return (PSM_SUCCESS);
+
+	nipl = setlvl(vector);
+	gic_eoi(ack);
+
+	if (nipl == 0) {
+		gic_deactivate(ack);
+		return (PSM_SUCCESS);
+	}
+
+	CPU->cpu_pri = nipl;
+	*spurious = B_FALSE;
+	*newipl = nipl;
+	*cookiep = ack;
+	*vectorp = vector;
+	return (PSM_SUCCESS);
+}
+
+static void
+mach_intr_exit(int ipl, psm_intr_cookie_t cookie)
+{
+	ASSERT(interrupts_disabled());
+
+	CPU->cpu_pri = ipl;
+	gic_deactivate(cookie);
+	setlvlx(ipl);
+}
+
+static void
+mach_send_ipi(cpuset_t cpus, psm_intr_vector_t vec)
+{
+	gic_send_ipi(cpus, vec);
+}
+
+/*
+ * XXXARM: should hide behind intr_ops
+ *
+ * I deeply dislike this function.
+ */
+static int
+mach_intr_set_type(psm_intr_vector_t vec, int irq_type)
+{
+	boolean_t is_edge = B_FALSE;
+
+	irq_type &= (DDI_INTR_FLAG_EDGE | DDI_INTR_FLAG_LEVEL);
+
+	if (irq_type == 0 ||
+	    irq_type == (DDI_INTR_FLAG_EDGE | DDI_INTR_FLAG_LEVEL))
+		return (PSM_FAILURE);
+
+	if ((irq_type & DDI_INTR_FLAG_EDGE) == DDI_INTR_FLAG_EDGE)
+		is_edge = B_TRUE;
+
+	gic_config_irq(vec, is_edge);
+	return (PSM_SUCCESS);
+}
+
+static int
+mach_apsetup(void)
+{
+	gic_cpu_init(CPU);
+	return (PSM_SUCCESS);
 }

@@ -67,9 +67,9 @@
 #include <sys/ddifm.h>
 #include <sys/ddi_isa.h>
 #include <sys/ddi_subrdefs.h>
-#include <sys/gic.h>
 #include <sys/spl.h>
 #include <sys/controlregs.h>
+#include <sys/smp_impldefs.h>
 
 /*
  * enable/disable extra checking of function parameters. Useful for debugging
@@ -1224,10 +1224,12 @@ rootnex_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 			cfg &= 0xFF;
 			switch (cfg) {
 			case 1:
-				gic_config_irq(hdlp->ih_vector, true);
+				(void) psm_intr_set_type(hdlp->ih_vector,
+				    DDI_INTR_FLAG_EDGE);
 				break;
 			default:
-				gic_config_irq(hdlp->ih_vector, false);
+				(void) psm_intr_set_type(hdlp->ih_vector,
+				    DDI_INTR_FLAG_LEVEL);
 				break;
 			}
 

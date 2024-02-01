@@ -38,6 +38,25 @@ extern "C" {
 #endif
 
 /*
+ * XXXARM: temporary declarations
+ */
+#define	PSM_SUCCESS		(0)
+#define	PSM_FAILURE		(-1)
+#define	PSM_SPURIOUS_INTERRUPT	(-2)
+
+typedef uint64_t psm_intr_cookie_t;
+typedef uint32_t psm_intr_vector_t;
+
+extern int (*psm_intr_enter)(int, psm_intr_cookie_t *,
+    psm_intr_vector_t *, int *, boolean_t *);
+extern void (*psm_intr_exit)(int, psm_intr_cookie_t);
+extern void (*psm_send_ipi)(cpuset_t, psm_intr_vector_t);
+/* XXXARM: should hide behind intr_ops */
+extern int (*psm_intr_set_type)(psm_intr_vector_t, int);
+extern int (*psm_apsetup)(void);	/* completes init of starting cpu */
+
+
+/*
  *	External Reference Functions
  */
 extern int (*slvltovect)(int);	/* ipl interrupt priority level */

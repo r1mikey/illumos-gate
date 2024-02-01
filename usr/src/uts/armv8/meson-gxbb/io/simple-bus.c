@@ -41,8 +41,8 @@
 #include <sys/mach_intr.h>
 #include <sys/note.h>
 #include <sys/avintr.h>
-#include <sys/gic.h>
 #include <sys/promif.h>
+#include <sys/smp_impldefs.h>
 #include <stdbool.h>
 
 
@@ -535,10 +535,12 @@ smpl_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 			cfg &= 0xFF;
 			switch (cfg) {
 			case 1:
-				gic_config_irq(hdlp->ih_vector, true);
+				(void) psm_intr_set_type(hdlp->ih_vector,
+				    DDI_INTR_FLAG_EDGE);
 				break;
 			default:
-				gic_config_irq(hdlp->ih_vector, false);
+				(void) psm_intr_set_type(hdlp->ih_vector,
+				    DDI_INTR_FLAG_LEVEL);
 				break;
 			}
 

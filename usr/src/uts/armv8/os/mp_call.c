@@ -28,7 +28,6 @@
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/cpuvar.h>
-#include <sys/gic.h>
 #include <sys/irq.h>
 #include <sys/spl.h>
 #include <sys/x_call.h>

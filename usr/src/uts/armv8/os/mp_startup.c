@@ -73,7 +73,6 @@
 #include <sys/sysmacros.h>
 #include <sys/ontrap.h>
 #include <sys/promif.h>
-#include <sys/gic.h>
 #include <sys/platmod.h>
 #include <sys/irq.h>
 #include <sys/psci.h>
@@ -356,8 +355,8 @@ mp_startup_boot(void)
 	write_vbar((uintptr_t)exception_vector);
 	isb();
 
-	/* Set up the GIC for the new additional CPU */
-	gic_cpu_init(cp);
+	/* Set up the machine for the additional CPU */
+	(void) psm_apsetup();
 
 	/*
 	 * Enable interrupts with spl set to LOCK_LEVEL. LOCK_LEVEL is the
