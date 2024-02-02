@@ -2397,6 +2397,7 @@ impl_bus_initialprobe(void)
 {
 	struct bus_probe *probe;
 
+	modload("misc", "fdt_autoconfig");
 	modload("misc", "pci_autoconfig");
 
 	probe = bus_probes;

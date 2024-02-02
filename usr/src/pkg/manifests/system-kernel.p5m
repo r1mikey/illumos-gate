@@ -319,6 +319,8 @@ file path=kernel/misc/$(ARCH64)/dls group=sys mode=0755
 # While kstat(4D) is in SUNWcs, the structures are general
 hardlink path=kernel/misc/$(ARCH64)/edonr \
     target=../../../kernel/crypto/$(ARCH64)/edonr
+$(aarch64_ONLY)file path=kernel/misc/$(ARCH64)/fdt_autoconfig group=sys \
+    mode=0755
 file path=kernel/misc/$(ARCH64)/fssnap_if group=sys mode=0755
 file path=kernel/misc/$(ARCH64)/gld group=sys mode=0755
 file path=kernel/misc/$(ARCH64)/hook group=sys mode=0755

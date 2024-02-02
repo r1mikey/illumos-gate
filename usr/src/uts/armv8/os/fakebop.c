@@ -74,6 +74,7 @@ static void bsetpropsi(char *, int);
 static void bsetprop(char *, int, void *, int);
 static int parse_value(char *, uint64_t *);
 
+void *fw_fdt_ptr = NULL;
 static bootops_t bootop;
 static struct xboot_info *xbootp;
 static char *boot_args = "";
@@ -226,6 +227,7 @@ void bop_init(struct xboot_info *xbp)
 	xbootp = xbp;
 
 	prom_init("kernel", (void *)xbp->bi_fdt);
+	fw_fdt_ptr = (void *)xbp->bi_fdt;
 	bmemlist_init();
 
 	/*

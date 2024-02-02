@@ -50,6 +50,7 @@ $(aarch64_ONLY)file path=platform/armv8/kernel/dacf/aarch64/consconfig_dacf \
     mode=0755
 $(aarch64_ONLY)dir path=platform/armv8/kernel/drv
 $(aarch64_ONLY)dir path=platform/armv8/kernel/drv/aarch64
+$(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/fdtnex
 $(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/gicv2
 $(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/gicv3
 $(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/ns16550a
@@ -194,6 +195,7 @@ $(i386_ONLY)driver name=balloon perms="* 0444 root sys"
 $(i386_ONLY)driver name=cpudrv alias=cpu
 $(i386_ONLY)driver name=domcaps perms="* 0444 root sys"
 $(i386_ONLY)driver name=evtchn perms="* 0666 root sys"
+$(aarch64_ONLY)driver name=fdtnex
 $(i386_ONLY)driver name=isa class=sysbus alias=pciclass,060100
 $(i386_ONLY)driver name=npe alias=pciex_root_complex
 driver name=ns16550a perms="* 0666 root sys" perms="*,cu 0600 uucp uucp" \

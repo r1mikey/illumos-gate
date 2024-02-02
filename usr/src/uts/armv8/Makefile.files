@@ -79,7 +79,11 @@ CORE_OBJS +=			\
 
 CORE_OBJS += $(PCI_STRING_OBJS)
 
+FDT_AUTOCONFIG_OBJS += fdt_autoconfig.o
+
 SIMPLEBUS_OBJS += simple-bus.o
+
+FDTNEX_OBJS += fdtnex.o
 
 ROOTNEX_OBJS += rootnex.o
 
