@@ -74,10 +74,14 @@ CORE_OBJS +=			\
 	ssp.o			\
 	psci.o			\
 	arch_timer.o		\
+	pci_cfgacc.o		\
+	pci_cfgacc_armv8.o	\
+	pci_cfgspace.o		\
 	earlybsa.o		\
 	$(CORE_OBJS_FDT)
 
-CORE_OBJS += $(PCI_STRING_OBJS)
+
+# CORE_OBJS += $(PCI_STRING_OBJS)
 
 SIMPLEBUS_OBJS += simple-bus.o
 
@@ -87,6 +91,12 @@ NS16550A_OBJS += ns16550a.o
 
 GICV2_OBJS += gicv2.o
 GICV3_OBJS += gicv3.o
+
+PCI_PRD_OBJS += pci_prd_armv8.o pci_memlist.o
+# PCIE_MISC_OBJS += pcie_acpi.o pciehpc_acpi.o pcie_armv8.o
+PCIE_MISC_OBJS += pcie_armv8.o
+PCI_E_NEXUS_OBJS += npe.o npe_misc.o
+PCI_E_NEXUS_OBJS += pci_common.o pci_kstats.o pci_tools.o
 
 ASSYM_DEPS +=			\
 	aarch64_subr.o		\

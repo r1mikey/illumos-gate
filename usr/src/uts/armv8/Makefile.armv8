@@ -202,5 +202,11 @@ DRV_KMODS += rootnex
 DRV_KMODS += ns16550a
 DRV_KMODS += gicv2
 DRV_KMODS += gicv3
+DRV_KMODS += npe
+
+#
+#	'Misc' Modules (/kernel/misc):
+#
+MISC_KMODS	+= pci_prd pcie
 
 DACF_KMODS += consconfig_dacf
