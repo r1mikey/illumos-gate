@@ -20,9 +20,17 @@
  */
 
 /*
- * Copyright 2017 Hayashi Naoyuki
+ * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
+ *
  * Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2012 Garrett D'Amore <garrett@damore.org>
+ * Copyright 2014 Pluribus Networks, Inc.
+ * Copyright 2016 Nexenta Systems, Inc.
+ * Copyright 2017 Hayashi Naoyuki
+ * Copyright 2018 Joyent, Inc.
+ * Copyright 2024 Michael van der Westhuizen
  */
 
 #include <sys/types.h>
@@ -989,40 +997,64 @@ impl_ddi_sunbus_removechild(dev_info_t *dip)
 	impl_rem_dev_props(dip);
 }
 
+/*
+ * Copy name to property_name, since name
+ * is in the low address range below kernelbase.
+ */
+static void
+copy_boot_str(const char *boot_str, char *kern_str, int len)
+{
+	int i = 0;
+
+	while (i < len - 1 && boot_str[i] != '\0') {
+		kern_str[i] = boot_str[i];
+		i++;
+	}
+
+	kern_str[i] = 0;	/* null terminate */
+	if (boot_str[i] != '\0')
+		cmn_err(CE_WARN,
+		    "boot property string is truncated to %s", kern_str);
+}
+
 static void
 get_boot_properties(void)
 {
 	extern char hw_provider[];
 	dev_info_t *devi;
 	char *name;
-	int length;
-	char property_name[OBP_MAXPROPNAME], property_val[50];
+	int length, flags;
+	char property_name[50], property_val[50];
 	void *bop_staging_area;
 
 	bop_staging_area = kmem_zalloc(MMU_PAGESIZE, KM_NOSLEEP);
 
+	/*
+	 * Import "root" properties from the boot.
+	 *
+	 * We do this by invoking BOP_NEXTPROP until the list
+	 * is completely copied in.
+	 */
+
 	devi = ddi_root_node();
-	property_name[0] = '\0';
-	for (name = BOP_NEXTPROP(bootops, property_name);	/* get first */
-	    name && strlen(name) > 0;				/* NULL => DONE */
-	    name = BOP_NEXTPROP(bootops, property_name)) {	/* get next */
+	for (name = BOP_NEXTPROP(bootops, "");		/* get first */
+	    name;					/* NULL => DONE */
+	    name = BOP_NEXTPROP(bootops, name)) {	/* get next */
 
-		if (strlen(name) >= OBP_MAXPROPNAME) {
-			cmn_err(CE_NOTE,
-			    "boot property name %s longer than 0x%lx\n",
-			    name, sizeof(property_name));
-			break;
-		}
+		/* copy string to memory above kernelbase */
+		copy_boot_str(name, property_name, 50);
 
-		strcpy(property_name, name);
-
+		/*
+		 * Skip vga properties. They will be picked up later
+		 * by get_vga_properties.
+		 */
 		if (strcmp(property_name, "display-edif-block") == 0 ||
 		    strcmp(property_name, "display-edif-id") == 0) {
 			continue;
 		}
 
 		length = BOP_GETPROPLEN(bootops, property_name);
-		if (length == 0)
+		if (length < 0)
 			continue;
 		if (length > MMU_PAGESIZE) {
 			cmn_err(CE_NOTE,
@@ -1031,31 +1063,84 @@ get_boot_properties(void)
 			continue;
 		}
 		BOP_GETPROP(bootops, property_name, bop_staging_area);
+		flags = do_bsys_getproptype(bootops, property_name);
 
-		if (strcmp(property_name, "si-machine") == 0) {
-			(void) strncpy(utsname.machine, bop_staging_area, SYS_NMLN);
-			utsname.machine[SYS_NMLN - 1] = 0;
-		} else if (strcmp(property_name, "si-hw-provider") == 0) {
+		/*
+		 * special properties:
+		 * si-machine, si-hw-provider
+		 *	goes to kernel data structures.
+		 * bios-boot-device and stdout
+		 *	goes to hardware property list so it may show up
+		 *	in the prtconf -vp output. This is needed by
+		 *	Install/Upgrade. Once we fix install upgrade,
+		 *	this can be taken out.
+		 */
+		if (strcmp(name, "si-machine") == 0) {
+			(void) strncpy(utsname.machine, bop_staging_area,
+			    SYS_NMLN);
+			utsname.machine[SYS_NMLN - 1] = '\0';
+			continue;
+		}
+		if (strcmp(name, "si-hw-provider") == 0) {
 			(void) strncpy(hw_provider, bop_staging_area, SYS_NMLN);
-			hw_provider[SYS_NMLN - 1] = 0;
-		} else if (strcmp(property_name, "bios-boot-device") == 0) {
-			if (length >= sizeof(property_val)) {
-				cmn_err(CE_NOTE,
-				    "boot property %s longer than 0x%lx, ignored\n",
-				    property_name, MMU_PAGESIZE);
-			}
-			bcopy(bop_staging_area, property_val, length);
+			hw_provider[SYS_NMLN - 1] = '\0';
+			continue;
+		}
+		if (strcmp(name, "bios-boot-device") == 0) {
+			copy_boot_str(bop_staging_area, property_val, 50);
 			(void) ndi_prop_update_string(DDI_DEV_T_NONE, devi,
 			    property_name, property_val);
-		} else if (strcmp(property_name, "stdout") == 0) {
+			continue;
+		}
+		if (strcmp(name, "stdout") == 0) {
 			(void) ndi_prop_update_int(DDI_DEV_T_NONE, devi,
 			    property_name, *((int *)bop_staging_area));
-		} else if (strcmp(property_name, "ramdisk_start") == 0) {
-		} else if (strcmp(property_name, "ramdisk_end") == 0) {
-		} else if (strcmp(property_name, "ramdisk_end") == 0) {
-		} else {
+			continue;
+		}
+
+		/* Boolean property */
+		if (length == 0) {
+			(void) e_ddi_prop_create(DDI_DEV_T_NONE, devi,
+			    DDI_PROP_CANSLEEP, property_name, NULL, 0);
+			continue;
+		}
+
+		/* Now anything else based on type. */
+		switch (flags) {
+		case DDI_PROP_TYPE_INT:
+			if (length == sizeof (int)) {
+				(void) e_ddi_prop_update_int(DDI_DEV_T_NONE,
+				    devi, property_name,
+				    *((int *)bop_staging_area));
+			} else {
+				(void) e_ddi_prop_update_int_array(
+				    DDI_DEV_T_NONE, devi, property_name,
+				    bop_staging_area, length / sizeof (int));
+			}
+			break;
+		case DDI_PROP_TYPE_STRING:
+			(void) e_ddi_prop_update_string(DDI_DEV_T_NONE, devi,
+			    property_name, bop_staging_area);
+			break;
+		case DDI_PROP_TYPE_BYTE:
+			(void) e_ddi_prop_update_byte_array(DDI_DEV_T_NONE,
+			    devi, property_name, bop_staging_area, length);
+			break;
+		case DDI_PROP_TYPE_INT64:
+			if (length == sizeof (int64_t)) {
+				(void) e_ddi_prop_update_int64(DDI_DEV_T_NONE,
+				    devi, property_name,
+				    *((int64_t *)bop_staging_area));
+			} else {
+				(void) e_ddi_prop_update_int64_array(
+				    DDI_DEV_T_NONE, devi, property_name,
+				    bop_staging_area,
+				    length / sizeof (int64_t));
+			}
+			break;
+		default:
 			/* Property type unknown, use old prop interface */
-			e_ddi_prop_create(DDI_DEV_T_NONE, devi,
+			(void) e_ddi_prop_create(DDI_DEV_T_NONE, devi,
 			    DDI_PROP_CANSLEEP, property_name, bop_staging_area,
 			    length);
 		}
@@ -1074,8 +1159,6 @@ impl_setup_ddi(void)
 	ndi_devi_alloc_sleep(ddi_root_node(), "ramdisk", (pnode_t)DEVI_SID_NODEID, &xdip);
 	(void) BOP_GETPROP(bootops, "ramdisk_start", (void *)&ramdisk_start);
 	(void) BOP_GETPROP(bootops, "ramdisk_end", (void *)&ramdisk_end);
-	ramdisk_start = ntohll(ramdisk_start);
-	ramdisk_end = ntohll(ramdisk_end);
 
 	rd_mem_prop.phys = ramdisk_start;
 	rd_mem_prop.size = ramdisk_end - ramdisk_start + 1;

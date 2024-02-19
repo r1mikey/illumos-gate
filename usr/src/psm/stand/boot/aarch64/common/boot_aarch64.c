@@ -49,6 +49,33 @@ extern uint64_t boot_args[];
 extern char _BootStart[];
 extern char _BootEnd[];
 
+#define ENVBLOCK_SIZE   4096
+char envblock[ENVBLOCK_SIZE] = {0};
+size_t envblock_len = 0;
+
+void
+setenv(const char *name, const char *value)
+{
+	char *ptr;
+	int needed;
+	int written;
+
+	ptr = envblock + envblock_len;
+	needed = snprintf(ptr, 0, "%s=%s", name, value);
+	if (needed < 0)
+		prom_panic("setenv: snprintf failed\n");
+	needed += 2;
+	if (ENVBLOCK_SIZE - envblock_len < needed)
+		prom_panic("setenv: no space\n");
+	written = snprintf(ptr, needed, "%s=%s", name, value);
+	if (written != needed - 2)
+		prom_panic("setenv: write failed\n");
+	ptr[written] = '\0';
+	ptr[written + 1] = '\0';
+	envblock_len += written;
+	envblock_len++; /* include the NUL */
+}
+
 boolean_t
 is_netdev(char *devpath)
 {

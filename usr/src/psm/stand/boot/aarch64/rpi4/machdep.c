@@ -65,7 +65,6 @@
 
 extern char _BootScratch[];
 extern char _RamdiskStart[];
-extern char _RamdiskStart[];
 extern char _RamdiskEnd[];
 extern char filename[];
 static struct xboot_info xboot_info;
@@ -89,6 +88,21 @@ extern int determine_fstype_and_mountroot(char *);
 extern	ssize_t xread(int, char *, size_t);
 extern	void _reset(void);
 extern	void init_physmem_common(void);
+extern void setenv(const char *name, const char *value);
+extern char envblock[];
+extern size_t envblock_len;
+
+#define	SI_HW_PROVIDER	"Raspberry Pi Foundation"
+#define	IMPL_ARCH_NAME	"RaspberryPi,4"
+#define	MFG_NAME	IMPL_ARCH_NAME
+
+static struct boot_modules boot_modules[MAX_BOOT_MODULES] = {
+	{ 0, 0, 0, BMT_ROOTFS },
+};
+
+static char cmdline[OBP_MAXPATHLEN] = {0};
+static char rootfs_name[] = "rootfs";
+static char environment_name[] = "environment";
 
 void
 setup_aux(void)
@@ -127,60 +141,65 @@ init_iolist(void)
 	memlist_add_span(PERIPHERAL0_PHYS, PERIPHERAL0_SIZE, &piolistp);
 	memlist_add_span(PERIPHERAL1_PHYS, PERIPHERAL1_SIZE, &piolistp);
 }
+
+#define	MEMATTRS	(PTE_UXN | PTE_PXN | PTE_AF | PTE_SH_INNER |	\
+			PTE_AP_KRWUNA | PTE_ATTR_NORMEM)
+#define	PIOATTRS	(PTE_UXN | PTE_PXN | PTE_AF | PTE_SH_INNER |	\
+			PTE_AP_KRWUNA | PTE_ATTR_DEVICE)
+
 void exitto(int (*entrypoint)())
 {
 	for (struct memlist *ml = plinearlistp; ml != NULL; ml = ml->ml_next) {
 		uintptr_t pa = ml->ml_address;
 		uintptr_t sz = ml->ml_size;
-		map_phys(PTE_UXN | PTE_PXN | PTE_AF | PTE_SH_INNER | PTE_AP_KRWUNA | PTE_ATTR_NORMEM, (caddr_t)(SEGKPM_BASE + pa), pa, sz);
+		map_phys((MEMATTRS), (caddr_t)(SEGKPM_BASE + pa), pa, sz);
 	}
 	for (struct memlist *ml = piolistp; ml != NULL; ml = ml->ml_next) {
 		uintptr_t pa = ml->ml_address;
 		uintptr_t sz = ml->ml_size;
-		map_phys(PTE_UXN | PTE_PXN | PTE_AF | PTE_SH_INNER | PTE_AP_KRWUNA | PTE_ATTR_DEVICE, (caddr_t)(SEGKPM_BASE + pa), pa, sz);
+		map_phys((PIOATTRS), (caddr_t)(SEGKPM_BASE + pa), pa, sz);
 	}
 
-	uint64_t v;
 	char *str;
 
-	v = htonll((uint64_t)_RamdiskStart);
-	prom_setprop(prom_chosennode(), "ramdisk_start", (caddr_t)&v, sizeof(v));
-	v = htonll((uint64_t)_RamdiskEnd);
-	prom_setprop(prom_chosennode(), "ramdisk_end", (caddr_t)&v, sizeof(v));
-	v = htonll((uint64_t)pfreelistp);
-	prom_setprop(prom_chosennode(), "phys-avail", (caddr_t)&v, sizeof(v));
-	v = htonll((uint64_t)pinstalledp);
-	prom_setprop(prom_chosennode(), "phys-installed", (caddr_t)&v, sizeof(v));
-	v = htonll((uint64_t)pscratchlistp);
-	prom_setprop(prom_chosennode(), "boot-scratch", (caddr_t)&v, sizeof(v));
-	if (bootp_response) {
-		uint_t blen = strlen(bootp_response) / 2;
-		char *pktbuf = __builtin_alloca(blen);
-		hexascii_to_octet(bootp_response, blen * 2, pktbuf, &blen);
-		prom_setprop(prom_chosennode(), "bootp-response", pktbuf, blen);
-	} else {
-	}
-	str = prom_bootargs(); //pass the bootargs from u-boot to illumos
+	xboot_info.bi_phys_avail = (uint64_t)pfreelistp;
+	xboot_info.bi_phys_installed = (uint64_t)pinstalledp;
+	xboot_info.bi_boot_scratch = (uint64_t)pscratchlistp;
+
+	if (bootp_response)
+		setenv("bootp-response", bootp_response);
+
+	strncpy(cmdline, filename, sizeof (cmdline) - 1);
+	str = prom_bootargs();
 	fix_boot_args(str);
-	prom_setprop(prom_chosennode(), "boot-args", (caddr_t)str, strlen(str) + 1);
-	prom_setprop(prom_chosennode(), "bootargs", (caddr_t)str, strlen(str) + 1);
-	str = filename;
-	prom_setprop(prom_chosennode(), "whoami", (caddr_t)str, strlen(str) + 1);
-	str = filename;
-	prom_setprop(prom_chosennode(), "boot-file", (caddr_t)str, strlen(str) + 1);
-
-	if (prom_getproplen(prom_chosennode(), "impl-arch-name") < 0) {
-		str = "armv8";
-		prom_setprop(prom_chosennode(), "impl-arch-name", (caddr_t)str, strlen(str) + 1);
+	if (strlen(str)) {
+		strncat(cmdline, " ", sizeof (cmdline) - strlen(cmdline) - 1);
+		strncat(cmdline, str, sizeof (cmdline) - strlen(cmdline) - 1);
 	}
+	xboot_info.bi_cmdline = (uint64_t)cmdline;
 
-	str = get_mfg_name();
-	prom_setprop(prom_chosennode(), "mfg-name", (caddr_t)str, strlen(str) + 1);
-	str = "115200,8,n,1,-";
-	prom_setprop(prom_chosennode(), "ttya-mode", (caddr_t)str, strlen(str) + 1);
-	prom_setprop(prom_chosennode(), "ttyb-mode", (caddr_t)str, strlen(str) + 1);
+	setenv("ttya-mode", "115200,8,n,1,-");
+	setenv("ttyb-mode", "115200,8,n,1,-");
 
 	xboot_info.bi_fdt = SEGKPM_BASE + (uint64_t)get_fdtp();
+
+	/*
+	 * No calling setenv once our modules are set up.
+	 */
+	boot_modules[0].bm_type = BMT_ROOTFS;
+	boot_modules[0].bm_name = (uint64_t)rootfs_name;
+	boot_modules[0].bm_size =
+	    ((uint64_t)_RamdiskEnd - (uint64_t)_RamdiskStart);
+	boot_modules[0].bm_addr = (uint64_t)_RamdiskStart;
+
+	boot_modules[1].bm_type = BMT_ENV;
+	boot_modules[1].bm_name = (uint64_t)environment_name;
+	boot_modules[1].bm_size = (uint64_t)envblock_len;
+	boot_modules[1].bm_addr = (uint64_t)envblock;
+
+	xboot_info.bi_module_cnt = 2;
+	xboot_info.bi_modules = (uint64_t)&boot_modules[0];
+
 	entrypoint(&xboot_info);
 }
 
@@ -192,17 +211,15 @@ static void
 set_zfs_bootfs(void)
 {
 	get_boot_zpool(zfs_bootfs);
-	prom_setprop(prom_chosennode(), "zfs-bootfs", (caddr_t)zfs_bootfs, strlen(zfs_bootfs) + 1);
+	setenv("zfs-bootfs", zfs_bootfs);
 	prom_printf("zfs-bootfs=%s\n", zfs_bootfs);
 
 	get_boot_zpool_guid(zfs_boot_pool_guid);
-	prom_setprop(prom_chosennode(), "zfs-bootpool",
-	    (caddr_t)zfs_boot_pool_guid, strlen(zfs_boot_pool_guid) + 1);
+	setenv("zfs-bootpool", zfs_boot_pool_guid);
 	prom_printf("zfs-bootpool=%s\n", zfs_boot_pool_guid);
 
 	get_boot_vdev_guid(zfs_boot_vdev_guid);
-	prom_setprop(prom_chosennode(), "zfs-bootvdev",
-	    (caddr_t)zfs_boot_vdev_guid, strlen(zfs_boot_vdev_guid) + 1);
+	setenv("zfs-bootvdev", zfs_boot_vdev_guid);
 	prom_printf("zfs-bootvdev=%s\n", zfs_boot_vdev_guid);
 }
 
@@ -211,11 +228,9 @@ set_rootfs(char *bpath, char *fstype)
 {
 	char *str;
 	if (strcmp(fstype, "nfs") == 0) {
-		str = "nfsdyn";
-		prom_setprop(prom_chosennode(), "fstype", (caddr_t)str, strlen(str) + 1);
+		setenv("fstype", "nfsdyn");
 	} else {
-		str = fstype;
-		prom_setprop(prom_chosennode(), "fstype", (caddr_t)str, strlen(str) + 1);
+		setenv("fstype", fstype);
 		/*
 		 * We could set bootpath to the correct value here, but then
 		 * when we go to mount root we trust the config in the label
@@ -273,19 +288,7 @@ load_ramdisk(void *virt, const char *name)
 char *
 get_mfg_name(void)
 {
-	pnode_t n;
-	int len;
-
-	static char mfgname[MAXNMLEN];
-
-	if ((n = prom_rootnode()) != OBP_NONODE &&
-	    (len = prom_getproplen(n, "mfg-name")) > 0 && len < MAXNMLEN) {
-		(void) prom_getprop(n, "mfg-name", mfgname);
-		mfgname[len] = '\0'; /* broken clones don't terminate name */
-		return (mfgname);
-	}
-
-	return ("Unknown");
+	return (MFG_NAME);
 }
 
 static char *
@@ -349,9 +352,11 @@ void _reset(void)
 
 void init_machdev(void)
 {
-	char str[] = "RaspberryPi,4";
-	prom_setprop(prom_chosennode(), "impl-arch-name", (caddr_t)str, strlen(str) + 1);
-	prom_setprop(prom_rootnode(), "mfg-name", (caddr_t)str, strlen(str) + 1);
+	setenv("si-hw-provider", SI_HW_PROVIDER);
+	setenv("impl-arch-name", IMPL_ARCH_NAME);
+	setenv("mfg-name", MFG_NAME);
+
+	char str[] = IMPL_ARCH_NAME;
 	int namelen = prom_getproplen(prom_rootnode(), "compatible");
 	namelen += strlen(str) + 1;
 	char *compatible = __builtin_alloca(namelen);

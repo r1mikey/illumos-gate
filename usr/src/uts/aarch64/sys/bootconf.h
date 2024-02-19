@@ -42,6 +42,8 @@
 extern "C" {
 #endif
 
+#define	BP_MAX_STRLEN	32
+
 /*
  * masks to hand to bsys_alloc memory allocator
  * XXX	These names shouldn't really be srmmu derived.
@@ -202,6 +204,7 @@ void bop_init(struct xboot_info *xbp);
 
 extern int do_bsys_getproplen(bootops_t *, const char *);
 extern int do_bsys_getprop(bootops_t *, const char *, void *);
+extern int do_bsys_getproptype(bootops_t *, const char *);
 
 #endif /* _KERNEL && !_BOOT */
 
