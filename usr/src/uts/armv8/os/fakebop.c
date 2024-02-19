@@ -851,7 +851,7 @@ read_bootenvrc(void)
 		}
 
 		if (do_bsys_getproplen(NULL, name) == -1)
-			bsetprops(name, value);
+		    bsetprops(name, value);
 	}
 done:
 	if (fd >= 0)
@@ -868,6 +868,15 @@ done:
 			DBG(physmem);
 		}
 	}
+	/* XXXARM: early_allocation = 0; */
+
+#if XXXARM
+	/*
+	 * Check for bootrd_debug.
+	 */
+	if (find_boot_prop("bootrd_debug"))
+		bootrd_debug = 1;
+#endif
 
 	/*
 	 * Check for bootrd_debug.
@@ -1422,7 +1431,7 @@ build_boot_properties(struct xboot_info *xbp)
 	 * Unless provided by other means, set the default mfg-name.
 	 */
 	if (do_bsys_getproplen(NULL, "mfg-name") == -1)
-		bsetprops("mfg-name", "Unknown");
+	    bsetprops("mfg-name", "Unknown");
 }
 
 #define	IN_RANGE(a, b, e) ((a) >= (b) && (a) <= (e))

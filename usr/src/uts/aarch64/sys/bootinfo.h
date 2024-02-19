@@ -69,13 +69,15 @@ typedef enum uefi_arch_type {
  */
 struct xboot_info {
 	uint64_t		bi_fdt;
+	uint64_t		bi_uefi_systab;
 	uint64_t		bi_cmdline;
 	uint64_t		bi_modules;
 	uint64_t		bi_phys_avail;
 	uint64_t		bi_phys_installed;
 	uint64_t		bi_boot_scratch;
+	uint64_t		bi_framebuffer;
 	uint32_t		bi_module_cnt;
-	uint32_t		bi_pad1;
+	uefi_arch_type_t	bi_uefi_arch;
 };
 
 #ifdef	__cplusplus
