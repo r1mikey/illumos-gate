@@ -374,6 +374,7 @@ create_devinfo_tree(void)
 
 	i_ddi_node_cache_init();
 #if defined(__sparc) || defined(__aarch64__)
+	/* XXXARM: fall back to DEVI_SID_NODEID? */
 	nodeid = prom_nextnode(0);
 #else /* x86 */
 	nodeid = DEVI_SID_NODEID;
