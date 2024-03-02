@@ -49,7 +49,7 @@
  *    rather than manipulating the actual FDT.
  */
 
-static struct fdt_header *fdtp;
+extern struct fdt_header	*prom_fdtp;
 
 /*
  * This exists to keep us from trying to check for over-long property names
@@ -68,16 +68,16 @@ static phandle_t
 get_phandle(int offset)
 {
 	int len;
-	const void *prop = fdt_getprop(fdtp, offset, "phandle", &len);
+	const void *prop = fdt_getprop(prom_fdtp, offset, "phandle", &len);
 
 	/*
 	 * XXXARM: It is not obvious to me, based on the specification, how we
 	 * could ever not have a phandle
 	 */
 	if (prop == NULL || len != sizeof (uint32_t)) {
-		uint32_t phandle = fdt_get_max_phandle(fdtp) + 1;
+		uint32_t phandle = fdt_get_max_phandle(prom_fdtp) + 1;
 		uint32_t v = ntohl(phandle);
-		int r = fdt_setprop(fdtp, offset, "phandle", &v,
+		int r = fdt_setprop(prom_fdtp, offset, "phandle", &v,
 		    sizeof (uint32_t));
 		if (r != 0)
 			return (-1);
@@ -92,7 +92,7 @@ get_phandle(int offset)
 pnode_t
 prom_findnode_by_phandle(phandle_t phandle)
 {
-	int offset = fdt_node_offset_by_phandle(fdtp, phandle);
+	int offset = fdt_node_offset_by_phandle(prom_fdtp, phandle);
 	if (offset < 0)
 		return (-1);
 	return ((pnode_t)phandle);
@@ -110,14 +110,14 @@ prom_check_overlong_property(pnode_t nodeid, const char *name)
 		return;
 
 	if ((strlen(name) + 1) > OBP_STANDARD_MAXPROPNAME) {
-		int offset = fdt_node_offset_by_phandle(fdtp, nodeid);
+		int offset = fdt_node_offset_by_phandle(prom_fdtp, nodeid);
 		const char *nodename = NULL;
 		int len;
 
 		if (offset < 0)
 			goto no_name;
 
-		nodename = fdt_get_name(fdtp, offset, &len);
+		nodename = fdt_get_name(prom_fdtp, offset, &len);
 		if ((nodename == NULL) || nodename[0] == '\0')
 			goto no_name;
 
@@ -136,7 +136,7 @@ no_name:
 int
 prom_getprop(pnode_t nodeid, const char *name, caddr_t value)
 {
-	int offset = fdt_node_offset_by_phandle(fdtp, nodeid);
+	int offset = fdt_node_offset_by_phandle(prom_fdtp, nodeid);
 
 	prom_check_overlong_property(nodeid, name);
 
@@ -144,11 +144,11 @@ prom_getprop(pnode_t nodeid, const char *name, caddr_t value)
 		return (-1);
 
 	int len;
-	const void *prop = fdt_getprop(fdtp, offset, name, &len);
+	const void *prop = fdt_getprop(prom_fdtp, offset, name, &len);
 
 	if (prop == NULL) {
 		if (strcmp(name, "name") == 0) {
-			const char *name_ptr = fdt_get_name(fdtp, offset, &len);
+			const char *name_ptr = fdt_get_name(prom_fdtp, offset, &len);
 			const char *p = strchr(name_ptr, '@');
 
 			if (!name_ptr)
@@ -165,7 +165,7 @@ prom_getprop(pnode_t nodeid, const char *name, caddr_t value)
 			return (len + 1);
 		}
 		if (strcmp(name, "unit-address") == 0) {
-			const char *name_ptr = fdt_get_name(fdtp, offset, &len);
+			const char *name_ptr = fdt_get_name(prom_fdtp, offset, &len);
 			const char *p = strchr(name_ptr, '@');
 			if (p) {
 				p++;
@@ -191,7 +191,7 @@ prom_getprop(pnode_t nodeid, const char *name, caddr_t value)
 int
 prom_setprop(pnode_t nodeid, const char *name, const caddr_t value, int len)
 {
-	int offset = fdt_node_offset_by_phandle(fdtp, (pnode_t)nodeid);
+	int offset = fdt_node_offset_by_phandle(prom_fdtp, (pnode_t)nodeid);
 	if (offset < 0)
 		return (-1);
 
@@ -204,7 +204,7 @@ prom_setprop(pnode_t nodeid, const char *name, const caddr_t value, int len)
 
 	prom_check_overlong_property(nodeid, name);
 
-	int r = fdt_setprop(fdtp, offset, name, value, len);
+	int r = fdt_setprop(prom_fdtp, offset, name, value, len);
 
 	return (r == 0 ? len : -1);
 }
@@ -212,7 +212,7 @@ prom_setprop(pnode_t nodeid, const char *name, const caddr_t value, int len)
 int
 prom_getproplen(pnode_t nodeid, const char *name)
 {
-	int offset = fdt_node_offset_by_phandle(fdtp, (pnode_t)nodeid);
+	int offset = fdt_node_offset_by_phandle(prom_fdtp, (pnode_t)nodeid);
 
 	if (offset < 0)
 		return (-1);
@@ -220,12 +220,12 @@ prom_getproplen(pnode_t nodeid, const char *name)
 	prom_check_overlong_property(nodeid, name);
 
 	int len;
-	const struct fdt_property *prop = fdt_get_property(fdtp, offset, name,
+	const struct fdt_property *prop = fdt_get_property(prom_fdtp, offset, name,
 	    &len);
 
 	if (prop == NULL) {
 		if (strcmp(name, "name") == 0) {
-			const char *name_ptr = fdt_get_name(fdtp, offset, &len);
+			const char *name_ptr = fdt_get_name(prom_fdtp, offset, &len);
 			if (!name_ptr)
 				return (-1);
 			const char *p = strchr(name_ptr, '@');
@@ -238,7 +238,7 @@ prom_getproplen(pnode_t nodeid, const char *name)
 			return (len + 1);
 		}
 		if (strcmp(name, "unit-address") == 0) {
-			const char *name_ptr = fdt_get_name(fdtp, offset, &len);
+			const char *name_ptr = fdt_get_name(prom_fdtp, offset, &len);
 			if (!name_ptr)
 				return (-1);
 			const char *p = strchr(name_ptr, '@');
@@ -262,7 +262,7 @@ prom_getproplen(pnode_t nodeid, const char *name)
 pnode_t
 prom_finddevice(const char *device)
 {
-	int offset = fdt_path_offset(fdtp, device);
+	int offset = fdt_path_offset(prom_fdtp, device);
 	if (offset < 0)
 		return (OBP_BADNODE);
 
@@ -308,7 +308,7 @@ prom_optionsnode(void)
 char *
 prom_nextprop(pnode_t nodeid, const char *name, char *next)
 {
-	int offset = fdt_node_offset_by_phandle(fdtp, (pnode_t)nodeid);
+	int offset = fdt_node_offset_by_phandle(prom_fdtp, (pnode_t)nodeid);
 	if (offset < 0)
 		return (NULL);
 
@@ -326,7 +326,7 @@ prom_nextprop(pnode_t nodeid, const char *name, char *next)
 	 */
 	if (strcmp(name, "name") == 0) {
 		int len;
-		const char *fullname = fdt_get_name(fdtp, offset, &len);
+		const char *fullname = fdt_get_name(prom_fdtp, offset, &len);
 
 		if (strchr(fullname, '@') != NULL) {
 			strlcpy(next, "unit-address", OBP_MAXPROPNAME);
@@ -337,15 +337,15 @@ prom_nextprop(pnode_t nodeid, const char *name, char *next)
 	}
 
 	*next = '\0';
-	offset = fdt_first_property_offset(fdtp, offset);
+	offset = fdt_first_property_offset(prom_fdtp, offset);
 	if (offset < 0) {
 		return (next);
 	}
 
 	const struct fdt_property *data;
 	for (;;) {
-		data = fdt_get_property_by_offset(fdtp, offset, NULL);
-		const char *name0 = fdt_string(fdtp,
+		data = fdt_get_property_by_offset(prom_fdtp, offset, NULL);
+		const char *name0 = fdt_string(prom_fdtp,
 		    fdt32_to_cpu(data->nameoff));
 		if (name0) {
 			/*
@@ -360,17 +360,17 @@ prom_nextprop(pnode_t nodeid, const char *name, char *next)
 			if (strcmp(name, name0) == 0)
 				break;
 		}
-		offset = fdt_next_property_offset(fdtp, offset);
+		offset = fdt_next_property_offset(prom_fdtp, offset);
 		if (offset < 0) {
 			return (next);
 		}
 	}
-	offset = fdt_next_property_offset(fdtp, offset);
+	offset = fdt_next_property_offset(prom_fdtp, offset);
 	if (offset < 0) {
 		return (next);
 	}
-	data = fdt_get_property_by_offset(fdtp, offset, NULL);
-	strlcpy(next, (char *)fdt_string(fdtp, fdt32_to_cpu(data->nameoff)),
+	data = fdt_get_property_by_offset(prom_fdtp, offset, NULL);
+	strlcpy(next, (char *)fdt_string(prom_fdtp, fdt32_to_cpu(data->nameoff)),
 	    OBP_MAXPROPNAME);
 	return (next);
 }
@@ -381,13 +381,13 @@ prom_nextnode(pnode_t nodeid)
 	if (nodeid == OBP_NONODE)
 		return (prom_rootnode());
 
-	int offset = fdt_node_offset_by_phandle(fdtp, (phandle_t)nodeid);
+	int offset = fdt_node_offset_by_phandle(prom_fdtp, (phandle_t)nodeid);
 	if (offset < 0)
 		return (OBP_BADNODE);
 
 	int depth = 1;
 	for (;;) {
-		offset = fdt_next_node(fdtp, offset, &depth);
+		offset = fdt_next_node(prom_fdtp, offset, &depth);
 		if (offset < 0)
 			return (OBP_NONODE);
 		if (depth == 1)
@@ -406,13 +406,13 @@ prom_childnode(pnode_t nodeid)
 	if (nodeid == OBP_NONODE)
 		return (prom_rootnode());
 
-	int offset = fdt_node_offset_by_phandle(fdtp, (phandle_t)nodeid);
+	int offset = fdt_node_offset_by_phandle(prom_fdtp, (phandle_t)nodeid);
 	if (offset < 0)
 		return (OBP_NONODE);
 
 	int depth = 0;
 	for (;;) {
-		offset = fdt_next_node(fdtp, offset, &depth);
+		offset = fdt_next_node(prom_fdtp, offset, &depth);
 		if (offset < 0)
 			return (OBP_NONODE);
 		if (depth == 0)
@@ -429,11 +429,11 @@ prom_childnode(pnode_t nodeid)
 pnode_t
 prom_parentnode(pnode_t nodeid)
 {
-	int offset = fdt_node_offset_by_phandle(fdtp, (pnode_t)nodeid);
+	int offset = fdt_node_offset_by_phandle(prom_fdtp, (pnode_t)nodeid);
 	if (offset < 0)
 		return (OBP_NONODE);
 
-	int parent_offset = fdt_parent_offset(fdtp, offset);
+	int parent_offset = fdt_parent_offset(prom_fdtp, offset);
 	if (parent_offset < 0)
 		return (OBP_NONODE);
 	phandle_t phandle = get_phandle(parent_offset);
@@ -481,24 +481,6 @@ prom_pathname(char *buf)
 	/* nothing, just to get consconfig_dacf to compile */
 }
 
-void
-prom_init(char *pgmname, void *cookie)
-{
-	int err;
-	fdtp = cookie;
-
-	err = fdt_check_header(fdtp);
-	if (err == 0) {
-		phandle_t chosen = prom_chosennode();
-		if (chosen == OBP_NONODE) {
-			fdt_add_subnode(fdtp, fdt_node_offset_by_phandle(fdtp,
-			    prom_rootnode()), "chosen");
-		}
-	} else {
-		fdtp = NULL;
-	}
-}
-
 static void
 prom_dump_node(dev_info_t *dip)
 {
@@ -519,13 +501,6 @@ prom_dump_peers(dev_info_t *dip)
 		prom_dump_node(dip);
 		dip = ddi_get_next_sibling(dip);
 	}
-}
-
-void
-prom_setup(void)
-{
-	if (prom_propname_warn == -1)
-		prom_propname_warn = 1;
 }
 
 static void
@@ -553,11 +528,11 @@ prom_node_has_property(pnode_t nodeid, const char *name)
 	int len;
 	const struct fdt_property *prop;
 
-	offset = fdt_node_offset_by_phandle(fdtp, nodeid);
+	offset = fdt_node_offset_by_phandle(prom_fdtp, nodeid);
 	if (offset < 0)
 		return (B_FALSE);
 
-	prop = fdt_get_property(fdtp, offset, name, &len);
+	prop = fdt_get_property(prom_fdtp, offset, name, &len);
 	if (prop == NULL)
 		return (B_FALSE);
 

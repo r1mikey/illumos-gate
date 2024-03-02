@@ -80,6 +80,7 @@ GENUNIX_OBJS +=		\
 #	is usefully platform-specific
 #
 CORE_OBJS +=			\
+	prom_init.o		\
 	prom_node.o		\
 	prom_env.o		\
 	prom_printf.o		\
