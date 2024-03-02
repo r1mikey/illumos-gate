@@ -19,5 +19,7 @@ set name=variant.arch value=aarch64
 dir  path=platform/ARM,sbsa
 dir  path=platform/ARM,sbsa/kernel
 dir  path=platform/ARM,sbsa/kernel/aarch64
+file path=platform/ARM,sbsa/kernel/aarch64/unix mode=0755 \
+    pkg.depend.bypass-generate=dtracestubs
 file path=platform/ARM,sbsa/kernel/aarch64/unix.shim mode=0644
 license lic_CDDL license=lic_CDDL

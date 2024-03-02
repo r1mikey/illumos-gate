@@ -108,6 +108,7 @@ include $(UTSBASE)/Makefile.uts
 
 IMPLEMENTATIONS	=	\
 	rpi4		\
+	sbsa		\
 	virt
 
 #
