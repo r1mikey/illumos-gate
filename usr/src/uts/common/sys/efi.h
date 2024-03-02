@@ -55,6 +55,18 @@ extern "C" {
 	{ 0xf2fd1544, 0x9794, 0x4a2c, 0x99, 0x2e, \
 	{ 0xe5, 0xbb, 0xcf, 0x20, 0xe3, 0x94 } }
 
+#define	JSON_CONFIG_DATA_TABLE_GUID	\
+	{ 0x87367f87, 0x1119, 0x41ce, 0xaa, 0xec, \
+	{ 0x8b, 0xe0, 0x11, 0x1f, 0x55, 0x8a } }
+
+#define	JSON_CAPSULE_DATA_TABLE_GUID	\
+	{ 0x35e7a725, 0x8dd2, 0x4cac, 0x80, 0x11, \
+	{ 0x33, 0xcd, 0xa8, 0x10, 0x90, 0x56 } }
+
+#define	JSON_CAPSULE_RESULT_TABLE_GUID	\
+	{ 0xdbc461c3, 0xb3de, 0x422a, 0xb9, 0xb4, \
+	{ 0x98, 0x86, 0xfd, 0x49, 0xa1, 0xe5 } }
+
 #define	FDT_TABLE_GUID	\
 	{ 0xb1b621d5, 0xf19c, 0x41a5, 0x83, 0x0b, \
 	{ 0xd9, 0x15, 0x2c, 0x69, 0xaa, 0xe0 } }
@@ -79,14 +91,22 @@ extern "C" {
 	{ 0x880aaca3, 0x4adc, 0x4a04, 0x90, 0x79, \
 	{ 0xb7, 0x47, 0x34, 0x8, 0x25, 0xe5 } }
 
+#define	EFI_RT_PROPERTIES_TABLE_GUID	\
+	{ 0xeb66918a, 0x7eef, 0x402a, 0x84, 0x2e, \
+	{ 0x93, 0x1d, 0x21, 0xc3, 0x8a, 0xe9 } }
+
 typedef struct uuid efi_guid_t __aligned(8);
 
 /* Memory data */
 typedef uint64_t	EFI_PHYSICAL_ADDRESS;
 typedef uint64_t	EFI_VIRTUAL_ADDRESS;
+typedef	uint8_t		EFI_BOOLEAN;
+
+#define	EFI_FALSE	0
+#define	EFI_TRUE	1
 
 /*
- * EFI_MEMORY_TYPE enum is defined in UEFI v2.7 page 185.
+ * EFI_MEMORY_TYPE enum is defined in UEFI v2.9 page 166.
  */
 typedef enum {
 	EfiReservedMemoryType,
@@ -104,6 +124,7 @@ typedef enum {
 	EfiMemoryMappedIOPortSpace,
 	EfiPalCode,
 	EfiPersistentMemory,
+	EfiUnacceptedMemoryType,
 	EfiMaxMemoryType
 } EFI_MEMORY_TYPE;
 
@@ -122,8 +143,13 @@ typedef enum {
 #define	EFI_MEMORY_MORE_RELIABLE	0x0000000000010000
 #define	EFI_MEMORY_RO			0x0000000000020000
 
+/* Specific-purpose memory */
+#define	EFI_MEMORY_SP			0x0000000000040000
+/* Can be protected with the CPU’s memory cryptographic capabilities */
+#define	EFI_MEMORY_CPU_CRYPTO		0x0000000000080000
+
 /* Range requires a runtime mapping */
-#define	EFI_MEMORY_RUNTIME	0x8000000000000000
+#define	EFI_MEMORY_RUNTIME		0x8000000000000000
 
 #define	EFI_MEMORY_DESCRIPTOR_VERSION	1
 typedef struct {
@@ -172,6 +198,200 @@ typedef struct _EFI_CONFIGURATION_TABLE64 {
 	efiptr64_t	VendorTable;
 } __packed EFI_CONFIGURATION_TABLE64;
 
+/*
+ * The Runtime Properties Table indicates which UEFI runtime services are
+ * available to the operating system.
+ */
+#define	EFI_RT_PROPERTIES_TABLE_VERSION			0x1
+
+#define	EFI_RT_SUPPORTED_GET_TIME			0x0001
+#define	EFI_RT_SUPPORTED_SET_TIME			0x0002
+#define	EFI_RT_SUPPORTED_GET_WAKEUP_TIME		0x0004
+#define	EFI_RT_SUPPORTED_SET_WAKEUP_TIME		0x0008
+#define	EFI_RT_SUPPORTED_GET_VARIABLE			0x0010
+#define	EFI_RT_SUPPORTED_GET_NEXT_VARIABLE_NAME		0x0020
+#define	EFI_RT_SUPPORTED_SET_VARIABLE			0x0040
+#define	EFI_RT_SUPPORTED_SET_VIRTUAL_ADDRESS_MAP	0x0080
+#define	EFI_RT_SUPPORTED_CONVERT_POINTER		0x0100
+#define	EFI_RT_SUPPORTED_GET_NEXT_HIGH_MONOTONIC_COUNT	0x0200
+#define	EFI_RT_SUPPORTED_RESET_SYSTEM			0x0400
+#define	EFI_RT_SUPPORTED_UPDATE_CAPSULE			0x0800
+#define	EFI_RT_SUPPORTED_QUERY_CAPSULE_CAPABILITIES	0x1000
+#define	EFI_RT_SUPPORTED_QUERY_VARIABLE_INFO		0x2000
+
+typedef struct _EFI_RT_PROPERTIES_TABLE {
+	uint16_t	Version;
+	uint16_t	Length;
+	uint32_t	RuntimeServicesSupported;
+} __packed EFI_RT_PROPERTIES_TABLE;
+
+#define	EFI_RUNTIME_SERVICES_SIGNATURE			0x56524553544e5552
+
+#if defined(__aarch64__)
+#define	EFI_SUCCESS						0
+typedef uint64_t EFI_STATUS;
+
+#define	EFI_OPTIONAL_PTR					0x00000001
+
+#define	EFI_VARIABLE_NON_VOLATILE				0x00000001
+#define	EFI_VARIABLE_BOOTSERVICE_ACCESS				0x00000002
+#define	EFI_VARIABLE_RUNTIME_ACCESS				0x00000004
+#define	EFI_VARIABLE_HARDWARE_ERROR_RECORD			0x00000008
+/* EFI_VARIABLE_AUTHENTICATED_WRITE_ACCESS is deprecated */
+#define	EFI_VARIABLE_AUTHENTICATED_WRITE_ACCESS			0x00000010
+#define	EFI_VARIABLE_TIME_BASED_AUTHENTICATED_WRITE_ACCESS	0x00000020
+#define	EFI_VARIABLE_APPEND_WRITE				0x00000040
+#define	EFI_VARIABLE_ENHANCED_AUTHENTICATED_ACCESS		0x00000080
+
+#define	EFI_TIME_ADJUST_DAYLIGHT				0x01
+#define	EFI_TIME_IN_DAYLIGHT					0x02
+
+#define	EFI_UNSPECIFIED_TIMEZONE				0x07FF
+
+typedef struct {
+	uint16_t	Year;		/* 1900 - 9999 */
+	uint8_t		Month;		/* 1 - 12 */
+	uint8_t		Day;		/* 1 - 31 */
+	uint8_t		Hour;		/* 0 - 23 */
+	uint8_t		Minute;		/* 0 - 59 */
+	uint8_t		Second;		/* 0 - 59 */
+	uint8_t		Pad1;
+	uint32_t	Nanosecond;	/* 0 - 999999999 */
+	uint16_t	TimeZone;	/* -1440 - 1440 or 2047 */
+	uint8_t		Daylight;
+	uint8_t		Pad2;
+} __packed EFI_TIME;
+
+typedef struct {
+	uint32_t	Resolution;
+	uint32_t	Accuracy;
+	EFI_BOOLEAN	SetsToZero;
+} __packed EFI_TIME_CAPABILITIES;
+
+typedef enum {
+	EfiResetCold,
+	EfiResetWarm,
+	EfiResetShutdown,
+	EfiResetPlatformSpecific
+} EFI_RESET_TYPE;
+
+typedef EFI_STATUS (*EFI_GET_VARIABLE)(
+	const uint16_t *VariableName,
+	const efi_guid_t *VendorGuid,
+	uint32_t *Attributes,
+	uint64_t *DataSize,
+	void *Data
+);
+
+typedef EFI_STATUS (*EFI_GET_NEXT_VARIABLE_NAME)(
+	uint64_t *VariableNameSize,
+	uint16_t *VariableName,
+	efi_guid_t *VendorGuid
+);
+
+typedef EFI_STATUS (*EFI_SET_VARIABLE)(
+	const uint16_t *VariableName,
+	const efi_guid_t *VendorGuid,
+	uint32_t Attributes,
+	uint64_t DataSize,
+	const void *Data
+);
+
+typedef EFI_STATUS (*EFI_QUERY_VARIABLE_INFO)(
+	uint32_t Attributes,
+	uint64_t *MaximumVariableStorageSize,
+	uint64_t *RemainingVariableStorageSize,
+	uint64_t *MaximumVariableSize
+);
+
+typedef EFI_STATUS (*EFI_GET_TIME)(
+	EFI_TIME *Time,
+	EFI_TIME_CAPABILITIES *Capabilities
+);
+
+typedef EFI_STATUS (*EFI_SET_TIME)(const EFI_TIME *Time);
+
+typedef EFI_STATUS (*EFI_GET_WAKEUP_TIME)(
+	EFI_BOOLEAN *Enabled,
+	EFI_BOOLEAN *Pending,
+	EFI_TIME *Time
+);
+
+typedef EFI_STATUS (*EFI_SET_WAKEUP_TIME)(
+	EFI_BOOLEAN Enabled,
+	const EFI_TIME *Time
+);
+
+typedef EFI_STATUS (*EFI_SET_VIRTUAL_ADDRESS_MAP)(
+	uint64_t MemoryMapSize,
+	uint64_t DescriptorSize,
+	uint32_t DescriptorVersion,
+	const EFI_MEMORY_DESCRIPTOR *VirtualMap
+);
+
+typedef EFI_STATUS (*EFI_CONVERT_POINTER)(
+	uint64_t DebugDisposition,
+	void **Address
+);
+
+typedef void (*EFI_RESET_SYSTEM)(
+	EFI_RESET_TYPE ResetType,
+	EFI_STATUS ResetStatus,
+	uint64_t DataSize,
+	const void *ResetData
+);
+
+typedef EFI_STATUS (*EFI_GET_NEXT_HIGH_MONO_COUNT)(uint32_t *HighCount);
+
+/*
+ * XXXARM: Ignoring capsule bits for now
+ */
+typedef uint64_t EFI_UPDATE_CAPSULE;
+typedef uint64_t EFI_QUERY_CAPSULE_CAPABILITIES;
+
+typedef struct {
+	EFI_TABLE_HEADER		Hdr;
+
+	/*
+	 * Time Services
+	 */
+	EFI_GET_TIME			GetTime;
+	EFI_SET_TIME			SetTime;
+	EFI_GET_WAKEUP_TIME		GetWakeupTime;
+	EFI_SET_WAKEUP_TIME		SetWakeupTime;
+
+	/*
+	 * Virtual Memory Services
+	 */
+	EFI_SET_VIRTUAL_ADDRESS_MAP	SetVirtualAddressMap;
+	EFI_CONVERT_POINTER		ConvertPointer;
+
+	/*
+	 * Variable Services
+	 */
+	EFI_GET_VARIABLE		GetVariable;
+	EFI_GET_NEXT_VARIABLE_NAME	GetNextVariableName;
+	EFI_SET_VARIABLE		SetVariable;
+
+	/*
+	 * Miscellaneous Services
+	 */
+	EFI_GET_NEXT_HIGH_MONO_COUNT	GetNextHighMonotonicCount;
+	EFI_RESET_SYSTEM		ResetSystem;
+
+	/*
+	 * UEFI 2.0 Capsule Services
+	 */
+	EFI_UPDATE_CAPSULE		UpdateCapsule;
+	EFI_QUERY_CAPSULE_CAPABILITIES	QueryCapsuleCapabilities;
+
+	/*
+	 * Miscellaneous UEFI 2.0 Service
+	 */
+	EFI_QUERY_VARIABLE_INFO		QueryVariableInfo;
+} EFI_RUNTIME_SERVICES;
+#endif
+
 typedef struct _EFI_SYSTEM_TABLE32 {
 	EFI_TABLE_HEADER	Hdr;
 
@@ -210,7 +430,11 @@ typedef struct _EFI_SYSTEM_TABLE64 {
 	efiptr64_t		StandardErrorHandle;
 	efiptr64_t		StdErr;
 
+#if defined(__aarch64__)
+	EFI_RUNTIME_SERVICES	*RuntimeServices;
+#else
 	efiptr64_t		RuntimeServices;
+#endif
 	efiptr64_t		BootServices;
 
 	uint64_t		NumberOfTableEntries;
