@@ -10,29 +10,21 @@
 #
 
 #
-# Copyright 2015 Toomas Soome <tsoome@me.com>
+# Copyright 2024 Michael van der Westhuizen
 #
 
-.KEEP_STATE:
+MACHINE=	arm64
 
-include $(SRC)/Makefile.master
+all:		libacpi_efi.a
 
-i386_SUBDIRS =
-aarch64_SUBDIRS = libacpi_efi
+include ../Makefile.com
 
-SUBDIRS = libefi $($(MACH)_SUBDIRS) loader
+CPPFLAGS += -include stdint.h
+CPPFLAGS += -DUINTN=uint64_t
+CPPFLAGS += -DINTN=int64_t
 
-all install clean clobber: $(SUBDIRS)
+CFLAGS +=	$(CFLAGS64)
 
-all	:=	TARGET = all
-clean	:=	TARGET = clean
-clobber	:=	TARGET = clobber
-install	:=	TARGET = install
+CLEANFILES +=	machine
 
-loader:	libefi
-
-.PARALLEL:
-$(SUBDIRS): FRC
-	@cd $@; pwd; $(MAKE) $(TARGET)
-
-FRC:
+$(OBJS): machine

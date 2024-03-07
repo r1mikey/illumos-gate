@@ -177,8 +177,14 @@ loader.bin: loader.sym
 DPLIBEFI=	../../libefi/$(MACHINE)/libefi.a
 LIBEFI=		-L../../libefi/$(MACHINE) -lefi
 
-DPADD=		$(DPLIBFICL) $(DPLIBEFI) $(DPLIBSA) $(LDSCRIPT)
-LDADD=		$(LIBFICL) $(LIBEFI) $(LIBSA)
+aarch64_DPLIBACPIEFI=	../../libacpi_efi/$(MACHINE)/libacpi_efi.a
+aarch64_LIBACPIEFI=	-L../../libacpi_efi/$(MACHINE) -lacpi_efi
+
+DPLIBACPIEFI=	$($(MACH)_DPLIBACPIEFI)
+LIBACPIEFI=	$($(MACH)_LIBACPIEFI)
+
+DPADD=		$(DPLIBFICL) $(DPLIBACPIEFI) $(DPLIBEFI) $(DPLIBSA) $(LDSCRIPT)
+LDADD=		$(LIBFICL) $(LIBACPIEFI) $(LIBEFI) $(LIBSA)
 
 loader.sym:	$(OBJS) $(DPADD)
 	$(GLD) $(LDFLAGS) -o $@ $(OBJS) $(LDADD)
