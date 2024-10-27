@@ -23,6 +23,7 @@ MACHINCLUDE = $($(MACH)_MACHINCLUDE)
 install:
 
 SRCS += \
+	uefi_acpi_uart.c pl011.c \
 	osstub.c \
 	\
 	oseficlib.c osefitbl.c osefixf.c \
