@@ -130,6 +130,7 @@ void efi_time_fini(void);
 
 void efi_serial_ini(void);
 void efi_isa_ini(void);
+void efi_acpi_comc_ini(void);
 
 EFI_STATUS efi_main(EFI_HANDLE Ximage, EFI_SYSTEM_TABLE* Xsystab);
 
