@@ -17,7 +17,7 @@ typedef int	(*func_t)();
 #define	FAIL	((func_t)-1)
 #define FAIL_READELF64  ((uint64_t)0)
 
-char impl_arch_name[] = "sbsa";
+char impl_arch_name[] = "ARM,sbsa";
 char filename[1024];
 extern int verbosemode;
 int	npagesize = 0;

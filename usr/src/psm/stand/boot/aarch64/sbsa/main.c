@@ -13,6 +13,8 @@
 #include <sys/promif.h>
 #include <sys/platform.h>
 #include <asm/controlregs.h>
+#include <sys/controlregs.h>
+#include <sys/psci.h>
 #include <string.h>
 #include "dbg2.h"
 #include "preload.h"
@@ -65,6 +67,65 @@ _reset(void)
 	uefi_reset();
 }
 
+static void
+process_bcons(void)
+{
+	const char *consline;
+	const char *bp;
+	char ttyname[32];
+	char propname[64];
+	char *cp;
+	uint64_t mmio_base;
+	uint64_t uart_type;
+
+	bi->bi_bsvc_uart_mmio_base = 0;
+	bi->bi_bsvc_uart_type = 0;
+
+	if ((consline = prekern_getenv(bi, "console")) == NULL)
+		return;
+
+	bp = consline;
+	cp = ttyname;
+
+	while (1) {
+		*cp = *bp;
+		if (*bp && *bp != ',') {
+			bp++;
+			cp++;
+			continue;
+		}
+
+		*cp = '\0';
+
+		snprintf(propname, sizeof (propname) - 1, "%s-mmio-base", ttyname);
+		propname[sizeof (propname) - 1] = '\0';
+
+		if (prekern_getenv_uint64(bi, propname, &mmio_base) == 0) {
+			snprintf(propname, sizeof (propname) - 1, "%s-uart-type", ttyname);
+			propname[sizeof (propname) - 1] = '\0';
+
+			if (prekern_getenv_uint64(bi, propname, &uart_type) == 0) {
+				switch (uart_type) {
+				case XBI_BSVC_UART_PL011:	/* fallthrough */
+				case XBI_BSVC_UART_SBSA2X:	/* fallthrough */
+				case XBI_BSVC_UART_SBSA:	/* fallthrough */
+				case XBI_BSVC_UART_BCM2835:
+					bi->bi_bsvc_uart_mmio_base = mmio_base;
+					bi->bi_bsvc_uart_type = uart_type;
+					return;
+				default:
+					break;
+				}
+			}
+		}
+
+		if (*bp == '\0')
+			break;
+		cp = ttyname;
+		bp++;
+	}
+}
+
 int
 main(uint64_t args[6])
 {
@@ -75,6 +136,7 @@ main(uint64_t args[6])
 	int has_boot_archive;
 	uint64_t i;
 	func_t entry;
+	extern boolean_t psci_initialized;
 
 	uefi_memmap = 0;
 	uefi_fb = 0;
@@ -92,9 +154,16 @@ main(uint64_t args[6])
 	    &payload, &payload_size) != 0)
 		return (-1);
 
+	process_bcons();
+	dbg2_init(bi);
+
 	efi_map_header = (struct efi_map_header *)uefi_memmap;
 	if (efi_map_header == NULL)
 		return (-1);
+
+	fiximp();
+	init_memlists();
+	init_memory();
 
 	fb->framebuffer = uefi_fb;
 	if (fb->framebuffer != 0)
@@ -102,6 +171,12 @@ main(uint64_t args[6])
 
 	if (init_uefi(bi) != 0)
 		return (-1);
+
+	psci_init();
+	if (!psci_initialized) {
+		prom_printf("PSCI did not initialize successfully\n");
+		for (;;) {}     /* we can't reset if PSCI is not up */
+	}
 
 	if (bi->bi_cmdline != 0) {
 		bootflags(
@@ -126,11 +201,6 @@ main(uint64_t args[6])
 		return (-1);
 	}
 
-	fiximp();
-	init_memlists();
-	init_memory();
-
-	dbg2_puts("booya - let's go!\n");
 	/*
 	 * As a bodge, we have the kernel to boot in memory already (thanks loader!)
 	 * Grab phdrs etc. from that and hoist it up into memory, set up mapping

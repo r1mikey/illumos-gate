@@ -8,8 +8,9 @@
 #include <sys/acpi/actypes.h>
 #include <sys/acpi/actbl.h>
 
+extern void dbg2_init(struct xboot_info *xbi);
+
 extern void dbg2_preinit(void);
-extern void dbg2_config_acpi(struct xboot_info *xbi, ACPI_TABLE_DBG2 *dbg2);
 
 extern int dbg2_ischar(void);
 extern int dbg2_getchar(void);

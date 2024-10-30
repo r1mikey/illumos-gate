@@ -73,6 +73,7 @@
 #include <sys/arch_timer.h>
 
 extern void bsvc_init(struct xboot_info *);
+struct xboot_info *xboot_info_p = NULL;
 
 /*
  * called immediately from _start to stitch the
@@ -88,7 +89,8 @@ kobj_start(struct xboot_info *xbp)
 	int i;
 	extern int moddebug;
 
-	bop_init(xbp);
+	xboot_info_p = xbp;	/* MUST GO */
+	bop_init(xbp);		/* XXXARM: not just bsvc_init? */
 	for (i = 0; i < BA_NUM; i++)
 		bootaux[i].ba_val = 0;
 

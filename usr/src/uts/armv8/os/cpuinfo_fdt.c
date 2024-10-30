@@ -22,6 +22,12 @@
 #include <sys/byteorder.h>
 #include <sys/systm.h>
 #include <sys/stddef.h>
+#include <sys/bootinfo.h>
+#include <sys/acpi/platform/acsolaris.h>
+#include <sys/acpi/actypes.h>
+#include <sys/acpi/actbl.h>
+
+extern struct xboot_info *xboot_info_p;
 
 typedef enum {
 	CPUNODE_STATUS_OKAY	= 0,
@@ -40,6 +46,13 @@ typedef enum {
 #define	CPUNODE_BAD_ENABLE_METHOD	-1
 
 #define	CPUNODE_BAD_PARKED_ADDRESS	0xffffffffffffffffull
+
+#if !defined(ACPI_MADT_ENABLED)
+#define	ACPI_MADT_ENABLED		(1 << 0)
+#endif
+#if !defined(ACPI_MADT_ONLINE_CAPABLE)
+#define	ACPI_MADT_ONLINE_CAPABLE	(1 << 3)
+#endif
 
 static list_t		ci_lst;
 static struct cpuinfo	ci0;
@@ -292,6 +305,27 @@ is_gicv3(void)
 	return (node == OBP_NONODE ? B_FALSE : B_TRUE);
 }
 
+static int
+fill_cpuinfo_acpi(ACPI_MADT_GENERIC_INTERRUPT *gicc, struct cpuinfo *ci)
+{
+	ci->ci_flags = 0;
+	if (gicc->Flags & ACPI_MADT_ENABLED)
+		ci->ci_flags |= CPUINFO_ENABLED;
+	if (gicc->Flags & ACPI_MADT_ONLINE_CAPABLE)
+		ci->ci_flags |= CPUINFO_ONLINE_CAPABLE;
+
+	ci->ci_mpidr = gicc->ArmMpidr;
+
+	if (gicc->ParkingVersion != 0)
+		prom_panic("CPUINFO: PSCI is the only supported method for "
+		    "ACPI sytems");
+	ci->ci_ppver = CPUINFO_ENABLE_METHOD_PSCI;
+	ci->ci_parked_addr = 0;
+	ci->ci_cpuif = gicc->CpuInterfaceNumber;
+
+	return (0);
+}
+
 /*
  * In the FDT case we have to infer the CPU Interface Number.
  *
@@ -363,6 +397,23 @@ fill_cpuinfo(pnode_t node, struct cpuinfo *ci)
 }
 
 static struct cpuinfo *
+create_cpuinfo_acpi(ACPI_MADT_GENERIC_INTERRUPT *gicc)
+{
+	struct cpuinfo		*ci;
+	int			st;
+
+	ci = kmem_zalloc(sizeof (*ci), KM_SLEEP);
+
+	st = fill_cpuinfo_acpi(gicc, ci);
+	if (st != 0) {
+		kmem_free(ci, sizeof (*ci));
+		ci = NULL;
+	}
+
+	return (ci);
+}
+
+static struct cpuinfo *
 create_cpuinfo(pnode_t node)
 {
 	struct cpuinfo		*ci;
@@ -400,24 +451,95 @@ cpuinfo_init(void)
 	    offsetof(struct cpuinfo, ci_list_node));
 	list_insert_head(&ci_lst, &ci0);
 
-	for (node = first_cpu_node(), idx = 1;
-	    node > 0; node = next_cpu_node(node)) {
-		if (get_cpu_mpidr(node) == ci0.ci_mpidr)
-			continue;
+	if (xboot_info_p && xboot_info_p->bi_fdt) {
+		for (node = first_cpu_node(), idx = 1;
+		    node > 0; node = next_cpu_node(node)) {
+			if (get_cpu_mpidr(node) == ci0.ci_mpidr)
+				continue;
 
-		ci = create_cpuinfo(node);
-		if (ci == NULL) {
-			while ((ci = list_remove_tail(&ci_lst)) != NULL) {
-				if (ci->ci_id != 0)
-					kmem_free(ci, sizeof (*ci));
+			ci = create_cpuinfo(node);
+			if (ci == NULL) {
+				while ((ci = list_remove_tail(&ci_lst)) != NULL) {
+					if (ci->ci_id != 0)
+						kmem_free(ci, sizeof (*ci));
+				}
+
+				list_destroy(&ci_lst);
+				return (-1);
 			}
 
-			list_destroy(&ci_lst);
-			return (-1);
+			ci->ci_id = idx++;
+			list_insert_tail(&ci_lst, ci);
+		}
+	} else if (xboot_info_p && xboot_info_p->bi_acpi_xsdt) {
+		ACPI_TABLE_XSDT *xsdt;
+		ACPI_TABLE_HEADER *tab;
+		ACPI_TABLE_MADT *madt;
+		ACPI_SUBTABLE_HEADER *item;
+		ACPI_SUBTABLE_HEADER *end;
+		ACPI_MADT_GENERIC_INTERRUPT *gicc;
+		uint64_t *entry;
+		uint32_t entries;
+		size_t slen;
+		uint32_t i;
+
+		xsdt = (ACPI_TABLE_XSDT *)xboot_info_p->bi_acpi_xsdt;
+		entries = (xsdt->Header.Length -
+		    sizeof (xsdt->Header)) / ACPI_XSDT_ENTRY_SIZE;
+		entry = &xsdt->TableOffsetEntry[0];
+		slen = strlen(ACPI_SIG_MADT);
+		tab = NULL;
+		idx = 1;
+
+		for (i = 0; i < entries; ++i) {
+			tab = (ACPI_TABLE_HEADER *)entry[i];
+			if (tab == NULL)
+				continue;
+			if (strncmp(tab->Signature, ACPI_SIG_MADT, slen) == 0)
+				break;
+			tab = NULL;
 		}
 
-		ci->ci_id = idx++;
-		list_insert_tail(&ci_lst, ci);
+		if (tab == NULL)
+			return (-1);;
+
+		madt = (ACPI_TABLE_MADT *)tab;
+		end = (ACPI_SUBTABLE_HEADER *)
+		    (madt->Header.Length + (uintptr_t)madt);
+		item = (ACPI_SUBTABLE_HEADER *)
+		    ((uintptr_t)madt + sizeof (*madt));
+
+		while (item < end) {
+			if (item->Type != ACPI_MADT_TYPE_GENERIC_INTERRUPT) {
+				item = (ACPI_SUBTABLE_HEADER *)
+				    ((uintptr_t)item + item->Length);
+				continue;
+			}
+
+			gicc = (ACPI_MADT_GENERIC_INTERRUPT *)item;
+			if (gicc->ArmMpidr == ci0.ci_mpidr) {
+				item = (ACPI_SUBTABLE_HEADER *)
+				    ((uintptr_t)item + item->Length);
+				continue;
+			}
+
+			ci = create_cpuinfo_acpi(gicc);
+			if (ci == NULL) {
+				while ((ci = list_remove_tail(&ci_lst)) != NULL) {
+					if (ci->ci_id != 0)
+						kmem_free(ci, sizeof (*ci));
+				}
+
+				list_destroy(&ci_lst);
+				return (-1);
+			}
+
+			ci->ci_id = idx++;
+			list_insert_tail(&ci_lst, ci);
+
+			item = (ACPI_SUBTABLE_HEADER *)
+			    ((uintptr_t)item + item->Length);
+		}
 	}
 
 	return (0);
@@ -439,37 +561,99 @@ cpuinfo_bootstrap(cpu_t *cp)
 	ASSERT(cp->cpu_id == 0);
 	cpu_count = cpu_possible_count = 0;
 
-	for (node = first_cpu_node(); node > 0; node = next_cpu_node(node)) {
-		st = get_cpu_status(node);
+	if (xboot_info_p && xboot_info_p->bi_fdt) {
+		for (node = first_cpu_node(); node > 0;
+		    node = next_cpu_node(node)) {
+			st = get_cpu_status(node);
 
-		if (CPUNODE_STATUS_IS_ENABLED(st)) {
-			cpu_count++;
-			cpu_possible_count++;
-		} else {
-			/*
-			 * If we supported pluggable CPUs in FDT we'd add an
-			 * "else if" here and bump the cpu_possible_count iff
-			 * the CPU was online-capable.
-			 *
-			 * In the FDT case we simply bump cpu_possible_count
-			 * for all CPUs that have a status that is neither
-			 * explicitly nor implicitly "okay".
-			 */
-			cpu_possible_count++;
+			if (CPUNODE_STATUS_IS_ENABLED(st)) {
+				cpu_count++;
+				cpu_possible_count++;
+			} else {
+				cpu_possible_count++;
+			}
+
+			if (cp->cpu_m.mcpu_ci == NULL &&
+			    cp->cpu_m.affinity == get_cpu_mpidr(node)) {
+				st = fill_cpuinfo(node, &ci0);
+				if (st != 0) {
+					prom_panic("CPUINFO: failed to fill "
+					    "cpuinfo for the boot processor");
+				}
+				ci0.ci_id = 0;
+				cp->cpu_m.mcpu_ci = &ci0;
+			}
+		}
+	} else if (xboot_info_p && xboot_info_p->bi_acpi_xsdt) {
+		ACPI_TABLE_XSDT *xsdt;
+		ACPI_TABLE_HEADER *tab;
+		ACPI_TABLE_MADT *madt;
+		ACPI_SUBTABLE_HEADER *item;
+		ACPI_SUBTABLE_HEADER *end;
+		ACPI_MADT_GENERIC_INTERRUPT *gicc;
+		uint64_t *entry;
+		uint32_t entries;
+		size_t slen;
+		uint32_t i;
+
+		xsdt = (ACPI_TABLE_XSDT *)xboot_info_p->bi_acpi_xsdt;
+		entries = (xsdt->Header.Length -
+		    sizeof (xsdt->Header)) / ACPI_XSDT_ENTRY_SIZE;
+		entry = &xsdt->TableOffsetEntry[0];
+		slen = strlen(ACPI_SIG_MADT);
+		tab = NULL;
+
+		for (i = 0; i < entries; ++i) {
+			tab = (ACPI_TABLE_HEADER *)entry[i];
+			if (tab == NULL)
+				continue;
+			if (strncmp(tab->Signature, ACPI_SIG_MADT, slen) == 0)
+				break;
+			tab = NULL;
 		}
 
-		if (cp->cpu_m.mcpu_ci == NULL &&
-		    cp->cpu_m.affinity == get_cpu_mpidr(node)) {
-			st = fill_cpuinfo(node, &ci0);
-			if (st != 0) {
-				prom_panic("CPUINFO: failed to fill cpuinfo "
-				    "for the boot processor");
+		if (tab == NULL)
+			goto notab;
+
+		madt = (ACPI_TABLE_MADT *)tab;
+		end = (ACPI_SUBTABLE_HEADER *)
+		    (madt->Header.Length + (uintptr_t)madt);
+		item = (ACPI_SUBTABLE_HEADER *)
+		    ((uintptr_t)madt + sizeof (*madt));
+
+		while (item < end) {
+			if (item->Type != ACPI_MADT_TYPE_GENERIC_INTERRUPT) {
+				item = (ACPI_SUBTABLE_HEADER *)
+				    ((uintptr_t)item + item->Length);
+				continue;
 			}
-			ci0.ci_id = 0;
-			cp->cpu_m.mcpu_ci = &ci0;
+
+			gicc = (ACPI_MADT_GENERIC_INTERRUPT *)item;
+
+			if (gicc->Flags & ACPI_MADT_ENABLED) {
+				cpu_count++;
+				cpu_possible_count++;
+			} else if (gicc->Flags & ACPI_MADT_ONLINE_CAPABLE) {
+				cpu_possible_count++;
+			}
+
+			if (cp->cpu_m.mcpu_ci == NULL &&
+			    cp->cpu_m.affinity == gicc->ArmMpidr) {
+				st = fill_cpuinfo_acpi(gicc, &ci0);
+				if (st != 0) {
+					prom_panic("CPUINFO: failed to fill "
+					    "cpuinfo for the boot processor");
+				}
+				ci0.ci_id = 0;
+				cp->cpu_m.mcpu_ci = &ci0;
+			}
+
+			item = (ACPI_SUBTABLE_HEADER *)
+			    ((uintptr_t)item + item->Length);
 		}
 	}
 
+notab:
 	if (cp->cpu_m.mcpu_ci == NULL)
 		prom_panic("CPUINFO: did not find the boot processor");
 

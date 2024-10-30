@@ -188,7 +188,7 @@ bootflags(char *args, size_t argsz)
 		npres--;
 
 	newargs[sizeof (newargs) - 1] = '\0';
-	(void) strlcpy(args, newargs, argsz);
+	(void) strlcpy(args, newargs, argsz + 1);
 
 	/*
 	 * See if user wants to examine things

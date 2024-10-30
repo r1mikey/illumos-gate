@@ -33,7 +33,29 @@ typedef struct {
 	int	(*op_getspeed)(void *);
 	int	(*op_ischar)(void *);
 	void	(*op_devinfo)(void *);
+	void	(*op_fillenv)(void *, const char *, const char *);
 } uefi_acpi_uart_ops_t;
+
+typedef struct {
+	uint64_t			addr;
+	uint32_t			addr_size;
+	uint32_t			baud;
+	uint32_t			frequency;      /* <= rev 2, 0, else 0 is indeterminate and !0 is Hz */
+	uint16_t			interface_type;
+	uint8_t				parity; // 0 is no parity, else reserved
+	uint8_t				stop_bits; // 1 = 1 stop bit, else reserved
+	uint8_t				flow_control; // b0: DCD on, b1: RTS/CTS hw, b2: XON/XOFF sw, other res0 */
+	uint8_t				pad;
+	char				acpi_name[128];
+} spcr_data_t;
+
+typedef struct {
+	uint64_t			addr;
+	uint32_t			addr_size;
+	uint16_t			interface_type;
+	uint16_t			pad;
+	char				acpi_name[128];
+} dbg2_data_t;
 
 typedef struct {
 	char				name[8];

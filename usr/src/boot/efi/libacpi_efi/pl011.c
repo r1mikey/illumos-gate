@@ -20,6 +20,8 @@
 #include "uefi_acpi_uart.h"
 
 #include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
 #include <stdio.h>
 
 #define UARTDR_REG	0x00
@@ -35,6 +37,7 @@ static int pl011_getchar(void *ctx);
 static int pl011_ischar(void *ctx);
 static int pl011_getspeed(void *ctx);
 static void pl011_devinfo(void *ctx);
+static void pl011_fillenv(void *ctx, const char *ttyname, const char * nsname);
 
 const uefi_acpi_uart_ops_t uefi_acpi_pl011_ops = {
 	.op_setup = pl011_setup,
@@ -43,6 +46,7 @@ const uefi_acpi_uart_ops_t uefi_acpi_pl011_ops = {
 	.op_ischar = pl011_ischar,
 	.op_getspeed = pl011_getspeed,
 	.op_devinfo = pl011_devinfo,
+	.op_fillenv = pl011_fillenv,
 };
 
 static uint32_t
@@ -136,4 +140,32 @@ pl011_devinfo(void *ctx)
 	pl011_info_t	*pl011 = uart->info;
 
 	printf("\tmmio %#lx", pl011->addr);
+}
+
+static void
+pl011_fillenv(void *ctx, const char *ttyname, const char * nsname)
+{
+	char		name[32];
+	char		value[32];
+	acpi_uart_t	*uart = ctx;
+	pl011_info_t	*pl011 = uart->info;
+
+	snprintf(name, sizeof(name), "%s-mmio-base", ttyname);
+	snprintf(value, sizeof(value), "%lu", pl011->addr);
+	setenv(name, value, 1);
+
+	snprintf(name, sizeof(name), "%s-uart-type", ttyname);
+	snprintf(value, sizeof(value), "%u", 0x000e);	/* basic SBSA UART */
+	setenv(name, value, 1);
+
+	if (pl011->clk_freq) {
+		snprintf(name, sizeof(name), "%s-uart-freq", ttyname);
+		snprintf(value, sizeof(value), "%lu", pl011->clk_freq);
+		setenv(name, value, 1);
+	}
+
+	if (nsname && strlen(nsname) > 1) {
+		snprintf(name, sizeof(name), "%s-uart-acpiname", ttyname);
+		setenv(name, nsname, 1);
+	}
 }

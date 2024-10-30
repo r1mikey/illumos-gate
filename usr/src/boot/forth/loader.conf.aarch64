@@ -13,6 +13,8 @@
 
 exec=".( Loading /boot/defaults/loader.conf ) cr"
 
+impl-arch-name="ARM,sbsa"	# port-specific subdirectory
+
 kernel="ARM,sbsa/kernel/${ISADIR}"	# /platform sub-directory containing kernel
 bootfile="unix.shim"		# Kernel name (possibly absolute path)
 # boot-args=""		# Flags to be passed to the kernel

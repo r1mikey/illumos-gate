@@ -259,27 +259,10 @@ init_iolist(void)
 	 * memory map, which is somewhat unexpected.
 	 */
 	extern struct xboot_info *bi;
-	addr = bi->bi_dbg2_pa;
-	size = bi->bi_dbg2_sz;
+	addr = bi->bi_bsvc_uart_mmio_base;
+	size = 0x1000;
 
-	if (!memlist_find(piolistp, addr)) {
-		dprintf("io 0x%lx - 0x%lx\n", addr, addr + size - 1);
-		if (memlist_find(pfreelistp, addr))
-			memlist_delete_span(addr, size, &pfreelistp);
-		if (memlist_find(pscratchlistp, addr))
-			memlist_delete_span(addr, size, &pscratchlistp);
-		if (memlist_find(plinearlistp, addr))
-			memlist_delete_span(addr, size, &plinearlistp);
-		memlist_add_span(addr, size, &piolistp);
-	}
-
-	/*
-	 * MADT resources
-	 */
-	addr = bi->bi_gic_dist_base;
-	size = bi->bi_gic_dist_size;
-
-	if (!memlist_find(piolistp, addr)) {
+	if (addr && !memlist_find(piolistp, addr)) {
 		dprintf("io 0x%lx - 0x%lx\n", addr, addr + size - 1);
 		if (memlist_find(pfreelistp, addr))
 			memlist_delete_span(addr, size, &pfreelistp);

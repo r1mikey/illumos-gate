@@ -52,9 +52,11 @@ prom_init(char *pgmname __maybe_unused, void *cookie __maybe_unused)
 #ifndef _KMDB
 	int err;
 
-	err = fdt_check_header(cookie);
-	if (err == 0)
-		prom_fdtp = cookie;
+	if (cookie) {
+		err = fdt_check_header(cookie);
+		if (err == 0)
+			prom_fdtp = cookie;
+	}
 #endif
 }
 

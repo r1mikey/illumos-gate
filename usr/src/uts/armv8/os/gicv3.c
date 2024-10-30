@@ -73,10 +73,15 @@
 #include <sys/cpuinfo.h>
 #include <sys/sysmacros.h>
 #include <sys/archsystm.h>
+#include <sys/bootinfo.h>
+#include <sys/acpi/platform/acsolaris.h>
+#include <sys/acpi/actypes.h>
+#include <sys/acpi/actbl.h>
 
 extern void gic_remove_state(int);
 
 extern char *gic_module_name;
+extern struct xboot_info *xboot_info_p;
 
 /*
  * A redistributor region is a block of redistributor MMIO space. One finds
@@ -717,10 +722,41 @@ gicv3_clear_conf(gicv3_conf_t *gc)
 }
 
 /*
+ * Return the ACPI MADT, or NULL if none was found.
+ */
+static ACPI_TABLE_MADT *
+find_gic_acpi(void)
+{
+	ACPI_TABLE_XSDT *xsdt;
+	ACPI_TABLE_HEADER *tab;
+	uint64_t *entry;
+	uint32_t entries;
+	size_t slen;
+	uint32_t i;
+
+	xsdt = (ACPI_TABLE_XSDT *)xboot_info_p->bi_acpi_xsdt;
+	entries = (xsdt->Header.Length -
+	    sizeof (xsdt->Header)) / ACPI_XSDT_ENTRY_SIZE;
+	entry = &xsdt->TableOffsetEntry[0];
+	slen = strlen(ACPI_SIG_MADT);
+	tab = NULL;
+
+	for (i = 0; i < entries; ++i) {
+		tab = (ACPI_TABLE_HEADER *)entry[i];
+		if (tab == NULL)
+			continue;
+		if (strncmp(tab->Signature, ACPI_SIG_MADT, slen) == 0)
+			return ((ACPI_TABLE_MADT *)tab);
+	}
+
+	return (NULL);
+}
+
+/*
  * Return the GICv3 PROM node, or OBP_NONODE if none was found.
  */
 static pnode_t
-find_gic(pnode_t nodeid, int depth)
+find_gic_fdt(pnode_t nodeid, int depth)
 {
 	pnode_t	node;
 	pnode_t	child;
@@ -730,7 +766,7 @@ find_gic(pnode_t nodeid, int depth)
 
 	child = prom_childnode(nodeid);
 	while (child > 0) {
-		node = find_gic(child, depth + 1);
+		node = find_gic_fdt(child, depth + 1);
 		if (node > 0)
 			return (node);
 		child = prom_nextnode(child);
@@ -739,12 +775,152 @@ find_gic(pnode_t nodeid, int depth)
 	return (OBP_NONODE);
 }
 
+
 /*
  * Map the GICv3 distributor and redistributor MMIO regions into the device
- * arena.
+ * arena from the ACPI MADT.
  */
 static int
-gicv3_map(gicv3_conf_t *gc)
+gicv3_map_acpi(gicv3_conf_t *gc)
+{
+	ACPI_TABLE_MADT			*madt;
+	ACPI_SUBTABLE_HEADER		*item;
+	ACPI_SUBTABLE_HEADER		*end;
+	ACPI_MADT_GENERIC_DISTRIBUTOR	*gicd;
+	ACPI_MADT_GENERIC_REDISTRIBUTOR	*gicr;
+	uint64_t			gicrr_base;
+	uint64_t			gicrr_size;
+	uint32_t			num_redist_regions;
+	caddr_t				addr;
+	size_t				gicd_size;
+	uint32_t			i;
+
+	gicd_size = 65536;	/* always 64k */
+
+	madt = find_gic_acpi();
+	if (madt == NULL)
+		return (-1);
+
+	/*
+	 * First up, find and process the GIC distributor.
+	 *
+	 * Per §5.2.12.15 GIC Distributor (GICD) Structure,there is only
+	 * one of these.
+	 */
+
+	end = (ACPI_SUBTABLE_HEADER *)
+	    (madt->Header.Length + (uintptr_t)madt);
+	item = (ACPI_SUBTABLE_HEADER *)
+	    ((uintptr_t)madt + sizeof (*madt));
+
+	while (item < end) {
+		if (item->Type != ACPI_MADT_TYPE_GENERIC_DISTRIBUTOR) {
+			item = (ACPI_SUBTABLE_HEADER *)
+			    ((uintptr_t)item + item->Length);
+			continue;
+		}
+		gicd = (ACPI_MADT_GENERIC_DISTRIBUTOR *)item;
+
+		addr = psm_map_phys((paddr_t)gicd->BaseAddress,
+		    gicd_size, PROT_READ|PROT_WRITE);
+		if (addr == NULL)
+			return (-1);
+		gc->gc_gicd = (void *)addr;
+		gc->gc_gicd_size = gicd_size;
+		break;
+	}
+
+	if (gc->gc_gicd == NULL)
+		return (-1);
+
+	/*
+	 * Now the redistributors.
+	 *
+	 * There's some subtlety here, where distributor memory ranges, used
+	 * for discovery, get their own subtable when all redistributors are
+	 * in the "always on" power domain.
+	 *
+	 * Per §5.2.12.17 GIC Redistributor (GICR) Structure, when such
+	 * subtables exist the OSPM must ignore GICR Base Address field in
+	 * the GICC structures.
+	 *
+	 * However, when no redistributor subtables are present we should
+	 * look at the GICC data.  It's always one or the other, never both.
+	 *
+	 * So, first scan for GICR subtables, then look at the GICC subtables
+	 * only when no redistributors have been discovered yet.
+	 */
+	end = (ACPI_SUBTABLE_HEADER *)
+	    (madt->Header.Length + (uintptr_t)madt);
+	item = (ACPI_SUBTABLE_HEADER *)
+	    ((uintptr_t)madt + sizeof (*madt));
+
+	/*
+	 * First we count the redistributors, then we capture them.
+	 */
+	gc->gc_redist_stride = 0;
+	gc->gc_num_redist_regions = 0;
+	num_redist_regions = 0;
+
+	while (item < end) {
+		if (item->Type == ACPI_MADT_TYPE_GENERIC_REDISTRIBUTOR)
+			num_redist_regions++;
+
+		item = (ACPI_SUBTABLE_HEADER *)
+		    ((uintptr_t)item + item->Length);
+	}
+
+	if (num_redist_regions) {
+		gc->gc_redist_regions = kmem_zalloc(
+		    sizeof (gicv3_redist_region_t) * num_redist_regions, KM_SLEEP);
+		gc->gc_num_redist_regions = num_redist_regions;
+
+		end = (ACPI_SUBTABLE_HEADER *)
+		    (madt->Header.Length + (uintptr_t)madt);
+		item = (ACPI_SUBTABLE_HEADER *)
+		    ((uintptr_t)madt + sizeof (*madt));
+		i = 0;
+
+		while (item < end) {
+			if (item->Type != ACPI_MADT_TYPE_GENERIC_REDISTRIBUTOR) {
+				item = (ACPI_SUBTABLE_HEADER *)
+				    ((uintptr_t)item + item->Length);
+				continue;
+			}
+
+			gicr = (ACPI_MADT_GENERIC_REDISTRIBUTOR *)item;
+			gicrr_base = gicr->BaseAddress;
+			gicrr_size = gicr->Length;
+
+			if (gicrr_base == 0 || gicrr_size == 0)
+				return (-1);
+
+			addr = psm_map_phys(gicrr_base, gicrr_size,
+			    PROT_READ|PROT_WRITE);
+			if (addr == NULL)
+				return (-1);
+
+			gc->gc_redist_regions[i].base = (void *)addr;
+			gc->gc_redist_regions[i].size = gicrr_size;
+			i++;
+
+			item = (ACPI_SUBTABLE_HEADER *)
+			    ((uintptr_t)item + item->Length);
+		}
+	} else {
+		/* look at GICC */
+		prom_panic("ACPI GICC REDIST PROBE: not yet\n");
+	}
+
+	return (0);
+}
+
+/*
+ * Map the GICv3 distributor and redistributor MMIO regions into the device
+ * arena from the FDT.
+ */
+static int
+gicv3_map_fdt(gicv3_conf_t *gc)
 {
 	pnode_t			node;
 	uint32_t		i;
@@ -755,7 +931,7 @@ gicv3_map(gicv3_conf_t *gc)
 	uint32_t		num_redist_regions;
 	caddr_t			addr;
 
-	node = find_gic(prom_rootnode(), 0);
+	node = find_gic_fdt(prom_rootnode(), 0);
 	if (node <= 0)
 		return (-1);
 
@@ -794,6 +970,17 @@ gicv3_map(gicv3_conf_t *gc)
 	}
 
 	return (0);
+}
+
+static int
+gicv3_map(gicv3_conf_t *gc)
+{
+	if (xboot_info_p && xboot_info_p->bi_fdt)
+		return (gicv3_map_fdt(gc));
+	else if (xboot_info_p && xboot_info_p->bi_acpi_xsdt)
+		return (gicv3_map_acpi(gc));
+
+	return (-1);
 }
 
 /*

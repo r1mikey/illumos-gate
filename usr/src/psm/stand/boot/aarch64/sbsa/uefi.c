@@ -107,11 +107,6 @@ find_acpi_table(ACPI_TABLE_XSDT *xsdt, const char *sig)
 static int
 ingest_madt(struct xboot_info *xbi, ACPI_TABLE_MADT *madt)
 {
-	ACPI_SUBTABLE_HEADER		*item;
-	ACPI_SUBTABLE_HEADER		*end;
-	ACPI_MADT_GENERIC_DISTRIBUTOR	*distp;
-	uint8_t				gic_version;
-
 	if (madt == NULL || xbi == NULL)
 		return (-1);
 
@@ -124,51 +119,6 @@ ingest_madt(struct xboot_info *xbi, ACPI_TABLE_MADT *madt)
 			dbg2_panic("ingest_madt: Failed to enable GIC system register access\n");
 	}
 
-	end = (ACPI_SUBTABLE_HEADER *)(madt->Header.Length + (uintptr_t)madt);
-	item = (ACPI_SUBTABLE_HEADER *)((uintptr_t)madt + sizeof (*madt));
-	distp = NULL;
-
-	/*
-	 * There's a lot more we could (and perhaps should) do here, but for now
-	 * we won't.
-	 */
-	while (item < end) {
-		switch (item->Type) {
-		case ACPI_MADT_TYPE_GENERIC_DISTRIBUTOR:
-			if (distp != NULL)
-				dbg2_panic("ingest_madt: Only one GIC Distributor (GICD) Structure allowed in MADT\n");
-
-			distp = (ACPI_MADT_GENERIC_DISTRIBUTOR *)item;
-			if (distp->GlobalIrqBase != 0)
-				dbg2_panic("ingest_madt: System Vector Base is reserved and must be zero\n");
-
-			gic_version = distp->Version;
-			/* XXXARM: I'm not sure this is right */
-			if (gic_version == 0) {
-				volatile uint64_t *reg = (volatile uint64_t *)(distp->BaseAddress);
-				gic_version = (((*reg) >> 4) & 0xf);
-			}
-
-			if (gic_version < 3)
-				dbg2_panic("ingest_madt: GIC version must be 3 or greater\n");
-
-			if (gic_version > 4)
-				dbg2_printf("ingest_madt: Detected unrecognised GICv%u, assuming compatability with GICv3\n", gic_version);
-
-			xbi->bi_gic_dist_base = (uint64_t)distp->BaseAddress;
-			xbi->bi_gic_dist_size = 0x10000; /* 64KiB */
-			xbi->bi_gic_version = (uint64_t)gic_version;
-			break;
-		default:
-			break;
-		}
-
-		item = (ACPI_SUBTABLE_HEADER *)((uintptr_t)item + item->Length);
-	}
-
-	if (xbi->bi_gic_dist_base == 0 || xbi->bi_gic_version == 0)
-		return (-1);
-
 	return (0);
 }
 
@@ -178,12 +128,8 @@ ingest_fadt(struct xboot_info *xbi, ACPI_TABLE_FADT *fadt)
 	if (!(fadt->ArmBootFlags & ACPI_FADT_PSCI_COMPLIANT))
 		dbg2_panic("ingest_fadt: illumos requires PSCI");
 
-	xbi->bi_psci_use_hvc = 0;
-	xbi->bi_use_psci =
-		(fadt->ArmBootFlags & ACPI_FADT_PSCI_COMPLIANT) ? 1 : 0;
-	if (xbi->bi_use_psci &&
-	    (fadt->ArmBootFlags & ACPI_FADT_PSCI_USE_HVC))
-		xbi->bi_psci_use_hvc = 1;
+	xbi->bi_psci_conduit_hvc =
+	    (fadt->ArmBootFlags & ACPI_FADT_PSCI_USE_HVC) ? 1 : 0;
 
 	return(0);
 }
@@ -332,8 +278,6 @@ ingest_uefi_systab(EFI_SYSTEM_TABLE64 *st, struct xboot_info *xbi)
 	/*
 	 * XXXARM: Check the XSDT CRC32
 	 */
-
-	dbg2_config_acpi(xbi, (ACPI_TABLE_DBG2 *)find_acpi_table((ACPI_TABLE_XSDT *)xbi->bi_acpi_xsdt, ACPI_SIG_DBG2));
 
 	if (ingest_fadt(xbi, (ACPI_TABLE_FADT *)find_acpi_table(
 	    (ACPI_TABLE_XSDT *)xbi->bi_acpi_xsdt, ACPI_SIG_FADT)) < 0)

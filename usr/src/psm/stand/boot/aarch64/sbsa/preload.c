@@ -46,7 +46,7 @@ static const char env_boot_module_name[] = ENV_BOOTMOD_NAME;
 static const char rootfs_boot_module_name[] = ROOTFS_BOOTMOD_NAME;
 
 #define	PAYLOAD_CMDLINE_MAX_LEN	1023
-static char paylad_cmdline[PAYLOAD_CMDLINE_MAX_LEN + 1];
+static char payload_cmdline[PAYLOAD_CMDLINE_MAX_LEN + 1];
 
 #define	MOD_UINT64(x)	(*((uint64_t *)(&(x)[2])))
 
@@ -334,16 +334,16 @@ prekern_process_modules(caddr_t modulep, struct xboot_info *xbi,
 		return (-1);
 	if (strlen(bootfile) > PAYLOAD_CMDLINE_MAX_LEN)
 		return (-1);
-	strcpy(paylad_cmdline, bootfile);
+	strcpy(payload_cmdline, bootfile);
 
 	if (cmdline != NULL) {
-		if (strlen(paylad_cmdline) + strlen(cmdline) + 1 > PAYLOAD_CMDLINE_MAX_LEN)
+		if (strlen(payload_cmdline) + strlen(cmdline) + 1 > PAYLOAD_CMDLINE_MAX_LEN)
 			return (-1);
-		strcat(paylad_cmdline, " ");
-		strcat(paylad_cmdline, cmdline);
+		strcat(payload_cmdline, " ");
+		strcat(payload_cmdline, cmdline);
 	}
 
-	xbi->bi_cmdline = (uint64_t)paylad_cmdline;
+	xbi->bi_cmdline = (uint64_t)payload_cmdline;
 	return (0);
 }
 

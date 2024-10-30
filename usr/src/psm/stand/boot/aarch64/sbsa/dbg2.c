@@ -2,15 +2,9 @@
 #include <sys/bootinfo.h>
 #include <sys/bootsvcs.h>
 #include "dbg2.h"
+#include "early_dbg2.h"
 
-#define	_EARLY_DBG2	1
-
-#if defined(_EARLY_DBG2) && _EARLY_DBG2 > 0
-#define	EARLY_DBG2_PA	0x60000000ULL
-#define	EARLY_DBG2_TYPE	0x000e
-#endif
-
-#define	DBG2_IS_PL011()	(_sbsa_dbg2_type == 0x0003 || _sbsa_dbg2_type == 0x000e)
+#define	DBG2_IS_PL011()	(_sbsa_dbg2_type == 0x0003 || _sbsa_dbg2_type == 0x000d || _sbsa_dbg2_type == 0x000e || _sbsa_dbg2_type == 0x0010)
 #define	DBG2_IS_USABLE()	(_sbsa_dbg2_addr != 0 && DBG2_IS_PL011())
 
 static uint64_t _sbsa_dbg2_addr = 0;
@@ -78,7 +72,7 @@ _dbg2_init(void)
                 (void) dbg2_getchar();
 }
 
-static void
+void
 dbg2_init(struct xboot_info *xbi)
 {
 #if defined(_EARLY_DBG2) && _EARLY_DBG2 > 0
@@ -87,19 +81,16 @@ dbg2_init(struct xboot_info *xbi)
 	if (xbi == NULL)
 		return;
 
-	if (xbi->bi_dbg2_pa && (xbi->bi_dbg2_type == 0x0003 ||
-	    xbi->bi_dbg2_type == 0x000e)) {
-		_sbsa_dbg2_addr = xbi->bi_dbg2_pa;
-		_sbsa_dbg2_type = xbi->bi_dbg2_type;
 #if defined(_EARLY_DBG2) && _EARLY_DBG2 > 0
-		reinit = 1;
+	reinit = 1;
 #endif
-	}
-
+	_sbsa_dbg2_addr = xbi->bi_bsvc_uart_mmio_base;
+	_sbsa_dbg2_type = xbi->bi_bsvc_uart_type;
 	_dbg2_init();
+	dbg2_puts("dbg2_init: DBG2 initialised from loader environment\n");
 #if defined(_EARLY_DBG2) && _EARLY_DBG2 > 0
 	if (reinit)
-		dbg2_puts("dbg2_init: DBG2 reinitialised from ACPI table\n");
+		dbg2_puts("dbg2_init: DBG2 reinitialised from loader data\n");
 #endif
 }
 
@@ -158,66 +149,6 @@ dbg2_putnum(uint64_t x, boolean_t is_signed, uint8_t base)
         while (i >= 0)
                 dbg2_putchar(buffer[i--]);
 }
-
-static int
-configure_dbg2_ddi(struct xboot_info *xbi, ACPI_DBG2_DEVICE *ddi)
-{
-	ACPI_GENERIC_ADDRESS *gas;
-	UINT32 *asz;
-	uint32_t i;
-
-	gas = (ACPI_GENERIC_ADDRESS *)(((char *)ddi) + ddi->BaseAddressOffset);
-	asz = (UINT32 *)(((char *)ddi) + ddi->AddressSizeOffset);
-
-	for (i = 0; i < ddi->RegisterCount; ++i) {
-		if (gas[i].SpaceId != 0 || gas[i].BitOffset != 0)
-			return (-1);
-
-		/*
-		 * XXXARM: We could be more spec compliant here, but for now we
-		 * just insist on Register Bit Width being 32 and Access Size
-		 * being DWORD.
-		 */
-		if (gas[i].BitWidth != 32 || gas[i].AccessWidth != 3)
-			return (-1);
-
-		if (asz[i] & 0xfff)
-			return (-1);
-
-		xbi->bi_dbg2_pa = (gas[i].Address & ~0xfff);
-		xbi->bi_dbg2_sz = asz[i];
-		xbi->bi_dbg2_va = 0;
-		xbi->bi_dbg2_type = ddi->PortSubtype;
-		break;
-	}
-
-	return (0);
-}
-
-void
-dbg2_config_acpi(struct xboot_info *xbi, ACPI_TABLE_DBG2 *dbg2)
-{
-	ACPI_DBG2_DEVICE *ddi;
-	UINT32 i;
-
-	if (dbg2 == NULL)
-		return;
-	ddi = (ACPI_DBG2_DEVICE *)(((char *)dbg2) + dbg2->InfoOffset);
-
-	for (i = 0; i < dbg2->InfoCount; ++i) {
-		if (ddi->PortType == ACPI_DBG2_SERIAL_PORT &&
-		    (ddi->PortSubtype == ACPI_DBG2_ARM_PL011 ||
-		    ddi->PortSubtype == ACPI_DBG2_ARM_SBSA_GENERIC)) {
-			if (configure_dbg2_ddi(xbi, ddi) == 0) {
-				dbg2_init(xbi);
-				return;
-			}
-		}
-
-		ddi = (ACPI_DBG2_DEVICE *)(((char *)ddi) + ddi->Length);
-	}
-}
-
 
 /*
  * Very primitive printf - only does a subset of the standard format characters.

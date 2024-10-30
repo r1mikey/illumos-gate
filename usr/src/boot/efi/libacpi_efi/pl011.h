@@ -30,6 +30,7 @@ typedef struct {
 	uint64_t	addr;
 	uint64_t	addr_len;
 	uint64_t	irq;
+	uint64_t	clk_freq;
 	uint64_t	valid;
 } pl011_info_t;
 

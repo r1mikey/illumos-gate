@@ -46,6 +46,7 @@
 
 #include "boot_plat.h"
 #include "shim.h"
+#include "early_dbg2.h"
 
 #ifdef DEBUG
 static int	debug = 1;
@@ -70,9 +71,7 @@ static pte_t *l1_ptbl1;
 static void init_pt(void);
 static void dump_tables(uint64_t tab, uint64_t va_offset);
 
-#if defined(_EFI)
 extern struct efi_map_header *efi_map_header;
-#endif
 
 static inline int
 l1_pteidx(caddr_t vaddr)
@@ -194,29 +193,25 @@ map_efimem(uint64_t offset)
 	/*
 	 * Annoyingly, we don't always have the DBG2 memory covered.
 	 */
-	addr = RNDDN(bi->bi_dbg2_pa, MMU_PAGESIZE);
-	size = RNDUP(bi->bi_dbg2_pa + bi->bi_dbg2_sz, MMU_PAGESIZE) - addr;
-	map_phys(
-		efi_to_pte_attrs(EFI_MEMORY_UC)|PTE_UXN,
-		(caddr_t)(offset + addr),
-		addr,
-		size);
-
-	/*
-	 * We need the GICD base from the MADT here, which will allow us
-	 * to map out 64k of MMIO for reguster access there.
-	 */
-	addr = RNDDN(bi->bi_gic_dist_base, MMU_PAGESIZE);
-	size = RNDUP(bi->bi_gic_dist_base + bi->bi_gic_dist_size, MMU_PAGESIZE) - addr;
-	map_phys(
-		efi_to_pte_attrs(EFI_MEMORY_UC)|PTE_UXN,
-		(caddr_t)(offset + addr),
-		addr,
-		size);
-
-	/*
-	 * There are going to be others we need...
-	 */
+	if (bi->bi_bsvc_uart_mmio_base) {
+		addr = RNDDN(bi->bi_bsvc_uart_mmio_base, MMU_PAGESIZE);
+		size = RNDUP(bi->bi_bsvc_uart_mmio_base + 0x1000, MMU_PAGESIZE) - addr;
+		map_phys(
+			efi_to_pte_attrs(EFI_MEMORY_UC)|PTE_UXN,
+			(caddr_t)(offset + addr),
+			addr,
+			size);
+	} else {
+#if defined(_EARLY_DBG2) && _EARLY_DBG2 > 0
+		addr = RNDDN(EARLY_DBG2_PA, MMU_PAGESIZE);
+		size = RNDUP(EARLY_DBG2_PA + 0x1000, MMU_PAGESIZE) - addr;
+		map_phys(
+			efi_to_pte_attrs(EFI_MEMORY_UC)|PTE_UXN,
+			(caddr_t)(offset + addr),
+			addr,
+			size);
+#endif
+	}
 }
 
 /* Page Table Initialization */

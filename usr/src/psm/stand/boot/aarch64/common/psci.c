@@ -30,7 +30,11 @@
 #include <sys/psci.h>
 #include <sys/promif.h>
 #include <string.h>
+#if defined(_EFI_STUB)
+#include <sys/bootinfo.h>
+#else
 #include <libfdt.h>
+#endif
 #include <sys/byteorder.h>
 
 #include "boot_plat.h"
@@ -106,6 +110,20 @@ psci_call(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3)
 void
 psci_init(void)
 {
+#if defined(_EFI_STUB)
+	extern struct xboot_info *bi;
+
+	pcsi_method_is_hvc = bi->bi_psci_conduit_hvc ? B_TRUE : B_FALSE;
+	bi->bi_psci_cpu_suspend_id = psci_cpu_suspend_id;
+	bi->bi_psci_cpu_off_id = psci_cpu_off_id;
+	bi->bi_psci_cpu_on_id = psci_cpu_on_id;
+	bi->bi_psci_migrate_id = psci_migrate_id;
+
+	bi->bi_psci_version = psci_version();
+	if (bi->bi_psci_version & 0x80000000)
+		return;
+	psci_initialized = B_TRUE;
+#else
 	int err;
 	extern char _dtb_start[];
 	void *fdtp = (void *)boot_args[0];
@@ -153,6 +171,7 @@ psci_init(void)
 			psci_migrate_id = ntohl(*migrate_id);
 		psci_initialized = B_TRUE;
 	}
+#endif
 }
 
 uint32_t

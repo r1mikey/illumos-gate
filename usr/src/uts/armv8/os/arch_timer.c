@@ -22,6 +22,7 @@
 #include <sys/cmn_err.h>
 #include <sys/controlregs.h>
 #include <sys/arch_timer.h>
+#include <sys/bootinfo.h>
 
 /* Generic timer control bits */
 #define	CNT_CTL_ENABLE	(1u << 0)

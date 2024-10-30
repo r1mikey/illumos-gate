@@ -54,6 +54,7 @@ OBJS +=				\
 	aarch64_subr.o		\
 	bootflags.o		\
 	getoptstr.o		\
+	psci.o			\
 	self_reloc.o
 #OBJS +=				\
 #	aarch64_subr.o		\
@@ -83,7 +84,6 @@ OBJS +=				\
 #	prom_string.o		\
 #	prom_utils.o		\
 #	prom_wrtestr.o		\
-#	psci.o			\
 #	ramdisk.o		\
 #	readfile.o		\
 #	sscanf.o		\

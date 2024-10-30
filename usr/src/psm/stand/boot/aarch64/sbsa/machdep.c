@@ -76,10 +76,10 @@ fiximp(void)
 	write_vbar((uint64_t)&exception_vector);
 
 	if ((4u << ((read_ctr_el0() >> 16) & 0xF)) != DCACHE_LINE) {
-		prom_printf("CTR_EL0=%08x DCACHE_LINE=%ld\n", (uint32_t)read_ctr_el0(), DCACHE_LINE);
+		prom_printf("CTR_EL0=%08x DCACHE_LINE=%ld\n",
+		    (uint32_t)read_ctr_el0(), DCACHE_LINE);
 		_reset();
 	}
-
 }
 
 extern void dbg2_putnum(uint64_t x, boolean_t is_signed, uint8_t base);
@@ -90,15 +90,15 @@ dump_exception(uint64_t *regs)
 	uint64_t pc;
 	uint64_t esr;
 	uint64_t far;
-	__asm__ volatile ("mrs %0, elr_el1":"=r"(pc));
-	__asm__ volatile ("mrs %0, esr_el1":"=r"(esr));
-	__asm__ volatile ("mrs %0, far_el1":"=r"(far));
+	__asm__ volatile("mrs %0, elr_el1":"=r"(pc));
+	__asm__ volatile("mrs %0, esr_el1":"=r"(esr));
+	__asm__ volatile("mrs %0, far_el1":"=r"(far));
 	prom_printf("%s\n", __func__);
 	prom_printf("pc  = %lx\n",  pc);
 	prom_printf("esr = %lx\n",  esr);
 	prom_printf("far = %lx\n",  far);
 	for (int i = 0; i < 31; i++)
-		prom_printf("x%d%s = %lx\n", i, ((i >= 10)?" ":""),regs[i]);
+		prom_printf("x%d%s = %lx\n", i, ((i >= 10)?" ":""), regs[i]);
 	_reset();
 }
 
@@ -139,9 +139,6 @@ exitto(int (*entrypoint)())
 #endif
 	reloc_efi_runtime_services(bi);
 
-	bi->bi_boot_sysp = (uint64_t)sysp;
-	dbg2_printf("exitto: bi->bi_boot_sysp is 0x%lx\n", bi->bi_boot_sysp);
-
 	bi->bi_phys_avail = (uint64_t)pfreelistp;
 	bi->bi_phys_installed = (uint64_t)pinstalledp;
 	bi->bi_boot_scratch = (uint64_t)pscratchlistp;
@@ -151,6 +148,5 @@ exitto(int (*entrypoint)())
 	 * There's some other housekeeping crap we need.
 	 */
 
-	dbg2_printf("exitto: jumping to kernel at 0x%p with xboot_info 0x%p\n", entrypoint, bi);
 	entrypoint(bi);
 }
