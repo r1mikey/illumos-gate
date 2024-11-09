@@ -74,10 +74,7 @@ static void impl_bus_initialprobe(void);
 /*
  * Platform drivers on this platform
  */
-char *platform_module_list[] = {
-	"sad",
-	(char *)0
-};
+char *platform_module_list[] = { NULL };
 
 /*
  * We use an AVL tree to store contiguous address allocations made with the
@@ -1439,7 +1436,8 @@ get_boot_properties(void)
 			} else {
 				(void) e_ddi_prop_update_int64_array(
 				    DDI_DEV_T_NONE, devi, property_name,
-				    bop_staging_area, length / sizeof (int64_t));
+				    bop_staging_area,
+				    length / sizeof (int64_t));
 			}
 			break;
 		default:
