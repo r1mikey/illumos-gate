@@ -67,7 +67,8 @@ GENUNIX_OBJS +=		\
 	float.o		\
 	getcontext.o	\
 	install_utrap.o	\
-	kdi_svc.o
+	kdi_svc.o	\
+	popcountdi2.o
 
 #
 #	PROM Routines,

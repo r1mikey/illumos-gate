@@ -939,6 +939,9 @@ PORTREGEX=			\
 VALUES=				\
 	values-Xa.o
 
+BITOBJS=			\
+	stdbit.o
+
 MOSTOBJS=			\
 	$(STRETS)		\
 	$(CRTOBJS)		\
@@ -980,7 +983,8 @@ MOSTOBJS=			\
 	$(SYSOBJS)		\
 	$(COMSYSOBJS64)		\
 	$(SYSOBJS64)		\
-	$(VALUES)
+	$(VALUES)		\
+	$(BITOBJS)
 
 # XXXARM: Enabling this needs a cross dtrace(8)
 TRACEOBJS=			\
