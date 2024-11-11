@@ -23,8 +23,10 @@
  */
 
 #include <sys/platform.h>
+#include <sys/bootinfo.h>
 #include "prom_dev.h"
 
+#define	UART_PHYS	0xc81004c0
 #define UART_ADDR	UART_PHYS
 #define UART_WFIFO	(*(volatile uint32_t *)(UART_ADDR + 0x00))
 #define UART_RFIFO	(*(volatile uint32_t *)(UART_ADDR + 0x04))
@@ -49,6 +51,7 @@
 #define UART_STATUS_ERR_FRAME	(1u << 17)
 #define UART_STATUS_ERR_PARITY	(1u << 16)
 
+extern struct xboot_info xboot_info;
 
 static void initialize()
 {
@@ -122,4 +125,7 @@ void init_console(void)
 {
 	prom_register(&stdout_dev);
 	prom_register(&stdin_dev);
+	xboot_info.bi_bsvc_uart_mmio_base = UART_PHYS;
+	xboot_info.bi_bsvc_uart_type = XBI_BSVC_UART_GXBB;
+	initialize();
 }

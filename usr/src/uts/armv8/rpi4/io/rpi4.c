@@ -33,7 +33,6 @@
 #include <sys/byteorder.h>
 #include <sys/cmn_err.h>
 #include <sys/bootsvcs.h>
-#include <sys/psci.h>
 #include <sys/sunddi.h>
 #include <sys/sysmacros.h>
 #include <sys/ddi_impldefs.h>
@@ -46,63 +45,6 @@
 #include <sys/vcprop.h>
 #include <sys/vcio.h>
 #include <sys/gpio.h>
-
-#define	UART_ADDR	(UART_PHYS + SEGKPM_BASE)
-
-#define	UARTDR		(*(volatile uint32_t *)(UART_ADDR + 0x00))
-#define	UARTFR		(*(volatile uint32_t *)(UART_ADDR + 0x18))
-
-#define	UARTFR_TXFE	(1 << 7)
-#define	UARTFR_TXFF	(1 << 5)
-#define	UARTFR_RXFE	(1 << 4)
-
-static void
-yield()
-{
-	__asm__ volatile("yield":::"memory");
-}
-
-static int
-_getchar()
-{
-	while (UARTFR & UARTFR_RXFE) yield();
-	return (UARTDR & 0xFF);
-}
-
-static void
-_putchar(int c)
-{
-	while (UARTFR & UARTFR_TXFF) {}
-	UARTDR = c;
-	if (c == '\n')
-		_putchar('\r');
-	while (!(UARTFR & UARTFR_TXFE)) {}
-}
-
-static int
-_ischar()
-{
-	return (!(UARTFR & UARTFR_RXFE));
-}
-
-void __NORETURN
-_reset(bool poff)
-{
-	if (poff)
-		psci_system_off();
-	else
-		psci_system_reset();
-	for (;;) { __asm__ volatile("wfe":::"memory"); }
-}
-
-static struct boot_syscalls _sysp =
-{
-	.bsvc_getchar = _getchar,
-	.bsvc_putchar = _putchar,
-	.bsvc_ischar = _ischar,
-	.bsvc_reset = _reset,
-};
-struct boot_syscalls *sysp = &_sysp;
 
 void
 set_platform_defaults(void)

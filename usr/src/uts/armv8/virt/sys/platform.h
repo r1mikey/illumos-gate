@@ -32,8 +32,6 @@ extern "C" {
 
 #include <sys/machparam.h>
 
-#define	UART_PHYS	0x09000000
-
 #define	BOOT_TMP_MAP_BASE	0x20000000
 #define	BOOT_TMP_MAP_SIZE	0x20000000
 

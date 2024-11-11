@@ -76,6 +76,7 @@ CORE_OBJS +=			\
 	hold_page.o		\
 	ssp.o			\
 	psci.o			\
+	bootsvcs.o		\
 	arch_timer.o		\
 	earlybsa.o		\
 	$(CORE_OBJS_FDT)

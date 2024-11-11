@@ -39,6 +39,19 @@ extern "C" {
 #define	MAX_BOOT_MODULES	99
 
 typedef enum {
+	XBI_BSVC_UART_PL011	= 0x0003,
+	XBI_BSVC_UART_SBSA2X	= 0x000d,
+	XBI_BSVC_UART_SBSA	= 0x000e,
+	XBI_BSVC_UART_BCM2835	= 0x0010,
+	XBI_BSVC_UART_GXBB	= 0xffff	/* this is made up */
+} xbi_bsvc_uart_type_t;
+
+#if __STDC_VERSION__ - 0 >= 201112L && !defined(__cplusplus)
+_Static_assert(sizeof (xbi_bsvc_uart_type_t) == sizeof (int),
+    "UART type enum is not the same size as int");
+#endif
+
+typedef enum {
 	BI_PSCI_CONDUIT_UNKNOWN,
 	BI_PSCI_CONDUIT_HVC,
 	BI_PSCI_CONDUIT_SMC,
@@ -80,6 +93,8 @@ struct xboot_info {
 	uint64_t		bi_phys_avail;
 	uint64_t		bi_phys_installed;
 	uint64_t		bi_boot_scratch;
+	uint64_t		bi_bsvc_uart_mmio_base;
+	xbi_bsvc_uart_type_t	bi_bsvc_uart_type;
 	uint32_t		bi_module_cnt;
 	uint32_t		bi_psci_version;
 	uint32_t		bi_psci_conduit_hvc;
@@ -87,7 +102,6 @@ struct xboot_info {
 	uint32_t		bi_psci_cpu_off_id;
 	uint32_t		bi_psci_cpu_on_id;
 	uint32_t		bi_psci_migrate_id;
-	uint32_t		bi_pad1;
 };
 
 #ifdef	__cplusplus
