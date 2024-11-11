@@ -24,13 +24,28 @@
  */
 
 #include <sys/promif.h>
+#include <sys/consdev.h>
 #include <sys/promimpl.h>
+#include <sys/archsystm.h>
 #include <sys/reboot.h>
 #include <sys/kdi_machimpl.h>
+
+/*
+ * The aarch64 cpu may not have an underlying monitor.
+ * So, we do the best we can.....
+ */
+extern void prom_poll_enter(void);
+
+extern cons_polledio_t *cons_polledio;
 
 void
 prom_exit_to_mon(void)
 {
+
+#if !defined(_KMDB) && 0
+	prom_poll_enter();
+#endif
+
 #if !defined(_KMDB)
 	if (boothowto & RB_DEBUG)
 		kmdb_enter();
@@ -38,3 +53,16 @@ prom_exit_to_mon(void)
 	prom_reboot_prompt();
 	prom_reboot(NULL);
 }
+
+#if !defined(_KMDB) && 0
+void
+prom_poll_enter(void)
+{
+	if (cons_polledio != NULL) {
+		if (cons_polledio->cons_polledio_enter != NULL) {
+			cons_polledio->cons_polledio_enter(
+			    cons_polledio->cons_polledio_argument);
+		}
+	}
+}
+#endif

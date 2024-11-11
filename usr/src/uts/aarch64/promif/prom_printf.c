@@ -24,8 +24,6 @@
  * Use is subject to license terms.
  */
 
-
-#include <sys/controlregs.h>
 #include <sys/promif.h>
 #include <sys/promimpl.h>
 #include <sys/varargs.h>
@@ -51,6 +49,7 @@ _sput(char c, char **p)
 	*p += 1;
 }
 
+/*VARARGS1*/
 void
 prom_printf(const char *fmt, ...)
 {

@@ -28,13 +28,13 @@
 #include <sys/archsystm.h>
 #include <sys/reboot.h>
 #include <sys/kdi.h>
-
-extern void kmdb_enter(void);
+#include <sys/kdi_machimpl.h>
 
 /*
  * AArch64 systems do not necessarily have an underlying monitor.
  * So, we emulate the best we can...
  */
+
 void
 prom_enter_mon(void)
 {

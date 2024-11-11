@@ -39,8 +39,10 @@
 void
 prom_panic(char *s)
 {
+#if defined(_KERNEL) && !defined(_KMDB)
 	ulong_t off;
 	char *sym;
+#endif
 	const char fmt[] = "%s: prom_panic: %s\n";
 
 	if (s == NULL)
@@ -56,6 +58,7 @@ prom_panic(char *s)
 #error	"configuration error"
 #endif
 
+#if defined(_KERNEL) && !defined(_KMDB)
 	prom_printf("Call Stack\n");
 	struct frame *fp = (struct frame *)__builtin_frame_address(0);
 
@@ -74,6 +77,7 @@ prom_panic(char *s)
 		}
 		fp = (struct frame *)fp->fr_savfp;
 	}
+#endif
 
 	prom_reboot_prompt();
 	prom_reboot(NULL);
