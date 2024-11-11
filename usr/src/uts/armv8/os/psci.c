@@ -52,7 +52,7 @@ static uint32_t psci_set_suspend_mode_id = 0x8400000f;
 static uint32_t psci_stat_residency_id = 0xc4000010;
 static uint32_t psci_stat_count_id = 0xc4000011;
 
-static boolean_t psci_initialized = B_FALSE;
+boolean_t psci_initialized = B_FALSE;
 static boolean_t pcsi_method_is_hvc = B_FALSE;
 
 static inline uint64_t

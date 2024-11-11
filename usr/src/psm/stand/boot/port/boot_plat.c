@@ -42,6 +42,7 @@
 #include <sys/boot_policy.h>
 #include <sys/boot_redirect.h>
 #include <sys/bootconf.h>
+#include <sys/bootinfo.h>
 #include <sys/boot.h>
 #include <util/getoptstr.h>
 #include "boot_plat.h"
@@ -75,6 +76,7 @@ int pagesize = PAGESIZE;
 char filename[MAXPATHLEN];
 int boothowto = 0;
 int verbosemode = 0;
+struct xboot_info xboot_info;
 struct memlist *pfreelistp;
 struct memlist *pscratchlistp;
 struct memlist *pinstalledp;

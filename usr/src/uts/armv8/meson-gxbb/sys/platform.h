@@ -32,8 +32,6 @@ extern "C" {
 
 #include <sys/machparam.h>
 
-#define	UART_PHYS	0xc81004c0
-
 #define	PERIPHERAL0_PHYS	0xc0000000
 #define	PERIPHERAL0_SIZE	0x20000000
 

@@ -23,8 +23,10 @@
  */
 
 #include <sys/platform.h>
+#include <sys/bootinfo.h>
 #include "prom_dev.h"
 
+#define	UART_PHYS	0x09000000
 #define UART_ADDR	UART_PHYS
 
 #define UARTDR		(*(volatile uint32_t *)(UART_ADDR + 0x00))
@@ -67,6 +69,8 @@
 #define UARTLCR_H_EPS       (1 << 2)
 #define UARTLCR_H_PEN       (1 << 1)
 #define UARTLCR_H_BRK       (1 << 0)
+
+extern struct xboot_info xboot_info;
 
 static void initialize()
 {
@@ -143,4 +147,7 @@ void init_console(void)
 {
 	prom_register(&stdout_dev);
 	prom_register(&stdin_dev);
+	xboot_info.bi_bsvc_uart_mmio_base = UART_PHYS;
+	xboot_info.bi_bsvc_uart_type = XBI_BSVC_UART_SBSA;
+	initialize();
 }

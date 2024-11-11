@@ -66,6 +66,8 @@
 #include <libfdt.h>
 #include <sys/boot_console.h>
 
+extern void bsvc_init(struct xboot_info *);
+
 static void bmemlist_init(struct xboot_info *);
 static void bmemlist_insert(struct memlist **, uint64_t, uint64_t);
 static void bmemlist_remove(struct memlist **, uint64_t, uint64_t);
@@ -279,8 +281,8 @@ map_phys(bootops_t *bop, pte_t pte_attr, caddr_t vaddr, uint64_t paddr)
  *
  * Once we have a framebuffer this must be removed.
  */
-static
-void boot_fb_shadow_init(void * ops __unused)
+static void
+boot_fb_shadow_init(void * ops __unused)
 {
 	/* just a stub */
 }
@@ -288,6 +290,8 @@ void boot_fb_shadow_init(void * ops __unused)
 void
 bop_init(struct xboot_info *xbp)
 {
+	bsvc_init(xbp);
+
 	bootops = &bootop;
 	xbootp = xbp;
 

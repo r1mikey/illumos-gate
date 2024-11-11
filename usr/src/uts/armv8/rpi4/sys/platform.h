@@ -33,9 +33,6 @@ extern "C" {
 #include <sys/machparam.h>
 
 // Low Peripheral mode
-#define	UART_PHYS	(0xfc000000ul + 0x02000000 + 0x00201000)
-
-// Low Peripheral mode
 #define	PERIPHERAL0_PHYS	0xfc000000ul
 #define	PERIPHERAL0_SIZE	0x04000000ul
 #define	PERIPHERAL1_PHYS	0x600000000ul

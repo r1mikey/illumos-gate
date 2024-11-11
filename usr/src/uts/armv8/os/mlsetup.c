@@ -72,6 +72,8 @@
 #include <sys/controlregs.h>
 #include <sys/arch_timer.h>
 
+extern void bsvc_init(struct xboot_info *);
+
 /*
  * called immediately from _start to stitch the
  * primary modules together
@@ -86,7 +88,6 @@ kobj_start(struct xboot_info *xbp)
 	int i;
 	extern int moddebug;
 
-	psci_init(xbp);
 	bop_init(xbp);
 	for (i = 0; i < BA_NUM; i++)
 		bootaux[i].ba_val = 0;
