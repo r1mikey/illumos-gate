@@ -42,8 +42,7 @@ typedef enum {
 	XBI_BSVC_UART_PL011	= 0x0003,
 	XBI_BSVC_UART_SBSA2X	= 0x000d,
 	XBI_BSVC_UART_SBSA	= 0x000e,
-	XBI_BSVC_UART_BCM2835	= 0x0010,
-	XBI_BSVC_UART_GXBB	= 0xffff	/* this is made up */
+	XBI_BSVC_UART_BCM2835	= 0x0010
 } xbi_bsvc_uart_type_t;
 
 /* BEGIN CSTYLED */

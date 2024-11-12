@@ -27,7 +27,6 @@
 include ../../../../Makefile.master
 
 SUBDIRS=		\
-	meson-gxbb	\
 	rpi4		\
 	virt
 
