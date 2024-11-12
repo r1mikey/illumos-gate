@@ -29,13 +29,6 @@
 #define	SBSA_UARTFR_TXFF		(1 << 5)
 #define	SBSA_UARTFR_RXFE		(1 << 4)
 
-#define	GXBB_UART_WFIFO			0x00
-#define	GXBB_UART_RFIFO			0x04
-#define	GXBB_UART_STATUS		0x0C
-#define	GXBB_UART_STATUS_RFIFO_EMPTY	(1u << 20)
-#define	GXBB_UART_STATUS_TFIFO_FULL	(1u << 21)
-#define	GXBB_UART_STATUS_TFIFO_EMPTY	(1u << 22)
-
 static caddr_t _bsvc_uart_mmio_base = 0x0;
 extern boolean_t psci_initialized;
 
@@ -152,40 +145,6 @@ bsvc_putchar_sbsa(int c)
 }
 
 /*
- * Meson GXBB implementation.
- */
-static int
-bsvc_ischar_gxbb(void)
-{
-	return (!(bsvc_uart_readreg32(GXBB_UART_STATUS) &
-	    GXBB_UART_STATUS_RFIFO_EMPTY));
-}
-
-static int
-bsvc_getchar_gxbb(void)
-{
-	while (!bsvc_ischar_gxbb())
-		bsvc_yield();
-	return (bsvc_uart_readreg32(GXBB_UART_RFIFO) & 0xff);
-}
-
-static void
-bsvc_putchar_gxbb(int c)
-{
-	while (bsvc_uart_readreg32(GXBB_UART_STATUS) &
-	    GXBB_UART_STATUS_TFIFO_FULL)
-		bsvc_yield();
-
-	if ((c & 0xff) == '\n')
-		bsvc_putchar_gxbb('\r');
-
-	bsvc_uart_writereg32(GXBB_UART_WFIFO, c & 0xff);
-	while (!(bsvc_uart_readreg32(GXBB_UART_STATUS) &
-	    GXBB_UART_STATUS_TFIFO_EMPTY))
-		bsvc_yield();
-}
-
-/*
  * Boot services initialisation
  */
 void
@@ -208,11 +167,6 @@ bsvc_init(struct xboot_info *xbp)
 		_sysp.bsvc_getchar = bsvc_getchar_sbsa;
 		_sysp.bsvc_putchar = bsvc_putchar_sbsa;
 		_sysp.bsvc_ischar = bsvc_ischar_sbsa;
-		break;
-	case XBI_BSVC_UART_GXBB:
-		_sysp.bsvc_getchar = bsvc_getchar_gxbb;
-		_sysp.bsvc_putchar = bsvc_putchar_gxbb;
-		_sysp.bsvc_ischar = bsvc_ischar_gxbb;
 		break;
 	default:
 		break;
