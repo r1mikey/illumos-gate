@@ -15,9 +15,7 @@ ROOT_PLAT_DRV_DIRS	= $(ROOT_VIRT_DRV_DIR)
 #
 # Define modules
 #
-VIRT_KMODS	=	\
-	todpl031	\
-	virtio
+VIRT_KMODS	=	todpl031
 
 include $(UTSBASE)/armv8/virt/Makefile.files
 

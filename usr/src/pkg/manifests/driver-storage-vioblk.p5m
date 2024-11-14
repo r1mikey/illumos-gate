@@ -21,6 +21,7 @@
 
 #
 # Copyright 2012 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2024 Michael van der Westhuizen
 #
 
 #
@@ -38,10 +39,11 @@ dir  path=kernel group=sys
 dir  path=kernel/drv group=sys
 dir  path=kernel/drv/$(ARCH64) group=sys
 file path=kernel/drv/$(ARCH64)/vioblk group=sys
+file path=kernel/drv/vioblk.conf group=sys
 dir  path=usr/share/man
 dir  path=usr/share/man/man4d
 file path=usr/share/man/man4d/vioblk.4d
 driver name=vioblk perms="* 0666 root sys" clone_perms="vioblk 0666 root sys" \
     alias=pci1af4,1001 \
-    alias=virtio-blk
+    alias=virtio-mmio,1,blk
 license lic_CDDL license=lic_CDDL

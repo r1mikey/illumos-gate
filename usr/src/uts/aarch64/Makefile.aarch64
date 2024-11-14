@@ -28,6 +28,7 @@
 # Copyright 2019 RackTop Systems
 # Copyright 2019 Peter Tribble.
 # Copyright 2021 Oxide Computer Company
+# Copyright 2024 Michael van der Westhuizen
 #
 
 #
@@ -393,6 +394,7 @@ DRV_KMODS	+= vr
 DRV_KMODS	+= virtio
 DRV_KMODS	+= vioblk
 DRV_KMODS	+= vioif
+DRV_KMODS	+= viommionex
 DRV_KMODS	+= vio9p
 DRV_KMODS	+= viorand
 

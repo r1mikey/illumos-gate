@@ -12,6 +12,7 @@
 /*
  * Copyright 2019 Joyent, Inc.
  * Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2024 Michael van der Westhuizen
  */
 
 /* PCI-based VIRTIO */
@@ -24,12 +25,34 @@
 #include "virtio.h"
 #include "virtio_impl.h"
 
+static void virtio_pci_set_status_locked(virtio_t *, uint8_t);
+static void virtio_pci_set_status(virtio_t *, uint8_t);
+static void virtio_pci_device_reset_locked(virtio_t *);
+static virtio_queue_t *virtio_pci_queue_alloc(virtio_t *, uint16_t,
+    const char *, ddi_intr_handler_t *, void *, boolean_t, uint_t);
+static void virtio_pci_queue_free(virtio_queue_t *);
+static void virtio_pci_queue_flush_locked(virtio_queue_t *);
+static uint_t virtio_pci_shared_isr(caddr_t, caddr_t);
+static void virtio_pci_interrupts_unwind(virtio_t *);
+
+static virtio_implfuncs_t virtio_pci_implfuncs = {
+	.vi_set_status_locked	= virtio_pci_set_status_locked,
+	.vi_set_status		= virtio_pci_set_status,
+	.vi_device_reset_locked	= virtio_pci_device_reset_locked,
+	.vi_queue_alloc		= virtio_pci_queue_alloc,
+	.vi_queue_free		= virtio_pci_queue_free,
+	.vi_queue_flush_locked	= virtio_pci_queue_flush_locked,
+	.vi_shared_isr		= virtio_pci_shared_isr,
+	.vi_interrupts_unwind	= virtio_pci_interrupts_unwind
+};
+
 /*
  * Early device initialisation for legacy (pre-1.0 specification) virtio
  * devices.
  */
 virtio_t *
-virtio_init(dev_info_t *dip, uint64_t driver_features, boolean_t allow_indirect)
+virtio_pci_init(dev_info_t *dip, uint64_t driver_features,
+    boolean_t allow_indirect)
 {
 	int r;
 
@@ -63,6 +86,7 @@ virtio_init(dev_info_t *dip, uint64_t driver_features, boolean_t allow_indirect)
 
 	virtio_t *vio = kmem_zalloc(sizeof (*vio), KM_SLEEP);
 	vio->vio_dip = dip;
+	vio->vio_implfuncs = &virtio_pci_implfuncs;
 
 	/*
 	 * Map PCI BAR0 for legacy device access.
@@ -125,8 +149,8 @@ virtio_init(dev_info_t *dip, uint64_t driver_features, boolean_t allow_indirect)
  * guest readiness to the host.  Use the VIRTIO_CONFIG_DEVICE_STATUS_*
  * constants for "status".  To zero the status field use virtio_device_reset().
  */
-void
-virtio_set_status_locked(virtio_t *vio, uint8_t status)
+static void
+virtio_pci_set_status_locked(virtio_t *vio, uint8_t status)
 {
 	VERIFY3U(status, !=, 0);
 
@@ -136,23 +160,23 @@ virtio_set_status_locked(virtio_t *vio, uint8_t status)
 	virtio_put8(vio, VIRTIO_LEGACY_DEVICE_STATUS, status | old);
 }
 
-void
-virtio_set_status(virtio_t *vio, uint8_t status)
+static void
+virtio_pci_set_status(virtio_t *vio, uint8_t status)
 {
 	mutex_enter(&vio->vio_mutex);
 	virtio_set_status_locked(vio, status);
 	mutex_exit(&vio->vio_mutex);
 }
 
-void
-virtio_device_reset_locked(virtio_t *vio)
+static void
+virtio_pci_device_reset_locked(virtio_t *vio)
 {
 	VERIFY(MUTEX_HELD(&vio->vio_mutex));
 	virtio_put8(vio, VIRTIO_LEGACY_DEVICE_STATUS, VIRTIO_STATUS_RESET);
 }
 
-virtio_queue_t *
-virtio_queue_alloc(virtio_t *vio, uint16_t qidx, const char *name,
+static virtio_queue_t *
+virtio_pci_queue_alloc(virtio_t *vio, uint16_t qidx, const char *name,
     ddi_intr_handler_t *func, void *funcarg, boolean_t force_direct,
     uint_t max_segs)
 {
@@ -306,8 +330,8 @@ virtio_queue_alloc(virtio_t *vio, uint16_t qidx, const char *name,
 	return (viq);
 }
 
-void
-virtio_queue_free(virtio_queue_t *viq)
+static void
+virtio_pci_queue_free(virtio_queue_t *viq)
 {
 	virtio_t *vio = viq->viq_virtio;
 
@@ -342,8 +366,8 @@ virtio_queue_free(virtio_queue_t *viq)
 	kmem_free(viq, sizeof (*viq));
 }
 
-void
-virtio_queue_flush_locked(virtio_queue_t *viq)
+static void
+virtio_pci_queue_flush_locked(virtio_queue_t *viq)
 {
 	VERIFY(MUTEX_HELD(&viq->viq_mutex));
 
@@ -367,8 +391,8 @@ virtio_queue_flush_locked(virtio_queue_t *viq)
 	}
 }
 
-uint_t
-virtio_shared_isr(caddr_t arg0, caddr_t arg1)
+static uint_t
+virtio_pci_shared_isr(caddr_t arg0, caddr_t arg1)
 {
 	virtio_t *vio = (virtio_t *)arg0;
 	uint_t r = DDI_INTR_UNCLAIMED;
@@ -423,8 +447,8 @@ virtio_shared_isr(caddr_t arg0, caddr_t arg1)
 	return (r);
 }
 
-void
-virtio_interrupts_unwind(virtio_t *vio)
+static void
+virtio_pci_interrupts_unwind(virtio_t *vio)
 {
 	VERIFY(MUTEX_HELD(&vio->vio_mutex));
 

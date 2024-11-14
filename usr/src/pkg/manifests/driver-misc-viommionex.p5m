@@ -10,8 +10,6 @@
 #
 
 #
-# Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
-# Copyright 2022 RackTop Systems, Inc.
 # Copyright 2024 Michael van der Westhuizen
 #
 
@@ -21,19 +19,18 @@
 # information about overriding the defaults.
 #
 <include global_zone_only_component>
-set name=pkg.fmri value=pkg:/driver/storage/vioscsi@$(PKGVERS)
-set name=pkg.summary value="Virtio SCSI"
-set name=pkg.description value="Virtio SCSI driver"
-set name=info.classification value=org.opensolaris.category.2008:Drivers/Storage
-set name=org.illumos.for-arch value=i386
+set name=pkg.fmri value=pkg:/driver/misc/viommionex@$(PKGVERS)
+set name=pkg.summary value="VirtIO MMIO nexus driver"
+set name=pkg.description value="VirtIO MMIO nexus driver"
+set name=info.classification value=org.opensolaris.category.2008:System/Hardware
+set name=org.illumos.for-arch value=aarch64
 dir  path=kernel group=sys
 dir  path=kernel/drv group=sys
 dir  path=kernel/drv/$(ARCH64) group=sys
-file path=kernel/drv/$(ARCH64)/vioscsi group=sys
+file path=kernel/drv/$(ARCH64)/viommionex group=sys
+file path=kernel/drv/viommionex.conf group=sys
 dir  path=usr/share/man
 dir  path=usr/share/man/man4d
-file path=usr/share/man/man4d/vioscsi.4d
-driver name=vioscsi class=scsi-self-identifying \
-    alias=pci1af4,1004 \
-    alias=virtio-mmio,1,scsi
+file path=usr/share/man/man4d/viommionex.4d
+driver name=viommionex perms="* 0666 root sys" alias=virtio,mmio
 license lic_CDDL license=lic_CDDL
