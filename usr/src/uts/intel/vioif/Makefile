@@ -12,6 +12,7 @@
 #
 # Copyright 2013 Nexenta Inc.  All rights reserved.
 # Copyright 2019 Joyent, Inc.
+# Copyright 2024 Michael van der Westhuizen
 #
 
 #
@@ -25,6 +26,7 @@ UTSBASE =		../..
 MODULE =		vioif
 OBJECTS =		$(VIOIF_OBJS:%=$(OBJS_DIR)/%)
 ROOTMODULE =		$(ROOT_DRV_DIR)/$(MODULE)
+CONF_SRCDIR =		$(UTSBASE)/common/io/$(MODULE)
 
 #
 # Include common rules.
@@ -34,8 +36,8 @@ include $(UTSBASE)/intel/Makefile.intel
 #
 # Define targets
 #
-ALL_TARGET =		$(BINARY)
-INSTALL_TARGET =	$(BINARY) $(ROOTMODULE)
+ALL_TARGET =		$(BINARY) $(SRC_CONFFILE)
+INSTALL_TARGET =	$(BINARY) $(ROOTMODULE) $(ROOT_CONFFILE)
 
 #
 # Overrides

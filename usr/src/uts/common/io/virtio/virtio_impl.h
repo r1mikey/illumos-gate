@@ -12,6 +12,7 @@
 /*
  * Copyright 2019 Joyent, Inc.
  * Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2024 Michael van der Westhuizen
  */
 
 #ifndef _VIRTIO_IMPL_H
@@ -58,6 +59,10 @@ void virtio_put8(virtio_t *, uintptr_t, uint8_t);
 void virtio_put16(virtio_t *, uintptr_t, uint16_t);
 void virtio_put32(virtio_t *, uintptr_t, uint32_t);
 
+/* Backend-specific initialisation */
+virtio_t *virtio_pci_init(dev_info_t *, uint64_t, boolean_t);
+virtio_t *virtio_mmio_init(dev_info_t *, uint64_t, boolean_t);
+
 /* XXXARM: Defined in the backend-specific sources */
 virtio_t *virtio_init(dev_info_t *, uint64_t, boolean_t);
 void virtio_set_status(virtio_t *, uint8_t);
@@ -98,6 +103,19 @@ typedef enum virtio_initlevel {
 	VIRTIO_INITLEVEL_SHUTDOWN =	(1ULL << 5),
 } virtio_initlevel_t;
 
+typedef struct {
+	virtio_t	*(*vi_init)(dev_info_t *, uint64_t, boolean_t);
+	void		(*vi_set_status_locked)(virtio_t *, uint8_t);
+	void		(*vi_set_status)(virtio_t *, uint8_t);
+	void		(*vi_device_reset_locked)(virtio_t *);
+	virtio_queue_t	*(*vi_queue_alloc)(virtio_t *, uint16_t, const char *,
+	    ddi_intr_handler_t *, void *, boolean_t, uint_t);
+	void		(*vi_queue_free)(virtio_queue_t *);
+	void		(*vi_queue_flush_locked)(virtio_queue_t *);
+	uint_t		(*vi_shared_isr)(caddr_t, caddr_t);
+	void		(*vi_interrupts_unwind)(virtio_t *);
+} virtio_implfuncs_t;
+
 struct virtio {
 	dev_info_t			*vio_dip;
 
@@ -124,6 +142,8 @@ struct virtio {
 	void				*vio_cfgchange_handlerarg;
 	boolean_t			vio_cfgchange_handler_added;
 	uint_t				vio_cfgchange_handler_index;
+
+	virtio_implfuncs_t		*vio_implfuncs;
 };
 
 struct virtio_queue {
@@ -325,26 +345,33 @@ struct virtio_vq_device {
 
 #define	VIRTIO_LEGACY_MSI_NO_VECTOR	0xFFFF
 
+/*
+ * Property name indicating that we should use the MMIO mode of operation.
+ *
+ * This property simply needs to exist (it is treated as boolean).
+ */
+#define	VIRTIO_MMIO_PROPERTY_NAME	"virtio-is-mmio"
+
 /* Values used for the MMIO mode of operation */
-#define VIRTIO_MMIO_MAGIC_VALUE		0x000
-#define VIRTIO_MMIO_VERSION		0x004
-#define VIRTIO_MMIO_DEVICE_ID		0x008
-#define VIRTIO_MMIO_VENDOR_ID		0x00c
-#define VIRTIO_MMIO_HOST_FEATURES	0x010
-#define VIRTIO_MMIO_HOST_FEATURES_SEL	0x014
-#define VIRTIO_MMIO_GUEST_FEATURES	0x020
-#define VIRTIO_MMIO_GUEST_FEATURES_SEL	0x024
-#define VIRTIO_MMIO_GUEST_PAGE_SIZE	0x028
-#define VIRTIO_MMIO_QUEUE_SEL		0x030
-#define VIRTIO_MMIO_QUEUE_NUM_MAX	0x034
-#define VIRTIO_MMIO_QUEUE_NUM		0x038
-#define VIRTIO_MMIO_QUEUE_ALIGN		0x03c
-#define VIRTIO_MMIO_QUEUE_PFN		0x040
-#define VIRTIO_MMIO_QUEUE_NOTIFY	0x050
-#define VIRTIO_MMIO_INTERRUPT_STATUS	0x060
-#define VIRTIO_MMIO_INTERRUPT_ACK	0x064
-#define VIRTIO_MMIO_STATUS		0x070
-#define VIRTIO_MMIO_CONFIG		0x100
+#define	VIRTIO_MMIO_MAGIC_VALUE		0x000
+#define	VIRTIO_MMIO_VERSION		0x004
+#define	VIRTIO_MMIO_DEVICE_ID		0x008
+#define	VIRTIO_MMIO_VENDOR_ID		0x00c
+#define	VIRTIO_MMIO_HOST_FEATURES	0x010
+#define	VIRTIO_MMIO_HOST_FEATURES_SEL	0x014
+#define	VIRTIO_MMIO_GUEST_FEATURES	0x020
+#define	VIRTIO_MMIO_GUEST_FEATURES_SEL	0x024
+#define	VIRTIO_MMIO_GUEST_PAGE_SIZE	0x028
+#define	VIRTIO_MMIO_QUEUE_SEL		0x030
+#define	VIRTIO_MMIO_QUEUE_NUM_MAX	0x034
+#define	VIRTIO_MMIO_QUEUE_NUM		0x038
+#define	VIRTIO_MMIO_QUEUE_ALIGN		0x03c
+#define	VIRTIO_MMIO_QUEUE_PFN		0x040
+#define	VIRTIO_MMIO_QUEUE_NOTIFY	0x050
+#define	VIRTIO_MMIO_INTERRUPT_STATUS	0x060
+#define	VIRTIO_MMIO_INTERRUPT_ACK	0x064
+#define	VIRTIO_MMIO_STATUS		0x070
+#define	VIRTIO_MMIO_CONFIG		0x100
 
 /*
  * Bits in the Device Status byte (VIRTIO_LEGACY_DEVICE_STATUS):

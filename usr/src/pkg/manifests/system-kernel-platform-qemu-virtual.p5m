@@ -10,6 +10,7 @@
 #
 
 # Copyright 2022, Richard Lowe
+# Copyright 2024 Michael van der Westhuizen
 
 <include global_zone_only_component>
 set name=pkg.fmri value=pkg:/system/kernel/platform/qemu-virtual@$(PKGVERS)
@@ -22,9 +23,6 @@ dir  path=platform/QEMU,virt/kernel
 dir  path=platform/QEMU,virt/kernel/aarch64
 file path=platform/QEMU,virt/kernel/aarch64/unix mode=0755 \
     pkg.depend.bypass-generate=dtracestubs
-dir  path=platform/QEMU,virt/kernel/misc
-dir  path=platform/QEMU,virt/kernel/misc/aarch64
-file path=platform/QEMU,virt/kernel/misc/aarch64/virtio mode=0755
 dir  path=platform/QEMU,virt/kernel/tod
 dir  path=platform/QEMU,virt/kernel/tod/aarch64
 file path=platform/QEMU,virt/kernel/tod/aarch64/todpl031 mode=0755

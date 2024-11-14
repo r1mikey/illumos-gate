@@ -1,0 +1,71 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2024 Michael van der Westhuizen
+.\"
+.Dd November 12, 2024
+.Dt VIOMMIONEX 4D
+.Os
+.Sh NAME
+.Nm viommionex
+.Nd Virtio MMIO Nexus Driver
+.Sh DESCRIPTION
+The
+.Nm
+driver is simple nexus driver implementing bus probing for virtio devices
+attached via an MMIO transport.
+The nexus supports what the specification calls the more commonly found
+.Sq legacy
+interface for devices.
+.Sh CONFIGURATION
+Configuration of VirtIO MMIO nexi is performed automatically by the
+system using information from the firmware tables (ACPI or devicetree).
+Configuration includes allocation of device memory and interrupts (where
+specified).
+The
+.Xr driver.conf 5
+file for
+.Nm
+maps VirtIO device identifiers to the information used to create child
+nodes.
+For each device identifier there are two properties in the configuration
+file, providing the name and compatible string of the child node.
+These properties are constructed using the
+device identifier, are strings, and are named
+.Sq device-%u-name
+and
+.Sq device-%u-compat .
+The
+.Nm
+driver unconditionally sets the
+.Sq virtio-is-mmio
+property, instructing the
+.Sq virtio
+framework to use the MMIO transport for both the nexus and any children.
+.Sh ARCHITECTURE
+The
+.Nm
+driver is supported on
+.Sy aarch64 .
+.Sh FILES
+.Bl -tag -width Pa
+.It Pa /kernel/drv/viommionex.conf
+nexus configuration file.
+.It Pa /kernel/drv/aarch64/viommionex
+aarch64 nexus driver.
+.El
+.Sh SEE ALSO
+.Xr virtio 4D
+.Rs
+.%T Virtual I/O Device (VIRTIO) Version 1.1
+.%D April, 2019
+.%U https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.html
+.Re

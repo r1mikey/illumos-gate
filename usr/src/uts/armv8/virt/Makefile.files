@@ -21,9 +21,9 @@
 
 #
 # Copyright 2017 Hayashi Naoyuki
+# Copyright 2024 Michael van der Westhuizen
 #
 
-PLATVIRTIO_OBJS += virtio_main.o virtio_dma.o virtio_mmio.o
 TODPL031_OBJS += todpl031.o
 
 # XXXARM: I might be mis-using this.  These are what would be the platmod, if

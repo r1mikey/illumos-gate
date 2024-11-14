@@ -16,6 +16,7 @@
 #
 # Copyright (c) 2013, Nexenta Systems Inc. All rights reserved.
 # Copyright 2022 MNX Cloud, Inc.
+# Copyright 2024 Michael van der Westhuizen
 #
 
 #
@@ -34,13 +35,14 @@ dir  path=kernel group=sys
 dir  path=kernel/drv group=sys
 dir  path=kernel/drv/$(ARCH64) group=sys
 file path=kernel/drv/$(ARCH64)/vioif group=sys
+file path=kernel/drv/vioif.conf group=sys
 dir  path=usr/share/man
 dir  path=usr/share/man/man4d
 file path=usr/share/man/man4d/vioif.4d
 driver name=vioif perms="* 0666 root sys" \
     alias=pci1af4,1 \
     alias=pci1af4,1000,p \
-    alias=virtio-net
+    alias=virtio-mmio,1,net
 legacy pkg=SUNWvioif desc="VirtIO network driver" name="VirtIO network driver"
 license cr_Sun license=cr_Sun
 license lic_CDDL license=lic_CDDL

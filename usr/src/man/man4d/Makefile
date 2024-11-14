@@ -274,6 +274,7 @@ aarch64_MANFILES=	ahci.4d		\
 			vio9p.4d	\
 			vioblk.4d	\
 			vioif.4d	\
+			viommionex.4d	\
 			virtio.4d	\
 			wpi.4d		\
 			xhci.4d		\

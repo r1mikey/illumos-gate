@@ -12,6 +12,7 @@
 /*
  * Copyright 2019 Joyent, Inc.
  * Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2024 Michael van der Westhuizen
  */
 
 /*
@@ -31,7 +32,6 @@
 #include <sys/sunndi.h>
 #include <sys/avintr.h>
 #include <sys/spl.h>
-#include <sys/promif.h>
 #include <sys/list.h>
 #include <sys/bootconf.h>
 #include <sys/bootsvcs.h>
@@ -170,6 +170,16 @@ virtio_put32(virtio_t *vio, uintptr_t offset, uint32_t value)
 	ddi_put32(vio->vio_barh, (uint32_t *)(vio->vio_bar + offset), value);
 }
 
+virtio_t *
+virtio_init(dev_info_t *dip, uint64_t driver_features, boolean_t allow_indirect)
+{
+	if (ddi_prop_exists(DDI_DEV_T_ANY, dip, 0,
+	    VIRTIO_MMIO_PROPERTY_NAME) == 1)
+		return (virtio_mmio_init(dip, driver_features, allow_indirect));
+
+	return (virtio_pci_init(dip, driver_features, allow_indirect));
+}
+
 void
 virtio_fini(virtio_t *vio, boolean_t failed)
 {
@@ -217,6 +227,20 @@ virtio_fini(virtio_t *vio, boolean_t failed)
 	mutex_destroy(&vio->vio_mutex);
 
 	kmem_free(vio, sizeof (*vio));
+}
+
+void
+virtio_set_status_locked(virtio_t *vio, uint8_t status)
+{
+	ASSERT(vio->vio_implfuncs);
+	vio->vio_implfuncs->vi_set_status_locked(vio, status);
+}
+
+void
+virtio_set_status(virtio_t *vio, uint8_t status)
+{
+	ASSERT(vio->vio_implfuncs);
+	vio->vio_implfuncs->vi_set_status(vio, status);
 }
 
 /*
@@ -294,11 +318,43 @@ virtio_intr_pri(virtio_t *vio)
 }
 
 void
+virtio_device_reset_locked(virtio_t *vio)
+{
+	ASSERT(vio->vio_implfuncs);
+	vio->vio_implfuncs->vi_device_reset_locked(vio);
+}
+
+void
 virtio_device_reset(virtio_t *vio)
 {
 	mutex_enter(&vio->vio_mutex);
 	virtio_device_reset_locked(vio);
 	mutex_exit(&vio->vio_mutex);
+}
+
+virtio_queue_t *
+virtio_queue_alloc(virtio_t *vio, uint16_t qidx, const char *name,
+    ddi_intr_handler_t *func, void *funcarg, boolean_t force_direct,
+    uint_t max_segs)
+{
+	ASSERT(vio->vio_implfuncs);
+	return (vio->vio_implfuncs->vi_queue_alloc(vio, qidx, name,
+	    func, funcarg, force_direct, max_segs));
+}
+
+void
+virtio_queue_free(virtio_queue_t *viq)
+{
+	virtio_t	*vio;
+
+	if (viq == NULL)
+		return;
+
+	ASSERT(viq->viq_virtio);
+	vio = viq->viq_virtio;
+	ASSERT(vio->vio_implfuncs);
+
+	vio->vio_implfuncs->vi_queue_free(viq);
 }
 
 /*
@@ -888,6 +944,21 @@ virtio_chain_append(virtio_chain_t *vic, uint64_t pa, size_t len,
 }
 
 void
+virtio_queue_flush_locked(virtio_queue_t *viq)
+{
+	virtio_t	*vio;
+
+	if (viq == NULL)
+		return;
+
+	ASSERT(viq->viq_virtio);
+	vio = viq->viq_virtio;
+	ASSERT(vio->vio_implfuncs);
+
+	vio->vio_implfuncs->vi_queue_flush_locked(viq);
+}
+
+void
 virtio_queue_flush(virtio_queue_t *viq)
 {
 	mutex_enter(&viq->viq_mutex);
@@ -1180,6 +1251,22 @@ fail:
 	virtio_interrupts_teardown(vio);
 	mutex_exit(&vio->vio_mutex);
 	return (DDI_FAILURE);
+}
+
+uint_t
+virtio_shared_isr(caddr_t arg0, caddr_t arg1)
+{
+	virtio_t *vio = (virtio_t *)arg0;
+	ASSERT(arg0);
+	ASSERT(vio->vio_implfuncs);
+	return (vio->vio_implfuncs->vi_shared_isr(arg0, arg1));
+}
+
+void
+virtio_interrupts_unwind(virtio_t *vio)
+{
+	ASSERT(vio->vio_implfuncs);
+	vio->vio_implfuncs->vi_interrupts_unwind(vio);
 }
 
 static void

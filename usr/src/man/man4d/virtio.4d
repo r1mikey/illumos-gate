@@ -10,6 +10,7 @@
 .\"
 .\"
 .\" Copyright 2020 Oxide Computer Company
+.\" Copyright 2024 Michael van der Westhuizen
 .\"
 .Dd June 14, 2022
 .Dt VIRTIO 4D
@@ -30,16 +31,21 @@ inside of virtqueues.
 .Sh ARCHITECTURE
 The
 .Nm
-driver is only supported on
-.Sy x86 .
+driver is supported on
+.Sy x86
+and
+.Sy aarch64 .
 .Sh FILES
 .Bl -tag -width Pa
 .It Pa /kernel/drv/amd64/virtio
 x86 device driver.
+.It Pa /kernel/drv/aarch64/virtio
+aarch64 device driver.
 .El
 .Sh SEE ALSO
 .Xr vioblk 4D ,
 .Xr vioif 4D ,
+.Xr viommionex 4D ,
 .Xr vioscsi 4D
 .Rs
 .%T Virtual I/O Device (VIRTIO) Version 1.1

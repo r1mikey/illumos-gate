@@ -10,8 +10,6 @@
 #
 
 #
-# Copyright 2012 Nexenta Systems, Inc. All rights reserved.
-# Copyright 2019 Joyent, Inc.
 # Copyright 2024 Michael van der Westhuizen
 #
 
@@ -23,15 +21,15 @@ UTSBASE =		../..
 #
 # Define the module and object file sets.
 #
-MODULE =		vioblk
-OBJECTS =		$(VIOBLK_OBJS:%=$(OBJS_DIR)/%)
+MODULE =		viommionex
+OBJECTS =		$(VIOMMIONEX_OBJS:%=$(OBJS_DIR)/%)
 ROOTMODULE =		$(ROOT_DRV_DIR)/$(MODULE)
 CONF_SRCDIR =		$(UTSBASE)/common/io/$(MODULE)
 
 #
 # Include common rules.
 #
-include $(UTSBASE)/intel/Makefile.intel
+include $(UTSBASE)/aarch64/Makefile.aarch64
 
 #
 # Define targets
@@ -45,9 +43,9 @@ INSTALL_TARGET =	$(BINARY) $(ROOTMODULE) $(ROOT_CONFFILE)
 INC_PATH +=		-I$(UTSBASE)/common/io/virtio
 
 #
-# Driver depends on virtio and blkdev
+# Driver depends on virtio
 #
-LDFLAGS +=		-N misc/virtio -N drv/blkdev
+LDFLAGS +=		-N misc/virtio
 
 #
 # Default build targets.
@@ -67,4 +65,4 @@ install: $(INSTALL_DEPS)
 #
 # Include common targets.
 #
-include $(UTSBASE)/intel/Makefile.targ
+include $(UTSBASE)/aarch64/Makefile.targ

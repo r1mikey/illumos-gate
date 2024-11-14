@@ -15,6 +15,7 @@
 
 #
 # Copyright 2022 Oxide Computer Company
+# Copyright 2024 Michael van der Westhuizen
 #
 
 #
@@ -35,5 +36,7 @@ file path=usr/include/sys/vio9p.h
 dir  path=usr/share/man
 dir  path=usr/share/man/man4d
 file path=usr/share/man/man4d/vio9p.4d
-driver name=vio9p perms="* 0600 root root" alias=pci1af4,9
+driver name=vio9p perms="* 0600 root root" \
+    alias=pci1af4,9 \
+    alias=virtio-mmio,1,9p
 license lic_CDDL license=lic_CDDL
