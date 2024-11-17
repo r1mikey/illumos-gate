@@ -101,7 +101,7 @@ kobj_start(struct xboot_info *xbp)
  * before main() allows us to call it in a machine-independent fashion.
  */
 void
-mlsetup(struct regs *rp)
+mlsetup(struct regs *rp, struct xboot_info *xbp)
 {
 	extern char t0stack[];
 	extern struct classfuncs sys_classfuncs;
@@ -177,6 +177,7 @@ mlsetup(struct regs *rp)
 	/*
 	 * Select the system timer. Use the phys timer only if EL2.
 	 */
+	arch_timer_set_fw_freq(xbp->bi_arch_timer_freq);
 	arch_timer_select((CPU->cpu_m.mcpu_boot_el == 2) ? TMR_PHYS : TMR_VIRT);
 
 	/*

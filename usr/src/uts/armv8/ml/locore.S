@@ -21,6 +21,7 @@
  */
 /*
  * Copyright 2017 Hayashi Naoyuki
+ * Copyright 2024 Michael van der Westhuizen
  */
 
 #include <sys/asm_linkage.h>
@@ -50,7 +51,9 @@ t0:
 	mov	x29, x1
 	mov	sp, x1
 
+	stp	x0, xzr, [sp, #-0x10]!
 	bl	kobj_start
+	ldp	x1, xzr, [sp], #0x10
 	mov	x0, sp
 	bl	mlsetup
 	bl	main

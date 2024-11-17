@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2023 Brian McKenzie
+ * Copyright 2024 Michael van der Westhuizen
  */
 
 /*
@@ -40,6 +41,7 @@ extern void arch_timer_disable(void);
 extern void arch_timer_set_cval(uint64_t cval);
 extern uint64_t arch_timer_freq(void);
 extern uint64_t arch_timer_count(void);
+extern void arch_timer_set_fw_freq(uint64_t freq);
 extern void arch_timer_select(arch_timer_t type);
 extern void arch_timer_udelay(uint32_t us);
 

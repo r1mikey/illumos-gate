@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2023 Brian McKenzie
+ * Copyright 2024 Michael van der Westhuizen
  */
 
 /*
@@ -18,7 +19,6 @@
  */
 
 #include <sys/types.h>
-#include <sys/promif.h>
 #include <sys/cmn_err.h>
 #include <sys/controlregs.h>
 #include <sys/arch_timer.h>
@@ -100,41 +100,10 @@ arch_timer_set_cval(uint64_t cval)
 	ops->write_cnt_cval(cval);
 }
 
-static void
-arch_timer_find_node(pnode_t node, void *arg)
-{
-	if (!prom_is_compatible(node, "arm,armv8-timer"))
-		return;
-
-	*(pnode_t *)arg = node;
-}
-
-static uint64_t
-arch_timer_find_clock_freq(void)
-{
-	pnode_t node;
-	uint64_t freq = 0;
-
-	prom_walk(arch_timer_find_node, &node);
-
-	if (node > 0)
-		freq = prom_get_prop_int(node, "clock-frequency", 0);
-
-	return (freq);
-}
-
 uint64_t
 arch_timer_freq(void)
 {
 	if (timer_freq)
-		return (timer_freq);
-
-	/*
-	 * Attempt to get the clock frequency from the device tree before
-	 * falling back to cntfrq_el0. This is a workaround for systems where
-	 * the the firmware either misconfigures or never sets cntfrq_el0.
-	 */
-	if ((timer_freq = arch_timer_find_clock_freq()) > 0)
 		return (timer_freq);
 
 	if ((timer_freq = read_cntfrq()) > 0)
@@ -151,6 +120,12 @@ uint64_t
 arch_timer_count(void)
 {
 	return (ops->read_cnt_ct());
+}
+
+void
+arch_timer_set_fw_freq(uint64_t freq)
+{
+	timer_freq = freq;
 }
 
 void
