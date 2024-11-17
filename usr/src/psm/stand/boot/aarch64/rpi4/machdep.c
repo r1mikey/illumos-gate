@@ -171,6 +171,7 @@ exitto(int (*entrypoint)())
 
 	char *str;
 
+	xboot_info.bi_arch_timer_freq = arch_timer_freq();
 	xboot_info.bi_phys_avail = (uint64_t)pfreelistp;
 	xboot_info.bi_phys_installed = (uint64_t)pinstalledp;
 	xboot_info.bi_boot_scratch = (uint64_t)pscratchlistp;
