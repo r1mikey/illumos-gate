@@ -295,7 +295,7 @@ bop_init(struct xboot_info *xbp)
 	bootops = &bootop;
 	xbootp = xbp;
 
-	prom_init("kernel", (void *)xbp->bi_fdt);
+	prom_init("kernel", xbp);
 	bmemlist_init(xbp);
 
 	/*

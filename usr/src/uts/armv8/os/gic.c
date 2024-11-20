@@ -347,12 +347,12 @@ get_gic_version_acpi(void)
 static int
 get_gic_version_fdt(void)
 {
-	if (prom_has_compatible("arm,gic-400") ||
-	    prom_has_compatible("arm,cortex-a15-gic")) {
+	if (prom_fdt_has_compatible("arm,gic-400") ||
+	    prom_fdt_has_compatible("arm,cortex-a15-gic")) {
 		return (2);
 	}
 
-	if (prom_has_compatible("arm,gic-v3")) {
+	if (prom_fdt_has_compatible("arm,gic-v3")) {
 		return (3);
 	}
 

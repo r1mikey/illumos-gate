@@ -56,7 +56,7 @@ static phandle_t get_phandle(int offset)
 }
 
 pnode_t
-prom_findnode_by_phandle(phandle_t phandle)
+prom_fdt_findnode_by_phandle(phandle_t phandle)
 {
 	int offset = fdt_node_offset_by_phandle(fdtp, phandle);
 	if (offset < 0)
@@ -231,7 +231,7 @@ prom_chosennode(void)
 }
 
 char *
-prom_nextprop(pnode_t nodeid, const char *name, char *next)
+prom_nextprop(pnode_t nodeid, caddr_t name, char *next)
 {
 	int offset = fdt_node_offset_by_phandle(fdtp, (pnode_t)nodeid);
 	if (offset < 0)
@@ -321,7 +321,7 @@ prom_childnode(pnode_t nodeid)
 }
 
 pnode_t
-prom_parentnode(pnode_t nodeid)
+prom_fdt_parentnode(pnode_t nodeid)
 {
 	int offset = fdt_node_offset_by_phandle(fdtp, (pnode_t)nodeid);
 	if (offset < 0)
@@ -352,7 +352,7 @@ prom_decode_composite_string(void *buf, size_t buflen, char *prev)
 }
 
 int
-prom_bounded_getprop(pnode_t nodeid, char *name, caddr_t value, int len)
+prom_bounded_getprop(pnode_t nodeid, const char *name, caddr_t value, int len)
 {
 	int prop_len = prom_getproplen(nodeid, name);
 	if (prop_len < 0 || len < prop_len) {
@@ -480,7 +480,7 @@ prom_walk_dev(pnode_t nodeid, void(*func)(pnode_t, void*), void *arg)
 }
 
 void
-prom_walk(void(*func)(pnode_t, void*), void *arg)
+prom_fdt_walk(void(*func)(pnode_t, void*), void *arg)
 {
 	prom_walk_dev(prom_rootnode(), func, arg);
 }

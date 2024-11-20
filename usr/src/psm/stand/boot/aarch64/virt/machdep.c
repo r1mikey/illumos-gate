@@ -116,15 +116,15 @@ add_iomap(pnode_t node, void *arg)
 {
 	int index;
 
-	if (!prom_is_compatible(node, (const char *)arg))
+	if (!prom_fdt_is_compatible(node, (const char *)arg))
 		return;
 
 	index = 0;
 	for (;;) {
 		uint64_t base;
 		uint64_t size;
-		if (prom_get_reg_address(node, index, &base) == 0 &&
-		    prom_get_reg_size(node, index, &size) == 0) {
+		if (prom_fdt_get_reg_address(node, index, &base) == 0 &&
+		    prom_fdt_get_reg_size(node, index, &size) == 0) {
 			uint64_t addr = rounddown(base, MMU_PAGESIZE);
 			uint64_t len =
 			    roundup(base + size, MMU_PAGESIZE) - addr;
@@ -143,11 +143,11 @@ add_iomap(pnode_t node, void *arg)
 static void
 fixup_virtio(pnode_t node, void *arg)
 {
-	if (!prom_is_compatible(node, "virtio,mmio"))
+	if (!prom_fdt_is_compatible(node, "virtio,mmio"))
 		return;
 
 	uint64_t reg;
-	if (prom_get_reg_address(node, 0, &reg) != 0)
+	if (prom_fdt_get_reg_address(node, 0, &reg) != 0)
 		return;
 
 	// check virt
@@ -228,9 +228,9 @@ init_physmem(void)
 void
 init_iolist(void)
 {
-	prom_walk(add_iomap, "arm,pl011");
-	prom_walk(add_iomap, "virtio,mmio");
-	prom_walk(fixup_virtio, NULL);
+	prom_fdt_walk(add_iomap, "arm,pl011");
+	prom_fdt_walk(add_iomap, "virtio,mmio");
+	prom_fdt_walk(fixup_virtio, NULL);
 }
 
 #define	MEMATTRS	(PTE_UXN | PTE_PXN | PTE_AF | PTE_SH_INNER |	\
@@ -241,7 +241,7 @@ init_iolist(void)
 void
 exitto(int (*entrypoint)())
 {
-	prom_walk(fixup_cpu, NULL);
+	prom_fdt_walk(fixup_cpu, NULL);
 	for (struct memlist *ml = plinearlistp; ml != NULL; ml = ml->ml_next) {
 		uintptr_t pa = ml->ml_address;
 		uintptr_t sz = ml->ml_size;
@@ -414,7 +414,7 @@ get_node_name(pnode_t nodeid)
 			strcpy(name, "@");
 			name += strlen(name);
 			uint64_t base;
-			prom_get_reg(nodeid, 0, &base);
+			prom_fdt_get_reg(nodeid, 0, &base);
 			sprintf(name, "%lx", base);
 		}
 	}
@@ -424,7 +424,7 @@ get_node_name(pnode_t nodeid)
 static void
 get_bootpath_cb(pnode_t node, void *arg)
 {
-	if (!prom_is_compatible(node, "virtio-net"))
+	if (!prom_fdt_is_compatible(node, "virtio-net"))
 		return;
 
 	char *path = (char *)arg;
@@ -434,7 +434,7 @@ get_bootpath_cb(pnode_t node, void *arg)
 		size_t namelen = strlen(name);
 		memmove(path + namelen, path, strlen(path) + 1);
 		memcpy(path, name, namelen);
-		node = prom_parentnode(node);
+		node = prom_fdt_parentnode(node);
 		if (node == prom_rootnode())
 			break;
 	}
@@ -445,7 +445,7 @@ get_default_bootpath(void)
 {
 	static char def_bootpath[80];
 
-	prom_walk(get_bootpath_cb, def_bootpath);
+	prom_fdt_walk(get_bootpath_cb, def_bootpath);
 	return (def_bootpath);
 }
 

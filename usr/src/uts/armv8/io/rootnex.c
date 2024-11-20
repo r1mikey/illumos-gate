@@ -729,7 +729,7 @@ get_address_cells(pnode_t node)
 			address_cells = ntohl(prop);
 			break;
 		}
-		node = prom_parentnode(node);
+		node = prom_fdt_parentnode(node);
 	}
 	return (address_cells);
 }
@@ -748,7 +748,7 @@ get_size_cells(pnode_t node)
 			size_cells = ntohl(prop);
 			break;
 		}
-		node = prom_parentnode(node);
+		node = prom_fdt_parentnode(node);
 	}
 	return (size_cells);
 }
@@ -1074,10 +1074,10 @@ get_interrupt_cells(pnode_t node)
 			ASSERT(len == sizeof (int));
 			int prop;
 			prom_getprop(node, "interrupt-parent", (caddr_t)&prop);
-			node = prom_findnode_by_phandle(ntohl(prop));
+			node = prom_fdt_findnode_by_phandle(ntohl(prop));
 			continue;
 		}
-		node = prom_parentnode(node);
+		node = prom_fdt_parentnode(node);
 	}
 	return (interrupt_cells);
 }

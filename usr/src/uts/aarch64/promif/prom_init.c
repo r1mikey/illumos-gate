@@ -27,15 +27,18 @@
 #ifndef _KMDB
 #include <sys/promif.h>
 #include <sys/promimpl.h>
-/* #include <sys/prom_emul.h> */
 #include <sys/bootconf.h>
 #include <sys/obpdefs.h>
 #include <sys/kmem.h>
 #include <libfdt.h>
+#include <sys/bootinfo.h>
+#include "prom_ops.h"
 
-extern int prom_propname_warn;
+extern void prom_init_fdt(void *cookie);
 
-struct fdt_header	*prom_fdtp;
+extern const prom_ops_t prom_gen_ops;
+const prom_ops_t *prom_ops = &prom_gen_ops;
+
 int	promif_debug = 0;	/* debug */
 int	emul_1275 = 0;
 #else
@@ -50,13 +53,17 @@ void
 prom_init(char *pgmname __maybe_unused, void *cookie __maybe_unused)
 {
 #ifndef _KMDB
-	int err;
-
-	if (cookie) {
-		err = fdt_check_header(cookie);
-		if (err == 0)
-			prom_fdtp = cookie;
+	struct xboot_info	*xbi = cookie;
+#if 0
+	if (xbi) {
+		if (xbi->bi_uefi_systab)
+			prom_init_uefi((void *)xbi->bi_uefi_systab);
+		else if (xbi->bi_fdt)
+			prom_init_fdt((void *)xbi->bi_fdt);
 	}
+#endif
+	if (xbi->bi_fdt)
+		prom_init_fdt((void *)xbi->bi_fdt);
 #endif
 }
 
@@ -71,9 +78,6 @@ prom_init(char *pgmname __maybe_unused, void *cookie __maybe_unused)
 void
 prom_setup()
 {
-	if (prom_propname_warn == -1)
-		prom_propname_warn = 1;
-
-	/* XXXARM: promif_create_device_tree(); */
+	prom_ops->po_setup();
 }
 #endif

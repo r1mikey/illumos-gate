@@ -263,7 +263,7 @@ genet_match(const char *name)
 	pnode_t node = prom_finddevice(name);
 	if (node <= 0)
 		return 0;
-	if (prom_is_compatible(node, "brcm,bcm2711-genet-v5"))
+	if (prom_fdt_is_compatible(node, "brcm,bcm2711-genet-v5"))
 		return 1;
 	return 0;
 }
@@ -289,7 +289,7 @@ get_phynode(pnode_t node)
 		return -1;
 	phandle_t phandle;
 	prom_getprop(node, "phy-handle", (caddr_t)&phandle);
-	return prom_findnode_by_phandle(ntohl(phandle));
+	return prom_fdt_findnode_by_phandle(ntohl(phandle));
 }
 
 static void
@@ -445,7 +445,7 @@ genet_open(const char *name)
 	pnode_t node = prom_finddevice(name);
 	if (node <= 0)
 		return -1;
-	if (!prom_is_compatible(node, "brcm,bcm2711-genet-v5"))
+	if (!prom_fdt_is_compatible(node, "brcm,bcm2711-genet-v5"))
 		return -1;
 
 	int fd;
@@ -461,7 +461,7 @@ genet_open(const char *name)
 	if (genet_get_macaddr(sc, node))
 		return -1;
 
-	if (prom_get_reg_address(node, 0, &sc->base) != 0)
+	if (prom_fdt_get_reg_address(node, 0, &sc->base) != 0)
 		return -1;
 
 	if (genet_alloc_buffer(sc))

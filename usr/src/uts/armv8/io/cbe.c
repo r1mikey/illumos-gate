@@ -316,10 +316,10 @@ get_interrupt_cells(pnode_t node)
 			ASSERT(len == sizeof (int));
 			int prop;
 			prom_getprop(node, "interrupt-parent", (caddr_t)&prop);
-			node = prom_findnode_by_phandle(ntohl(prop));
+			node = prom_fdt_findnode_by_phandle(ntohl(prop));
 			continue;
 		}
-		node = prom_parentnode(node);
+		node = prom_fdt_parentnode(node);
 	}
 
 	return (interrupt_cells);

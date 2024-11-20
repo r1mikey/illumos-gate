@@ -137,7 +137,7 @@ virtblk_match(const char *name)
 	pnode_t node = prom_finddevice(name);
 	if (node <= 0)
 		return 0;
-	if (!prom_is_compatible(node, "virtio-blk"))
+	if (!prom_fdt_is_compatible(node, "virtio-blk"))
 		return 0;
 	return 1;
 }
@@ -159,7 +159,7 @@ virtblk_open(const char *name)
 	memset(sc, 0, sizeof(struct virtblk_sc));
 
 	uint64_t base;
-	if (prom_get_reg_address(prom_finddevice(name), 0, &base) != 0)
+	if (prom_fdt_get_reg_address(prom_finddevice(name), 0, &base) != 0)
 		return -1;
 
 	sc->base = base;

@@ -121,7 +121,7 @@ init_gpio_regulator(pnode_t node, struct gpio_regulator *regulator)
 	uint32_t *gpios = __builtin_alloca(len);
 	prom_getprop(node, "gpios", (caddr_t)gpios);
 	for (int i = 0; i < regulator->ngpios; i++) {
-		regulator->gpios[i].node = prom_findnode_by_phandle(ntohl(gpios[3 * i + 0]));
+		regulator->gpios[i].node = prom_fdt_findnode_by_phandle(ntohl(gpios[3 * i + 0]));
 		regulator->gpios[i].pin = ntohl(gpios[3 * i + 1]);
 		regulator->gpios[i].flags = ntohl(gpios[3 * i + 2]);
 	}
@@ -137,8 +137,8 @@ init_gpio_regulator(pnode_t node, struct gpio_regulator *regulator)
 		regulator->states[i].microvolt = ntohl(states[2 * i + 0]);
 		regulator->states[i].val = ntohl(states[2 * i + 1]);
 	}
-	regulator->min_volt = prom_get_prop_int(node, "regulator-min-microvolt", -1);
-	regulator->max_volt = prom_get_prop_int(node, "regulator-max-microvolt", -1);
+	regulator->min_volt = prom_fdt_get_prop_int(node, "regulator-min-microvolt", -1);
+	regulator->max_volt = prom_fdt_get_prop_int(node, "regulator-max-microvolt", -1);
 
 	return 0;
 err_exit:
@@ -961,23 +961,23 @@ mmc_open(const char *name)
 	if (node <= 0)
 		return -1;
 
-	if (!prom_is_compatible(node, "brcm,bcm2711-emmc2"))
+	if (!prom_fdt_is_compatible(node, "brcm,bcm2711-emmc2"))
 		return -1;
 
-	if (prom_get_reg_address(node, 0, &sc->base) != 0)
+	if (prom_fdt_get_reg_address(node, 0, &sc->base) != 0)
 		return -1;
 
 	// clock
 	struct prom_hwclock clock;
-	if (prom_get_clock(node, 0, &clock) != 0)
+	if (prom_fdt_get_clock(node, 0, &clock) != 0)
 		return -1;
 
 	// regulator
 	struct gpio_regulator regulator;
-	phandle_t phandle = prom_get_prop_int(node, "vqmmc-supply", -1);
+	phandle_t phandle = prom_fdt_get_prop_int(node, "vqmmc-supply", -1);
 	if (phandle < 0)
 		return -1;
-	pnode_t vqmmc_node = prom_findnode_by_phandle(phandle);
+	pnode_t vqmmc_node = prom_fdt_findnode_by_phandle(phandle);
 	if (vqmmc_node < 0)
 		return -1;
 	if (init_gpio_regulator(vqmmc_node, &regulator) < 0)
@@ -1232,7 +1232,7 @@ mmc_match(const char *path)
 	if (node <= 0)
 		return 0;
 
-	if (!prom_is_compatible(node, "brcm,bcm2711-emmc2"))
+	if (!prom_fdt_is_compatible(node, "brcm,bcm2711-emmc2"))
 		return 0;
 
 	return 1;

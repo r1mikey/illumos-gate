@@ -514,8 +514,8 @@ find_gic(pnode_t nodeid, int depth)
 
 	GICV2_ASSERT_GICD_LOCK_HELD();
 
-	if (prom_is_compatible(nodeid, "arm,cortex-a15-gic") ||
-	    prom_is_compatible(nodeid, "arm,gic-400")) {
+	if (prom_fdt_is_compatible(nodeid, "arm,cortex-a15-gic") ||
+	    prom_fdt_is_compatible(nodeid, "arm,gic-400")) {
 		return (nodeid);
 	}
 
@@ -550,16 +550,16 @@ gicv2_map(void)
 	if (node <= 0)
 		return (-1);
 
-	if (prom_get_reg_address(node, 0, &gicd_base) != 0)
+	if (prom_fdt_get_reg_address(node, 0, &gicd_base) != 0)
 		return (-1);
 
-	if (prom_get_reg_size(node, 0, &gicd_size) != 0)
+	if (prom_fdt_get_reg_size(node, 0, &gicd_size) != 0)
 		return (-1);
 
-	if (prom_get_reg_address(node, 1, &gicc_base) != 0)
+	if (prom_fdt_get_reg_address(node, 1, &gicc_base) != 0)
 		return (-1);
 
-	if (prom_get_reg_size(node, 1, &gicc_size) != 0)
+	if (prom_fdt_get_reg_size(node, 1, &gicc_size) != 0)
 		return (-1);
 
 	addr = psm_map_phys(gicd_base, gicd_size, PROT_READ|PROT_WRITE);
