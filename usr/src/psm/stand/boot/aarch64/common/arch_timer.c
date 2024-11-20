@@ -104,7 +104,7 @@ arch_timer_set_cval(uint64_t cval)
 static void
 arch_timer_find_node(pnode_t node, void *arg)
 {
-	if (!prom_is_compatible(node, "arm,armv8-timer"))
+	if (!prom_fdt_is_compatible(node, "arm,armv8-timer"))
 		return;
 
 	*(pnode_t *)arg = node;
@@ -116,10 +116,10 @@ arch_timer_find_clock_freq(void)
 	pnode_t node;
 	uint64_t freq = 0;
 
-	prom_walk(arch_timer_find_node, &node);
+	prom_fdt_walk(arch_timer_find_node, &node);
 
 	if (node > 0)
-		freq = prom_get_prop_int(node, "clock-frequency", 0);
+		freq = prom_fdt_get_prop_int(node, "clock-frequency", 0);
 
 	return (freq);
 }

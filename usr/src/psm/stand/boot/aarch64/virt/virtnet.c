@@ -128,7 +128,7 @@ virtnet_match(const char *name)
 	pnode_t node = prom_finddevice(name);
 	if (node <= 0)
 		return 0;
-	if (!prom_is_compatible(node, "virtio-net"))
+	if (!prom_fdt_is_compatible(node, "virtio-net"))
 		return 0;
 	return 1;
 }
@@ -150,7 +150,7 @@ virtnet_open(const char *name)
 	memset(sc, 0, sizeof(struct virtnet_sc));
 
 	uint64_t base;
-	if (prom_get_reg_address(prom_finddevice(name), 0, &base) != 0)
+	if (prom_fdt_get_reg_address(prom_finddevice(name), 0, &base) != 0)
 		return -1;
 
 	sc->base = base;
@@ -175,13 +175,13 @@ virtnet_open(const char *name)
 
 	char *str;
 	str = "bootp";
-	prom_setprop(prom_chosennode(), "net-config-strategy", (caddr_t)str, strlen(str) + 1);
+	prom_fdt_setprop(prom_chosennode(), "net-config-strategy", (caddr_t)str, strlen(str) + 1);
 	str = "ethernet,100,rj45,full";
-	prom_setprop(prom_chosennode(), "network-interface-type", (caddr_t)str, strlen(str) + 1);
+	prom_fdt_setprop(prom_chosennode(), "network-interface-type", (caddr_t)str, strlen(str) + 1);
 	str = "Ethernet controller";
-	prom_setprop(prom_finddevice(name), "model", (caddr_t)str, strlen(str) + 1);
+	prom_fdt_setprop(prom_finddevice(name), "model", (caddr_t)str, strlen(str) + 1);
 	str = "okay";
-	prom_setprop(prom_finddevice(name), "status", (caddr_t)str, strlen(str) + 1);
+	prom_fdt_setprop(prom_finddevice(name), "status", (caddr_t)str, strlen(str) + 1);
 
 	virtnet_dev[fd] = sc;
 	return fd;

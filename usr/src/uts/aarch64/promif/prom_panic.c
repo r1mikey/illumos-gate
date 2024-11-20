@@ -23,9 +23,8 @@
  * Use is subject to license terms.
  */
 /*
- * Copyright 2023 Michael van der Westhuizen
+ * Copyright 2024 Michael van der Westhuizen
  */
-
 
 #include <sys/promif.h>
 #include <sys/promimpl.h>

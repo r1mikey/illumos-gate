@@ -24,7 +24,6 @@
  * Use is subject to license terms.
  */
 
-
 #include <sys/promif.h>
 #include <sys/promimpl.h>
 #include <sys/null.h>

@@ -24,8 +24,6 @@
  * Use is subject to license terms.
  */
 
-
-#include <sys/controlregs.h>
 #include <sys/promif.h>
 #include <sys/promimpl.h>
 #include <sys/varargs.h>

@@ -725,7 +725,7 @@ find_gic(pnode_t nodeid, int depth)
 	pnode_t	node;
 	pnode_t	child;
 
-	if (prom_is_compatible(nodeid, "arm,gic-v3"))
+	if (prom_fdt_is_compatible(nodeid, "arm,gic-v3"))
 		return (nodeid);
 
 	child = prom_childnode(nodeid);
@@ -759,10 +759,10 @@ gicv3_map(gicv3_conf_t *gc)
 	if (node <= 0)
 		return (-1);
 
-	if (prom_get_reg_address(node, 0, &gicd_base) != 0)
+	if (prom_fdt_get_reg_address(node, 0, &gicd_base) != 0)
 		return (-1);
 
-	if (prom_get_reg_size(node, 0, &gicd_size) != 0)
+	if (prom_fdt_get_reg_size(node, 0, &gicd_size) != 0)
 		return (-1);
 
 	addr = psm_map_phys(gicd_base, gicd_size, PROT_READ|PROT_WRITE);
@@ -772,16 +772,16 @@ gicv3_map(gicv3_conf_t *gc)
 	gc->gc_gicd_size = gicd_size;
 
 	gc->gc_redist_stride =
-	    prom_get_prop_u64(node, "redistributor-stride", 0);
+	    prom_fdt_get_prop_u64(node, "redistributor-stride", 0);
 	num_redist_regions =
-	    prom_get_prop_u32(node, "#redistributor-regions", 1);
+	    prom_fdt_get_prop_u32(node, "#redistributor-regions", 1);
 	gc->gc_redist_regions = kmem_zalloc(
 	    sizeof (gicv3_redist_region_t) * num_redist_regions, KM_SLEEP);
 	gc->gc_num_redist_regions = num_redist_regions;
 
 	for (i = 0; i < gc->gc_num_redist_regions; ++i) {
-		if (prom_get_reg_address(node, 1 + i, &gicrr_base) != 0 ||
-		    prom_get_reg_size(node, 1 + i, &gicrr_size) != 0)
+		if (prom_fdt_get_reg_address(node, 1 + i, &gicrr_base) != 0 ||
+		    prom_fdt_get_reg_size(node, 1 + i, &gicrr_size) != 0)
 			return (-1);
 
 		addr = psm_map_phys(gicrr_base, gicrr_size,

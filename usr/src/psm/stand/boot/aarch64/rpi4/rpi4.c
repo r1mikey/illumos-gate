@@ -58,7 +58,7 @@ static uint64_t mbox_buffer_address;
 static void
 find_mbox(pnode_t node, void *arg)
 {
-	if (!prom_is_compatible(node, "brcm,bcm2835-mbox"))
+	if (!prom_fdt_is_compatible(node, "brcm,bcm2835-mbox"))
 		return;
 	*(pnode_t *)arg = node;
 }
@@ -70,9 +70,9 @@ mbox_init(void)
 
 	ASSERT(MUTEX_HELD(&mbox_lock));
 
-	prom_walk(find_mbox, &node);
+	prom_fdt_walk(find_mbox, &node);
 	ASSERT(node != 0);
-	prom_get_reg_address(node, 0, &mbox_base);
+	prom_fdt_get_reg_address(node, 0, &mbox_base);
 	ASSERT(mbox_base != 0);
 
 	cache_flush(mbox_buffer, sizeof(mbox_buffer));
@@ -145,7 +145,7 @@ mbox_prop_send(void *data, uint32_t len)
 int
 plat_hwclock_get_rate(struct prom_hwclock *clk)
 {
-	if (!prom_is_compatible(clk->node, "brcm,bcm2711-cprman"))
+	if (!prom_fdt_is_compatible(clk->node, "brcm,bcm2711-cprman"))
 		return -1;
 
 	int id;
@@ -191,7 +191,7 @@ plat_hwclock_get_rate(struct prom_hwclock *clk)
 int
 plat_hwclock_get_max_rate(struct prom_hwclock *clk)
 {
-	if (!prom_is_compatible(clk->node, "brcm,bcm2711-cprman"))
+	if (!prom_fdt_is_compatible(clk->node, "brcm,bcm2711-cprman"))
 		return -1;
 
 	int id;
@@ -237,7 +237,7 @@ plat_hwclock_get_max_rate(struct prom_hwclock *clk)
 int
 plat_hwclock_get_min_rate(struct prom_hwclock *clk)
 {
-	if (!prom_is_compatible(clk->node, "brcm,bcm2711-cprman"))
+	if (!prom_fdt_is_compatible(clk->node, "brcm,bcm2711-cprman"))
 		return -1;
 
 	int id;
@@ -283,7 +283,7 @@ plat_hwclock_get_min_rate(struct prom_hwclock *clk)
 int
 plat_hwclock_set_rate(struct prom_hwclock *clk, int rate)
 {
-	if (!prom_is_compatible(clk->node, "brcm,bcm2711-cprman"))
+	if (!prom_fdt_is_compatible(clk->node, "brcm,bcm2711-cprman"))
 		return -1;
 
 	int id;
@@ -331,10 +331,10 @@ int
 plat_gpio_get(struct gpio_ctrl *gpio)
 {
 	int offset;
-	if (prom_is_compatible(gpio->node, "raspberrypi,firmware-gpio")) {
+	if (prom_fdt_is_compatible(gpio->node, "raspberrypi,firmware-gpio")) {
 		offset = 128;
 	}
-	else if (prom_is_compatible(gpio->node, "brcm,bcm2711-gpio")) {
+	else if (prom_fdt_is_compatible(gpio->node, "brcm,bcm2711-gpio")) {
 		offset = 0;
 	}
 	else
@@ -376,10 +376,10 @@ int
 plat_gpio_set(struct gpio_ctrl *gpio, int value)
 {
 	int offset;
-	if (prom_is_compatible(gpio->node, "raspberrypi,firmware-gpio")) {
+	if (prom_fdt_is_compatible(gpio->node, "raspberrypi,firmware-gpio")) {
 		offset = VCPROP_EXP_GPIO_BASE;
 	}
-	else if (prom_is_compatible(gpio->node, "brcm,bcm2711-gpio")) {
+	else if (prom_fdt_is_compatible(gpio->node, "brcm,bcm2711-gpio")) {
 		offset = 0;
 	}
 	else

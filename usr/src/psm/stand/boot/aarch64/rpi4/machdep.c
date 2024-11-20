@@ -327,7 +327,7 @@ get_node_name(pnode_t nodeid)
 			strcpy(name, "@");
 			name += strlen(name);
 			uint64_t base;
-			prom_get_reg(nodeid, 0, &base);
+			prom_fdt_get_reg(nodeid, 0, &base);
 			sprintf(name, "%lx", base);
 		}
 	}
@@ -337,7 +337,7 @@ get_node_name(pnode_t nodeid)
 static void
 get_bootpath_cb(pnode_t node, void *arg)
 {
-	if (!prom_is_compatible(node, "brcm,bcm2711-genet-v5"))
+	if (!prom_fdt_is_compatible(node, "brcm,bcm2711-genet-v5"))
 		return;
 
 	char *path = (char *)arg;
@@ -347,7 +347,7 @@ get_bootpath_cb(pnode_t node, void *arg)
 		size_t namelen = strlen(name);
 		memmove(path + namelen, path, strlen(path) + 1);
 		memcpy(path, name, namelen);
-		node = prom_parentnode(node);
+		node = prom_fdt_parentnode(node);
 		if (node == prom_rootnode())
 			break;
 	}
@@ -358,7 +358,7 @@ get_default_bootpath(void)
 {
 	static char def_bootpath[80];
 
-	prom_walk(get_bootpath_cb, def_bootpath);
+	prom_fdt_walk(get_bootpath_cb, def_bootpath);
 	return (def_bootpath);
 }
 
@@ -384,7 +384,7 @@ init_machdev(void)
 	strcpy(compatible, str);
 	prom_getprop(
 	    prom_rootnode(), "compatible", compatible + strlen(str) + 1);
-	prom_setprop(prom_rootnode(), "compatible", compatible, namelen);
+	prom_fdt_setprop(prom_rootnode(), "compatible", compatible, namelen);
 
 	init_arch_timer(TMR_PHYS);
 	init_genet();

@@ -262,13 +262,13 @@ gic_is_spurious(uint32_t intid)
 static void
 set_gic_module_name(void)
 {
-	if (prom_has_compatible("arm,gic-400") ||
-	    prom_has_compatible("arm,cortex-a15-gic")) {
+	if (prom_fdt_has_compatible("arm,gic-400") ||
+	    prom_fdt_has_compatible("arm,cortex-a15-gic")) {
 		gic_module_name = "gicv2";
 		return;
 	}
 
-	if (prom_has_compatible("arm,gic-v3")) {
+	if (prom_fdt_has_compatible("arm,gic-v3")) {
 		gic_module_name = "gicv3";
 		return;
 	}

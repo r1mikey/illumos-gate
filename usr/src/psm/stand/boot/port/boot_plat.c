@@ -178,7 +178,7 @@ init_bootargs()
 				buf[params.gos_optargp - buf +
 				    params.gos_optarglen] = 0;
 				str = &buf[params.gos_optargp - buf];
-				prom_setprop(chosen, "__bootpath",
+				prom_fdt_setprop(chosen, "__bootpath",
 				    (caddr_t)str, strlen(str) + 1);
 				break;
 			default:
@@ -188,7 +188,7 @@ init_bootargs()
 	}
 	if (prom_getproplen(chosen, "__bootpath") <= 0) {
 		str = get_default_bootpath();
-		prom_setprop(chosen, "__bootpath",
+		prom_fdt_setprop(chosen, "__bootpath",
 		    (caddr_t)str, strlen(str) + 1);
 	}
 }

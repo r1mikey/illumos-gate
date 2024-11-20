@@ -55,11 +55,11 @@ get_cpu_mpidr(pnode_t node)
 	uint64_t	affinity = CPUNODE_BAD_AFFINITY;
 	uint32_t	parts[2] = {0, 0};
 
-	cv = prom_get_size_cells(node);
+	cv = prom_fdt_get_size_cells(node);
 	if (cv != 0x0)
 		return (affinity);
 
-	ac = prom_get_address_cells(node);
+	ac = prom_fdt_get_address_cells(node);
 	if (ac != 1 && ac != 2)
 		return (affinity);
 
@@ -91,7 +91,7 @@ get_enable_method(pnode_t node)
 	boolean_t	exists;
 	char		prop[OBP_STANDARD_MAXPROPNAME];
 
-	exists = prom_node_has_property(node, "enable-method");
+	exists = prom_fdt_node_has_property(node, "enable-method");
 	if (exists != B_TRUE)
 		return (CPUNODE_BAD_ENABLE_METHOD);
 
@@ -120,11 +120,11 @@ get_parked_address(pnode_t node)
 	 * XXXARM: This is a bit sketchy, but it should hold true due to the
 	 * #size-cells needed for the MPIDR.
 	 */
-	cv = prom_get_size_cells(node);
+	cv = prom_fdt_get_size_cells(node);
 	if (cv != 0x0)
 		return (parked_addr);
 
-	ac = prom_get_address_cells(node);
+	ac = prom_fdt_get_address_cells(node);
 	if (ac != 1 && ac != 2)
 		return (parked_addr);
 
@@ -155,7 +155,7 @@ get_cpu_status(pnode_t node)
 	boolean_t	exists;
 	char		prop[OBP_STANDARD_MAXPROPNAME];
 
-	exists = prom_node_has_property(node, "status");
+	exists = prom_fdt_node_has_property(node, "status");
 	if (exists != B_TRUE)
 		return (CPUNODE_STATUS_UNKNOWN);
 
@@ -288,7 +288,7 @@ static boolean_t
 is_gicv3(void)
 {
 	pnode_t	node;
-	node = prom_find_compatible(prom_rootnode(), "arm,gic-v3");
+	node = prom_fdt_find_compatible(prom_rootnode(), "arm,gic-v3");
 	return (node == OBP_NONODE ? B_FALSE : B_TRUE);
 }
 

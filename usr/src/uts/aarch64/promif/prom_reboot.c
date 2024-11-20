@@ -24,7 +24,6 @@
  * Use is subject to license terms.
  */
 
-
 #include <sys/promif.h>
 #include <sys/promimpl.h>
 #include <sys/bootsvcs.h>
@@ -49,4 +48,3 @@ prom_power_off(void)
 {
 	BSVC_RESET(SYSP, true);
 }
-

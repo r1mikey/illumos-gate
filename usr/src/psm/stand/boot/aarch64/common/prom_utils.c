@@ -30,7 +30,7 @@
 #include <sys/promif.h>
 
 int
-prom_get_prop_index(pnode_t node, const char *prop_name, const char *name)
+prom_fdt_get_prop_index(pnode_t node, const char *prop_name, const char *name)
 {
 	int len;
 	len = prom_getproplen(node, prop_name);
@@ -50,7 +50,7 @@ prom_get_prop_index(pnode_t node, const char *prop_name, const char *name)
 }
 
 int
-prom_get_prop_int(pnode_t node, const char *name, int def)
+prom_fdt_get_prop_int(pnode_t node, const char *name, int def)
 {
 	int value = def;
 
@@ -65,7 +65,7 @@ prom_get_prop_int(pnode_t node, const char *name, int def)
 		if (len > 0) {
 			break;
 		}
-		node = prom_parentnode(node);
+		node = prom_fdt_parentnode(node);
 	}
 	return value;
 }
@@ -80,11 +80,11 @@ int prom_get_reset(pnode_t node, int index, struct prom_hwreset *reset)
 	prom_getprop(node, "resets", (caddr_t)resets);
 
 	pnode_t reset_node;
-	reset_node = prom_findnode_by_phandle(ntohl(resets[0]));
+	reset_node = prom_fdt_findnode_by_phandle(ntohl(resets[0]));
 	if (reset_node < 0)
 		return -1;
 
-	int reset_cells = prom_get_prop_int(reset_node, "#reset-cells", 1);
+	int reset_cells = prom_fdt_get_prop_int(reset_node, "#reset-cells", 1);
 	if (reset_cells != 1)
 		return -1;
 
@@ -93,7 +93,7 @@ int prom_get_reset(pnode_t node, int index, struct prom_hwreset *reset)
 	if (len <= index * (sizeof(uint32_t) * (reset_cells + 1)))
 		return -1;
 
-	reset_node = prom_findnode_by_phandle(ntohl(resets[index * (reset_cells + 1)]));
+	reset_node = prom_fdt_findnode_by_phandle(ntohl(resets[index * (reset_cells + 1)]));
 	if (reset_node < 0)
 		return -1;
 	reset->node = reset_node;
@@ -104,13 +104,13 @@ int prom_get_reset(pnode_t node, int index, struct prom_hwreset *reset)
 
 int prom_get_reset_by_name(pnode_t node, const char *name, struct prom_hwreset *reset)
 {
-	int index = prom_get_prop_index(node, "reset-names", name);
+	int index = prom_fdt_get_prop_index(node, "reset-names", name);
 	if (index >= 0)
 		return prom_get_reset(node, index, reset);
 	return -1;
 }
 
-int prom_get_clock(pnode_t node, int index, struct prom_hwclock *clock)
+int prom_fdt_get_clock(pnode_t node, int index, struct prom_hwclock *clock)
 {
 	int len = prom_getproplen(node, "clocks");
 	if (len <= 0)
@@ -120,11 +120,11 @@ int prom_get_clock(pnode_t node, int index, struct prom_hwclock *clock)
 	prom_getprop(node, "clocks", (caddr_t)clocks);
 
 	pnode_t clock_node;
-	clock_node = prom_findnode_by_phandle(ntohl(clocks[0]));
+	clock_node = prom_fdt_findnode_by_phandle(ntohl(clocks[0]));
 	if (clock_node < 0)
 		return -1;
 
-	int clock_cells = prom_get_prop_int(clock_node, "#clock-cells", 1);
+	int clock_cells = prom_fdt_get_prop_int(clock_node, "#clock-cells", 1);
 	if (clock_cells != 1)
 		return -1;
 
@@ -133,7 +133,7 @@ int prom_get_clock(pnode_t node, int index, struct prom_hwclock *clock)
 	if (len <= index * (sizeof(uint32_t) * (clock_cells + 1)))
 		return -1;
 
-	clock_node = prom_findnode_by_phandle(ntohl(clocks[index * (clock_cells + 1)]));
+	clock_node = prom_fdt_findnode_by_phandle(ntohl(clocks[index * (clock_cells + 1)]));
 	if (clock_node < 0)
 		return -1;
 	clock->node = clock_node;
@@ -144,9 +144,9 @@ int prom_get_clock(pnode_t node, int index, struct prom_hwclock *clock)
 
 int prom_get_clock_by_name(pnode_t node, const char *name, struct prom_hwclock *clock)
 {
-	int index = prom_get_prop_index(node, "clock-names", name);
+	int index = prom_fdt_get_prop_index(node, "clock-names", name);
 	if (index >= 0)
-		return prom_get_clock(node, index, clock);
+		return prom_fdt_get_clock(node, index, clock);
 	return -1;
 }
 
@@ -163,7 +163,7 @@ get_address_cells(pnode_t node, int def)
 			address_cells = ntohl(prop);
 			break;
 		}
-		node = prom_parentnode(node);
+		node = prom_fdt_parentnode(node);
 	}
 	return address_cells;
 }
@@ -181,22 +181,22 @@ get_size_cells(pnode_t node, int def)
 			size_cells = ntohl(prop);
 			break;
 		}
-		node = prom_parentnode(node);
+		node = prom_fdt_parentnode(node);
 	}
 	return size_cells;
 }
 
 int prom_get_address_cells(pnode_t node)
 {
-	return get_address_cells(prom_parentnode(node), 2);
+	return get_address_cells(prom_fdt_parentnode(node), 2);
 }
 
 int prom_get_size_cells(pnode_t node)
 {
-	return get_size_cells(prom_parentnode(node), 2);
+	return get_size_cells(prom_fdt_parentnode(node), 2);
 }
 
-int prom_get_reg(pnode_t node, int index, uint64_t *base)
+int prom_fdt_get_reg(pnode_t node, int index, uint64_t *base)
 {
 	int len = prom_getproplen(node, "reg");
 	if (len <= 0)
@@ -228,20 +228,20 @@ int prom_get_reg(pnode_t node, int index, uint64_t *base)
 }
 
 int
-prom_get_reg_address(pnode_t node, int index, uint64_t *reg)
+prom_fdt_get_reg_address(pnode_t node, int index, uint64_t *reg)
 {
 	uint64_t addr;
-	if (prom_get_reg(node, index, &addr) != 0)
+	if (prom_fdt_get_reg(node, index, &addr) != 0)
 		return -1;
 
-	pnode_t parent = prom_parentnode(node);
+	pnode_t parent = prom_fdt_parentnode(node);
 	while (parent > 0) {
-		if (prom_is_compatible(parent, "simple-bus")) {
+		if (prom_fdt_is_compatible(parent, "simple-bus")) {
 			int len = prom_getproplen(parent, "ranges");
 			if (len > 0) {
 				int address_cells = get_address_cells(parent, 2);
 				int size_cells = get_size_cells(parent, 2);
-				int parent_address_cells  = get_address_cells(prom_parentnode(parent), 2);
+				int parent_address_cells  = get_address_cells(prom_fdt_parentnode(parent), 2);
 
 				if ((len % (sizeof(uint32_t) * (address_cells + parent_address_cells + size_cells))) == 0) {
 					uint32_t *ranges = __builtin_alloca(len);
@@ -273,14 +273,14 @@ prom_get_reg_address(pnode_t node, int index, uint64_t *reg)
 				}
 			}
 		}
-		parent = prom_parentnode(parent);
+		parent = prom_fdt_parentnode(parent);
 	}
 	*reg = addr;
 	return 0;
 }
 
 int
-prom_get_reg_size(pnode_t node, int index, uint64_t *regsize)
+prom_fdt_get_reg_size(pnode_t node, int index, uint64_t *regsize)
 {
 	int len = prom_getproplen(node, "reg");
 	if (len <= 0)
@@ -313,14 +313,14 @@ prom_get_reg_size(pnode_t node, int index, uint64_t *regsize)
 
 int prom_get_reg_by_name(pnode_t node, const char *name, uint64_t *base)
 {
-	int index = prom_get_prop_index(node, "reg-names", name);
+	int index = prom_fdt_get_prop_index(node, "reg-names", name);
 
 	if (index >= 0)
-		return prom_get_reg(node, index, base);
+		return prom_fdt_get_reg(node, index, base);
 	return -1;
 }
 
-boolean_t prom_is_compatible(pnode_t node, const char *name)
+boolean_t prom_fdt_is_compatible(pnode_t node, const char *name)
 {
 	int len;
 	char *prop_name = "compatible";
@@ -345,7 +345,7 @@ prom_register_child(pnode_t node, const struct prom_compat *data)
 {
 	const struct prom_compat *tmp = data;
 	while (tmp->compatible) {
-		if (prom_is_compatible(node, tmp->compatible)) {
+		if (prom_fdt_is_compatible(node, tmp->compatible)) {
 			tmp->init(node);
 		}
 		tmp++;
@@ -379,7 +379,7 @@ prom_get_bus_address(pnode_t node, uint64_t phys_addr, uint64_t *bus_addr)
 	boolean_t *update = NULL;
 
 	for (;;) {
-		node = prom_parentnode(node);
+		node = prom_fdt_parentnode(node);
 		if (node <= 0)
 			break;
 		if (prom_getproplen(node, "dma-ranges") <= 0)
@@ -390,7 +390,7 @@ prom_get_bus_address(pnode_t node, uint64_t phys_addr, uint64_t *bus_addr)
 		int parent_address_cells;
 		pnode_t parent;
 
-		parent = prom_parentnode(node);
+		parent = prom_fdt_parentnode(node);
 		if (parent <= 0)
 			return -1;
 

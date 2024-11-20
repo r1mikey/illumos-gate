@@ -35,6 +35,7 @@ extern void kmdb_enter(void);
  * AArch64 systems do not necessarily have an underlying monitor.
  * So, we emulate the best we can...
  */
+
 void
 prom_enter_mon(void)
 {
