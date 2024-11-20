@@ -2132,7 +2132,7 @@ initial_done:
 			bus_p->bus_addr_entries = 0;
 		} else {
 			bus_p->bus_addr_entries =
-			    CELLS_1275_TO_BYTES(bus_b->bus_addr_entries);
+			    CELLS_1275_TO_BYTES(bus_p->bus_addr_entries);
 			bus_p->bus_addr_entries /= sizeof (ppb_ranges_t);
 		}
 	}
