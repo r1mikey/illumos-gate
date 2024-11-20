@@ -141,15 +141,15 @@ gic_print_vec(uintptr_t state_addr, const void *aw_buff, void *arg)
 				    sizeof (struct dev_info),
 				    (uintptr_t)av.av_dip);
 
-				mdb_printf("%-28A  %s#%d\n",
+				mdb_printf("%-28a  %s#%d\n",
 				    av.av_vector, driv,
 				    di.devi_instance);
 			} else {
-				mdb_printf("%-28A  - \n",
+				mdb_printf("%-28a  - \n",
 				    av.av_vector);
 			}
 		} else {
-			mdb_printf("%-28A  - \n", av.av_vector);
+			mdb_printf("%-28a  - \n", av.av_vector);
 		}
 
 		av_addr = (uintptr_t)av.av_link;
