@@ -118,6 +118,11 @@ gic_print_vec(uintptr_t state_addr, const void *aw_buff, void *arg)
 			break;
 		}
 
+		if (av.av_vector == NULL) {
+			av_addr = (uintptr_t)av.av_link;
+			continue;
+		}
+
 		/*
 		 * NB: Should match the format header in `gic_interrupts_dcmd`
 		 */
