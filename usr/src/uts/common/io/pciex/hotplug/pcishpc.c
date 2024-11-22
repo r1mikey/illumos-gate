@@ -1928,6 +1928,9 @@ pcishpc_set_slot_name(pcie_hp_ctrl_t *ctrl_p, int slot)
 	 *	else if valid slot number exists then it is "pci<slot-num>".
 	 *	else it will be "pci<sec-bus-number>dev<dev-number>"
 	 */
+	/* XXXPCI: it's not important for correctness, but we should fix this */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 	if (ddi_getlongprop(DDI_DEV_T_ANY, ctrl_p->hc_dip, DDI_PROP_DONTPASS,
 	    "slot-names", (caddr_t)&slotname_data, &len) == DDI_PROP_SUCCESS) {
 		bit_mask = slotname_data[3] | (slotname_data[2] << 8) |
@@ -1990,6 +1993,7 @@ pcishpc_set_slot_name(pcie_hp_ctrl_t *ctrl_p, int slot)
 		    slot_p->hs_phy_slot_num);
 		kmem_free(slotname_data, len);
 	}
+#pragma GCC diagnostic pop
 
 	if (invalid_slotnum) {
 		char tmp_name[256];

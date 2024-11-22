@@ -74,8 +74,6 @@
 #include <sys/sysmacros.h>
 #include <sys/archsystm.h>
 
-extern void gic_remove_state(int);
-
 extern char *gic_module_name;
 
 /*

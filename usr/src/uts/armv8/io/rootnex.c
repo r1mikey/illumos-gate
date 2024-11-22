@@ -627,19 +627,16 @@ rootnex_ctlops(dev_info_t *dip, dev_info_t *rdip, ddi_ctl_enum_t ctlop,
 
 	if (ctlop == DDI_CTLOPS_NREGS) {
 		ptr = (int *)result;
-		*ptr = pdp->par_nreg;
+		*ptr = sparc_pd_getnreg(rdip);
 	} else {
 		off_t *size = (off_t *)result;
 
 		ptr = (int *)arg;
 		n = *ptr;
-		if (n >= pdp->par_nreg) {
+		if (n >= sparc_pd_getnreg(rdip)) {
 			return (DDI_FAILURE);
 		}
-		uint64_t regspec_size = pdp->par_reg[n].regspec_size;
-		regspec_size |= (((uint64_t)
-		    ((pdp->par_reg[n].regspec_bustype >> 16) & 0xfff)) << 32);
-		*size = (off_t)regspec_size;
+		*size = (off_t)sparc_pd_getreg(rdip, n)->regspec_size;
 	}
 	return (DDI_SUCCESS);
 }
@@ -672,17 +669,9 @@ rootnex_ctl_reportdev(dev_info_t *dev)
 			    " and ");
 		len = strlen(buf);
 
-		uint64_t regspec_addr = rp->regspec_addr;
-		regspec_addr |= (((uint64_t)
-		    (rp->regspec_bustype & 0xffff)) << 32);
-
-		switch (rp->regspec_bustype >> 28) {
-		default:
-			f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
-			    "space %x offset %lx",
-			    rp->regspec_bustype >> 28, regspec_addr);
-			break;
-		}
+		f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
+		    "space 0x%x offset 0x%x",
+		    rp->regspec_bustype, rp->regspec_addr);
 		len = strlen(buf);
 	}
 	for (i = 0, n = sparc_pd_getnintr(dev); i < n; i++) {
@@ -695,7 +684,7 @@ rootnex_ctl_reportdev(dev_info_t *dev)
 		}
 		pri = INT_IPL(sparc_pd_getintr(dev, i)->intrspec_pri);
 		f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
-		    " sparc ipl %d", pri);
+		    " processor ipl %d", pri);
 		len = strlen(buf);
 	}
 #ifdef DEBUG
@@ -715,43 +704,6 @@ rootnex_ctl_reportdev(dev_info_t *dev)
  *  map related code
  * ******************
  */
-static int
-get_address_cells(pnode_t node)
-{
-	int address_cells = 0;
-
-	while (node > 0) {
-		int len = prom_getproplen(node, "#address-cells");
-		if (len > 0) {
-			ASSERT(len == sizeof (int));
-			int prop;
-			prom_getprop(node, "#address-cells", (caddr_t)&prop);
-			address_cells = ntohl(prop);
-			break;
-		}
-		node = prom_parentnode(node);
-	}
-	return (address_cells);
-}
-
-static int
-get_size_cells(pnode_t node)
-{
-	int size_cells = 0;
-
-	while (node > 0) {
-		int len = prom_getproplen(node, "#size-cells");
-		if (len > 0) {
-			ASSERT(len == sizeof (int));
-			int prop;
-			prom_getprop(node, "#size-cells", (caddr_t)&prop);
-			size_cells = ntohl(prop);
-			break;
-		}
-		node = prom_parentnode(node);
-	}
-	return (size_cells);
-}
 
 /*
  * rootnex_map()
@@ -761,9 +713,12 @@ static int
 rootnex_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp, off_t offset,
     off_t len, caddr_t *vaddrp)
 {
-	struct regspec *rp, tmp_reg;
+	struct regspec *orp = NULL;
+	struct regspec64 rp = { 0 };
 	ddi_map_req_t mr = *mp;
 	int error;
+
+	/* XXXARM: Why? */
 	ddi_acc_hdl_t *hp = NULL;
 	struct regspec reg = {0};
 
@@ -786,113 +741,98 @@ rootnex_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp, off_t offset,
 		return (DDI_ME_UNIMPLEMENTED);
 	}
 
+	/*
+	 * First, we need to get the original regspec out before we convert it
+	 * to the extended format. If we have a register number, then we need to
+	 * convert that to a regspec.
+	 */
 	if (mp->map_type == DDI_MT_RNUMBER)  {
-		uint_t reglen;
 		int rnumber = mp->map_obj.rnumber;
-		uint32_t *rp;
-		int addr_cells = get_address_cells(ddi_get_nodeid(dip));
-		int size_cells = get_size_cells(ddi_get_nodeid(dip));
+#ifdef	DDI_MAP_DEBUG
+		static char *out_of_range =
+		    "rootnex_map: Out of range rnumber <%d>, device <%s>";
+#endif	/* DDI_MAP_DEBUG */
 
-		ASSERT(addr_cells == 1 || addr_cells == 2);
-		ASSERT(size_cells == 1 || size_cells == 2);
-
-		if ((ddi_prop_lookup_int_array(DDI_DEV_T_ANY, rdip,
-		    DDI_PROP_DONTPASS, "reg", (int **)&rp,
-		    &reglen) != DDI_SUCCESS) || (reglen == 0)) {
+		orp = i_ddi_rnumber_to_regspec(rdip, rnumber);
+		if (orp == NULL) {
+#ifdef	DDI_MAP_DEBUG
+			cmn_err(CE_WARN, out_of_range, rnumber,
+			    ddi_get_name(rdip));
+#endif	/* DDI_MAP_DEBUG */
 			return (DDI_ME_RNUMBER_RANGE);
 		}
-
-		int n = reglen / addr_cells + size_cells;
-		ASSERT(reglen % (addr_cells + size_cells) == 0);
-
-		if (rnumber < 0 || rnumber >= n) {
-			ddi_prop_free(rp);
-			return (DDI_ME_RNUMBER_RANGE);
-		}
-
-		uint64_t addr = 0;
-		uint64_t size = 0;
-
-		for (int i = 0; i < addr_cells; i++) {
-			addr <<= 32;
-			addr |= rp[(addr_cells + size_cells) *
-			    rnumber + i];
-		}
-		for (int i = 0; i < size_cells; i++) {
-			size <<= 32;
-			size |= rp[(addr_cells + size_cells) *
-			    rnumber + addr_cells + i];
-		}
-
-		ddi_prop_free(rp);
-
-		ASSERT((addr & 0xffff000000000000ul) == 0);
-		ASSERT((size & 0xffff000000000000ul) == 0);
-		reg.regspec_bustype = ((addr >> 32) & 0xffff);
-		reg.regspec_bustype |= (((size >> 32)) << 16);
-		reg.regspec_addr    = (addr & 0xffffffff);
-		reg.regspec_size    = (size & 0xffffffff);
-
-		mp->map_type = DDI_MT_REGSPEC;
-		mp->map_obj.rp = &reg;
+	} else if ((mp->map_flags & DDI_MF_EXT_REGSPEC) == 0) {
+		orp = mp->map_obj.rp;
 	}
 
-	tmp_reg = *(mp->map_obj.rp);
-	rp = mp->map_obj.rp = &tmp_reg;
+	/*
+	 * Ensure that we are always using a 64-bit extended regspec regardless
+	 * of what was passed into us. If the child driver is using a 64-bit
+	 * regspec, then we need to make sure that we copy this to the local
+	 * regspec64, rp.
+	 */
+	if (orp != NULL) {
+		rp.regspec_bustype = orp->regspec_bustype;
+		rp.regspec_addr = orp->regspec_addr;
+		rp.regspec_size = orp->regspec_size;
+	} else {
+		struct regspec64 *rp64;
+		rp64 = (struct regspec64 *)mp->map_obj.rp;
+		rp = *rp64;
+	}
+
+	mp->map_type = DDI_MT_REGSPEC;
+	mp->map_flags |= DDI_MF_EXT_REGSPEC;
+	mp->map_obj.rp = (struct regspec *)&rp;
+
+#ifdef	DDI_MAP_DEBUG
+	cmn_err(CE_CONT, "rootnex: <%s,%s> <0x%lx, 0x%lx, %ld> "
+	    "offset %ld len %ld handle 0x%p\n", ddi_get_name(dip),
+	    ddi_get_name(rdip), rp.regspec_bustype, rp.regspec_addr,
+	    rp.regspec_size, offset, len, mp->map_handlep);
+#endif	/* DDI_MAP_DEBUG */
+
+	if (rp.regspec_bustype > 1 && rp.regspec_addr != 0) {
+		cmn_err(CE_WARN, "<%s,%s> invalid register spec"
+		    " <0x%" PRIx64 ", 0x%" PRIx64 ", 0x%" PRIx64 ">",
+		    ddi_get_name(dip), ddi_get_name(rdip), rp.regspec_bustype,
+		    rp.regspec_addr, rp.regspec_size);
+		return (DDI_ME_INVAL);
+	}
+
+	if (rp.regspec_bustype > 1 && rp.regspec_addr == 0) {
+		/*
+		 * compatibility i/o mapping
+		 */
+		rp.regspec_bustype += offset;
+	} else {
+		/*
+		 * Normal memory or i/o mapping
+		 */
+		rp.regspec_addr += offset;
+	}
 
 	if (len != 0)
-		rp->regspec_size = (uint_t)len;
+		rp.regspec_size = len;
 
-	if ((error = i_ddi_apply_range(dip, rdip, mp->map_obj.rp)) != 0)
-		return (error);
+#ifdef	DDI_MAP_DEBUG
+	cmn_err(CE_CONT, "             <%s,%s> <0x%" PRIx64 ", 0x%" PRIx64
+	    ", %" PRId64 "> offset %ld len %ld handle 0x%p\n",
+	    ddi_get_name(dip), ddi_get_name(rdip), rp.regspec_bustype,
+	    rp.regspec_addr, rp.regspec_size, offset, len, mp->map_handlep);
+#endif	/* DDI_MAP_DEBUG */
+
+	/*
+	 * The armv8 root nexus does not have any notion of valid ranges of
+	 * addresses. Its children have valid ranges, but because there are none
+	 * for the nexus, we don't need to call i_ddi_apply_range().  Verify
+	 * that is the case.
+	 */
+	ASSERT0(sparc_pd_getnrng(dip));
 
 	switch (mp->map_op)  {
 	case DDI_MO_MAP_LOCKED:
-		if (mp->map_handlep) {
-			hp = mp->map_handlep;
-		}
-		if (rp->regspec_bustype >> 28) {
-			if (mp->map_flags & DDI_MF_DEVICE_MAPPING)
-				return (DDI_ME_INVAL);
-			error = rootnex_map_regspec(mp, vaddrp);
-			if (error == 0) {
-				if (hp) {
-					ddi_acc_impl_t *ap = (ddi_acc_impl_t *)
-					    hp->ah_platform_private;
-					ap->ahi_acc_attr |=
-					    DDI_ACCATTR_IO_SPACE;
-					hp->ah_addr = (caddr_t)offset;
-					ap->ahi_io_port_base = (ulong_t)*vaddrp;
-					*vaddrp = (caddr_t)offset;
-					hp->ah_hat_flags = 0;
-					impl_acc_hdl_init(hp);
-				}
-				*vaddrp = (caddr_t)offset;
-			}
-		} else {
-			uint64_t regspec_addr = rp->regspec_addr;
-			regspec_addr |= (((uint64_t)
-			    (rp->regspec_bustype & 0xffff)) << 32);
-			regspec_addr += offset;
-
-			rp->regspec_addr = regspec_addr & 0xffffffff;
-			rp->regspec_bustype &= ~0xffff;
-			rp->regspec_bustype |= ((regspec_addr >> 32) & 0xffff);
-
-			error = rootnex_map_regspec(mp, vaddrp);
-			if (error == 0) {
-				if (hp) {
-					ddi_acc_impl_t *ap = (ddi_acc_impl_t *)
-					    hp->ah_platform_private;
-					ap->ahi_acc_attr |=
-					    DDI_ACCATTR_CPU_VADDR;
-					hp->ah_addr = *vaddrp;
-					hp->ah_hat_flags = 0;
-					impl_acc_hdl_init(hp);
-				}
-			}
-		}
-		return (error);
+		return (rootnex_map_regspec(mp, vaddrp));
 
 	case DDI_MO_UNMAP:
 		return (rootnex_unmap_regspec(mp, vaddrp));
@@ -960,90 +900,246 @@ rootnex_map_fault(dev_info_t *dip, dev_info_t *rdip, struct hat *hat,
 static int
 rootnex_map_regspec(ddi_map_req_t *mp, caddr_t *vaddrp)
 {
-	caddr_t kaddr;
-	pfn_t	pfn;
-	struct regspec *rp = mp->map_obj.rp;
+	rootnex_addr_t rbase;
+	void *cvaddr;
+	uint64_t npages, pgoffset;
+	struct regspec64 *rp;
 	ddi_acc_hdl_t *hp;
-	uint_t	pgoffset;
+	ddi_acc_impl_t *ap;
+	uint_t	hat_acc_flags;
+	paddr_t pbase;
 
-	uint64_t regspec_size = rp->regspec_size;
-	regspec_size |= (((uint64_t)
-	    ((rp->regspec_bustype >> 16) & 0xfff)) << 32);
+	ASSERT(mp->map_flags & DDI_MF_EXT_REGSPEC);
+	rp = (struct regspec64 *)mp->map_obj.rp;
+	hp = mp->map_handlep;
 
-	if (regspec_size == 0) {
-		cmn_err(CE_NOTE, "rootnex_map_regspec: zero regspec_size\n");
+#ifdef	DDI_MAP_DEBUG
+	ddi_map_debug(
+	    "rootnex_map_regspec: <0x%x 0x%x 0x%x> handle 0x%x\n",
+	    rp->regspec_bustype, rp->regspec_addr,
+	    rp->regspec_size, mp->map_handlep);
+#endif	/* DDI_MAP_DEBUG */
+
+	/*
+	 * I/O or memory mapping
+	 *
+	 *	<bustype=0, addr=x, len=x>: memory
+	 *	<bustype=1, addr=x, len=x>: i/o
+	 *	<bustype>1, addr=0, len=x>: x86-compatibility i/o
+	 */
+
+	/*
+	 * I/O space.  We should never reach the root nexus with an I/O space
+	 * mapping, since I/O space is all emulated and per-child.
+	 */
+	VERIFY3U(rp->regspec_bustype, ==, 0);
+
+	/* Memory space */
+	if (hp != NULL) {
+		/*
+		 * hat layer ignores (XXXPCI: On purpose? on x86? in general?)
+		 * hp->ah_acc.devacc_attr_endian_flags.
+		 */
+		switch (hp->ah_acc.devacc_attr_dataorder) {
+		case DDI_STRICTORDER_ACC:
+			hat_acc_flags = HAT_STRICTORDER;
+			break;
+		case DDI_UNORDERED_OK_ACC:
+			hat_acc_flags = HAT_UNORDERED_OK;
+			break;
+		case DDI_MERGING_OK_ACC:
+			hat_acc_flags = HAT_MERGING_OK;
+			break;
+		case DDI_LOADCACHING_OK_ACC:
+			hat_acc_flags = HAT_LOADCACHING_OK;
+			break;
+		case DDI_STORECACHING_OK_ACC:
+			hat_acc_flags = HAT_STORECACHING_OK;
+			break;
+		default:
+			return (DDI_ME_INVAL);
+		}
+		ap = (ddi_acc_impl_t *)hp->ah_platform_private;
+		ap->ahi_acc_attr |= DDI_ACCATTR_CPU_VADDR;
+		impl_acc_hdl_init(hp);
+		hp->ah_hat_flags = hat_acc_flags;
+	} else {
+		hat_acc_flags = HAT_STRICTORDER;
+	}
+
+	pbase = rbase = (rootnex_addr_t)(rp->regspec_addr & MMU_PAGEMASK);
+	pgoffset = (ulong_t)rp->regspec_addr & MMU_PAGEOFFSET;
+
+	if (rp->regspec_size == 0) {
+#ifdef  DDI_MAP_DEBUG
+		ddi_map_debug("rootnex_map_regspec: zero regspec_size\n");
+#endif  /* DDI_MAP_DEBUG */
 		return (DDI_ME_INVAL);
 	}
 
-	uint64_t regspec_addr = rp->regspec_addr;
-	regspec_addr |= (((uint64_t)(rp->regspec_bustype & 0xffff)) << 32);
-	pfn = mmu_btop(regspec_addr);
 	if (mp->map_flags & DDI_MF_DEVICE_MAPPING) {
-		*vaddrp = (caddr_t)pfn;
+		*vaddrp = (caddr_t)((uintptr_t)mmu_btop(pbase));
 	} else {
-		pgoffset = (ulong_t)regspec_addr & MMU_PAGEOFFSET;
-		paddr_t pa = mmu_ptob(pfn) | pgoffset;
-		*vaddrp = (caddr_t)(SEGKPM_BASE | pa);
+		npages = mmu_btopr(rp->regspec_size + pgoffset);
 
+#ifdef	DDI_MAP_DEBUG
+		ddi_map_debug("rootnex_map_regspec: Mapping %d pages "
+		    "physical %llx", npages, pbase);
+#endif	/* DDI_MAP_DEBUG */
+
+		cvaddr = device_arena_alloc(ptob(npages), VM_NOSLEEP);
+		if (cvaddr == NULL)
+			return (DDI_ME_NORESOURCES);
+
+		/*
+		 * Now map in the pages we've allocated...
+		 */
+		hat_devload(kas.a_hat, cvaddr, mmu_ptob(npages),
+		    mmu_btop(pbase), mp->map_prot | hat_acc_flags,
+		    HAT_LOAD_LOCK);
+		*vaddrp = (caddr_t)cvaddr + pgoffset;
+
+		/* save away pfn and npages for FMA */
 		hp = mp->map_handlep;
-		if (hp != NULL) {
-			hp->ah_pfn = pfn;
-			hp->ah_pnum = mmu_btopr(regspec_size + pgoffset);
+		if (hp) {
+			hp->ah_pfn = mmu_btop(pbase);
+			hp->ah_pnum = npages;
 		}
 	}
 
-	return (0);
+#ifdef	DDI_MAP_DEBUG
+	ddi_map_debug(" at virtual 0x%x\n", *vaddrp);
+#endif	/* DDI_MAP_DEBUG */
+	return (DDI_SUCCESS);
 }
 
 
 static int
 rootnex_unmap_regspec(ddi_map_req_t *mp, caddr_t *vaddrp)
 {
-	struct regspec *rp;
+	caddr_t addr = (caddr_t)*vaddrp;
+	uint64_t npages, pgoffset;
+	struct regspec64 *rp;
 
 	if (mp->map_flags & DDI_MF_DEVICE_MAPPING)
 		return (0);
 
-	rp = mp->map_obj.rp;
+	ASSERT(mp->map_flags & DDI_MF_EXT_REGSPEC);
+	rp = (struct regspec64 *)mp->map_obj.rp;
 
-	uint64_t regspec_size = rp->regspec_size;
-	regspec_size |= (((uint64_t)
-	    ((rp->regspec_bustype >> 16) & 0xfff)) << 32);
-
-	if (regspec_size == 0) {
-		cmn_err(CE_WARN, "rootnex_unmap_regspec: zero regspec_size\n");
+	if (rp->regspec_size == 0) {
+#ifdef  DDI_MAP_DEBUG
+		ddi_map_debug("rootnex_unmap_regspec: zero regspec_size\n");
+#endif  /* DDI_MAP_DEBUG */
 		return (DDI_ME_INVAL);
 	}
 
-	*vaddrp = (caddr_t)0;
+	/*
+	 * I/O or memory mapping:
+	 *
+	 *	<bustype=0, addr=x, len=x>: memory
+	 *	<bustype=1, addr=x, len=x>: i/o
+	 *	<bustype>1, addr=0, len=x>: x86-compatibility i/o
+	 *
+	 * As above in the map path, an I/O mapping should never reach the
+	 * root
+	 */
+	VERIFY3U(rp->regspec_bustype, ==, 0);
 
-	return (0);
+	/*
+	 * Memory space
+	 */
+	pgoffset = (uintptr_t)addr & MMU_PAGEOFFSET;
+	npages = mmu_btopr(rp->regspec_size + pgoffset);
+	hat_unload(kas.a_hat, addr - pgoffset, ptob(npages), HAT_UNLOAD_UNLOCK);
+	device_arena_free(addr - pgoffset, ptob(npages));
+
+	/*
+	 * Destroy the pointer - the mapping has logically gone
+	 */
+	*vaddrp = NULL;
+
+	return (DDI_SUCCESS);
 }
 
 static int
 rootnex_map_handle(ddi_map_req_t *mp, off_t offset)
 {
+	rootnex_addr_t rbase;
 	ddi_acc_hdl_t *hp;
-	uint_t hat_flags;
-	register struct regspec *rp;
+	uint64_t pgoffset;
+	struct regspec64 *rp;
+	paddr_t pbase;
 
+	rp = (struct regspec64 *)mp->map_obj.rp;
+
+#ifdef	DDI_MAP_DEBUG
+	ddi_map_debug(
+	    "rootnex_map_handle: <0x%x 0x%x 0x%x> handle 0x%x\n",
+	    rp->regspec_bustype, rp->regspec_addr,
+	    rp->regspec_size, mp->map_handlep);
+#endif	/* DDI_MAP_DEBUG */
+
+	/*
+	 * I/O or memory mapping:
+	 *
+	 *	<bustype=0, addr=x, len=x>: memory
+	 *	<bustype=1, addr=x, len=x>: i/o
+	 *	<bustype>1, addr=0, len=x>: x86-compatibility i/o
+	 *
+	 * I/O mappings should never reach the root on ARM
+	 */
+	VERIFY3U(rp->regspec_bustype, ==, 0);
+
+	/*
+	 * Set up the hat_flags for the mapping.
+	 */
 	hp = mp->map_handlep;
-	rp = mp->map_obj.rp;
 
-	uint64_t regspec_addr = rp->regspec_addr;
-	regspec_addr |= (((uint64_t)(rp->regspec_bustype & 0xffff)) << 32);
+	switch (hp->ah_acc.devacc_attr_endian_flags) {
+	case DDI_NEVERSWAP_ACC:
+		hp->ah_hat_flags = HAT_NEVERSWAP | HAT_STRICTORDER;
+		break;
+	case DDI_STRUCTURE_LE_ACC:
+		hp->ah_hat_flags = HAT_STRUCTURE_LE;
+		break;
+	case DDI_STRUCTURE_BE_ACC:
+		return (DDI_FAILURE);
+	default:
+		return (DDI_REGS_ACC_CONFLICT);
+	}
 
-	uint64_t regspec_size = rp->regspec_size;
-	regspec_size |= (((uint64_t)
-	    ((rp->regspec_bustype >> 16) & 0xfff)) << 32);
+	switch (hp->ah_acc.devacc_attr_dataorder) {
+	case DDI_STRICTORDER_ACC:
+		break;
+	case DDI_UNORDERED_OK_ACC:
+		hp->ah_hat_flags |= HAT_UNORDERED_OK;
+		break;
+	case DDI_MERGING_OK_ACC:
+		hp->ah_hat_flags |= HAT_MERGING_OK;
+		break;
+	case DDI_LOADCACHING_OK_ACC:
+		hp->ah_hat_flags |= HAT_LOADCACHING_OK;
+		break;
+	case DDI_STORECACHING_OK_ACC:
+		hp->ah_hat_flags |= HAT_STORECACHING_OK;
+		break;
+	default:
+		return (DDI_FAILURE);
+	}
 
-	if (regspec_size == 0)
+	rbase = (rootnex_addr_t)rp->regspec_addr &
+	    (~(rootnex_addr_t)MMU_PAGEOFFSET);
+	pgoffset = (ulong_t)rp->regspec_addr & MMU_PAGEOFFSET;
+
+	if (rp->regspec_size == 0)
 		return (DDI_ME_INVAL);
 
-	hp->ah_hat_flags = 0;
-	hp->ah_pfn = mmu_btop(regspec_addr + offset);
-	hp->ah_pnum = mmu_btopr(regspec_addr + offset + regspec_size) -
-	    hp->ah_pfn;
+	pbase = rbase;
+
+	hp->ah_pfn = mmu_btop(pbase);
+	hp->ah_pnum = mmu_btopr(rp->regspec_size + pgoffset);
+
 	return (DDI_SUCCESS);
 }
 
@@ -1055,68 +1151,6 @@ rootnex_map_handle(ddi_map_req_t *mp, off_t offset)
  * ************************
  */
 
-static int
-get_interrupt_cells(pnode_t node)
-{
-	int interrupt_cells = 0;
-
-	while (node > 0) {
-		int len = prom_getproplen(node, "#interrupt-cells");
-		if (len > 0) {
-			ASSERT(len == sizeof (int));
-			int prop;
-			prom_getprop(node, "#interrupt-cells", (caddr_t)&prop);
-			interrupt_cells = ntohl(prop);
-			break;
-		}
-		len = prom_getproplen(node, "interrupt-parent");
-		if (len > 0) {
-			ASSERT(len == sizeof (int));
-			int prop;
-			prom_getprop(node, "interrupt-parent", (caddr_t)&prop);
-			node = prom_findnode_by_phandle(ntohl(prop));
-			continue;
-		}
-		node = prom_parentnode(node);
-	}
-	return (interrupt_cells);
-}
-
-static int
-get_pil(dev_info_t *rdip)
-{
-	static struct {
-		const char *name;
-		int pil;
-	} name_to_pil[] = {
-		{"serial",			12},
-		{"Ethernet controller",		6},
-		{ NULL}
-	};
-	const char *type_name[] = {
-		"device_type",
-		"model",
-		NULL
-	};
-
-	pnode_t node = ddi_get_nodeid(rdip);
-	for (int i = 0; type_name[i]; i++) {
-		int len = prom_getproplen(node, type_name[i]);
-		if (len <= 0) {
-			continue;
-		}
-		char *name = __builtin_alloca(len);
-		prom_getprop(node, type_name[i], name);
-
-		for (int j = 0; name_to_pil[j].name; j++) {
-			if (strcmp(name_to_pil[j].name, name) == 0) {
-				return (name_to_pil[j].pil);
-			}
-		}
-	}
-	return (5);
-}
-
 /*
  * rootnex_intr_ops()
  *	bus_intr_op() function for interrupt support
@@ -1126,12 +1160,18 @@ static int
 rootnex_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
     ddi_intr_handle_impl_t *hdlp, void *result)
 {
+	struct intrspec *ispec = NULL;
+
 	switch (intr_op) {
 	case DDI_INTROP_GETCAP:
 		*(int *)result = DDI_INTR_FLAG_LEVEL;
 		break;
 
 	case DDI_INTROP_ALLOC:
+		if ((ispec = rootnex_get_ispec(rdip, hdlp->ih_inum)) == NULL)
+			return (DDI_FAILURE);
+		hdlp->ih_pri = ispec->intrspec_pri;
+
 		*(int *)result = hdlp->ih_scratch1;
 		break;
 
@@ -1139,135 +1179,62 @@ rootnex_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 		break;
 
 	case DDI_INTROP_GETPRI:
-		if (hdlp->ih_pri == 0) {
-			hdlp->ih_pri = get_pil(rdip);
-		}
+		if ((ispec = rootnex_get_ispec(rdip, hdlp->ih_inum)) == NULL)
+			return (DDI_FAILURE);
 
-		*(int *)result = hdlp->ih_pri;
+		VERIFY3S(ispec->intrspec_pri, ==, hdlp->ih_pri);
+
+		*(int *)result = ispec->intrspec_pri;
 		break;
 	case DDI_INTROP_SETPRI:
 		if (*(int *)result > LOCK_LEVEL)
 			return (DDI_FAILURE);
-		hdlp->ih_pri = *(int *)result;
+
+		/* update the ispec with the new priority */
+		ispec->intrspec_pri =  *(int *)result;
+		hdlp->ih_pri = ispec->intrspec_pri;
 		break;
 
 	case DDI_INTROP_ADDISR:
+		if ((ispec = rootnex_get_ispec(rdip, hdlp->ih_inum)) == NULL)
+			return (DDI_FAILURE);
+		ispec->intrspec_func = hdlp->ih_cb_func;
 		break;
 	case DDI_INTROP_REMISR:
-		if (hdlp->ih_type != DDI_INTR_TYPE_FIXED)
+		if ((ispec = rootnex_get_ispec(rdip, hdlp->ih_inum)) == NULL)
+			return (DDI_FAILURE);
+		ispec->intrspec_func = (uint_t (*)()) 0;
+		break;
+	case DDI_INTROP_ENABLE: {
+		if ((ispec = rootnex_get_ispec(rdip, hdlp->ih_inum)) == NULL)
+			return (DDI_FAILURE);
+
+		hdlp->ih_vector = ispec->intrspec_vec;
+
+		if (ispec->intrspec_cfg == 1)
+			gic_config_irq(hdlp->ih_vector, true);
+		else
+			gic_config_irq(hdlp->ih_vector, false);
+
+		/* Add the interrupt handler */
+		if (!add_avintr((void *)hdlp, hdlp->ih_pri,
+		    hdlp->ih_cb_func, DEVI(rdip)->devi_name, hdlp->ih_vector,
+		    hdlp->ih_cb_arg1, hdlp->ih_cb_arg2, NULL, rdip))
 			return (DDI_FAILURE);
 		break;
-	case DDI_INTROP_ENABLE:
-		{
-			int interrupt_cells =
-			    get_interrupt_cells(ddi_get_nodeid(rdip));
-			switch (interrupt_cells) {
-			case 1:
-			case 3:
-				break;
-			default:
-				return (DDI_FAILURE);
-			}
-
-			int *irupts_prop;
-			uint_t irupts_len;
-			if ((ddi_prop_lookup_int_array(DDI_DEV_T_ANY, rdip,
-			    DDI_PROP_DONTPASS, "interrupts",
-			    &irupts_prop,
-			    &irupts_len) != DDI_SUCCESS) ||
-			    (irupts_len == 0)) {
-				return (DDI_FAILURE);
-			}
-			if ((interrupt_cells * hdlp->ih_inum) >= irupts_len) {
-				ddi_prop_free(irupts_prop);
-				return (DDI_FAILURE);
-			}
-
-			int vec;
-			int grp;
-			int cfg;
-			switch (interrupt_cells) {
-			case 1:
-				grp = 0;
-				vec = irupts_prop[interrupt_cells *
-				    hdlp->ih_inum + 0];
-				cfg = 4;
-				break;
-			case 3:
-				grp = irupts_prop[interrupt_cells *
-				    hdlp->ih_inum + 0];
-				vec = irupts_prop[interrupt_cells *
-				    hdlp->ih_inum + 1];
-				cfg = irupts_prop[interrupt_cells *
-				    hdlp->ih_inum + 2];
-				break;
-			default:
-				ddi_prop_free(irupts_prop);
-				return (DDI_FAILURE);
-			}
-
-			ddi_prop_free(irupts_prop);
-
-			hdlp->ih_vector = GIC_VEC_TO_IRQ(grp, vec);
-
-			cfg &= 0xFF;
-			switch (cfg) {
-			case 1:
-				gic_config_irq(hdlp->ih_vector, true);
-				break;
-			default:
-				gic_config_irq(hdlp->ih_vector, false);
-				break;
-			}
-
-			if (!add_avintr((void *)hdlp, hdlp->ih_pri,
-			    hdlp->ih_cb_func, DEVI(rdip)->devi_name,
-			    hdlp->ih_vector,
-			    hdlp->ih_cb_arg1, hdlp->ih_cb_arg2, NULL, rdip)) {
-				return (DDI_FAILURE);
-			}
-		}
-		break;
-
+	}
 	case DDI_INTROP_DISABLE:
-		rem_avintr((void *)hdlp, hdlp->ih_pri, hdlp->ih_cb_func,
-		    hdlp->ih_vector);
+		/* Remove the interrupt handler */
+		rem_avintr((void *)hdlp, hdlp->ih_pri,
+		    hdlp->ih_cb_func, hdlp->ih_vector);
 		break;
 	case DDI_INTROP_SETMASK:
 	case DDI_INTROP_CLRMASK:
 	case DDI_INTROP_GETPENDING:
 		return (DDI_FAILURE);
 	case DDI_INTROP_NAVAIL:
-		{
-			int interrupt_cells =
-			    get_interrupt_cells(ddi_get_nodeid(rdip));
-			int irupts_len;
-			if ((interrupt_cells != 0) &&
-			    ddi_getproplen(DDI_DEV_T_ANY, rdip,
-			    DDI_PROP_DONTPASS, "interrupts", &irupts_len) ==
-			    DDI_SUCCESS) {
-				*(int *)result = irupts_len /
-				    CELLS_1275_TO_BYTES(interrupt_cells);
-			} else {
-				return (DDI_FAILURE);
-			}
-		}
-		break;
 	case DDI_INTROP_NINTRS:
-		{
-			int interrupt_cells =
-			    get_interrupt_cells(ddi_get_nodeid(rdip));
-			int irupts_len;
-			if ((interrupt_cells != 0) &&
-			    ddi_getproplen(DDI_DEV_T_ANY, rdip,
-			    DDI_PROP_DONTPASS, "interrupts",
-			    &irupts_len) == DDI_SUCCESS) {
-				*(int *)result = irupts_len /
-				    CELLS_1275_TO_BYTES(interrupt_cells);
-			} else {
-				return (DDI_FAILURE);
-			}
-		}
+		*(int *)result = i_ddi_get_intx_nintrs(rdip);
 		break;
 	case DDI_INTROP_SUPPORTED_TYPES:
 		*(int *)result = DDI_INTR_TYPE_FIXED;	/* Always ... */

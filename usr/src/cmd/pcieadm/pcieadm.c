@@ -146,14 +146,8 @@ pcieadm_ofmt_errx(const char *fmt, ...)
 static boolean_t
 pcieadm_di_node_is_pci(di_node_t node)
 {
-	const char *name;
 	char *compat;
 	int nents;
-
-	name = di_node_name(node);
-	if (strncmp("pci", name, 3) == 0) {
-		return (name[3] != '\0');
-	}
 
 	nents = di_prop_lookup_strings(DDI_DEV_T_ANY, node, "compatible",
 	    &compat);

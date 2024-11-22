@@ -292,7 +292,8 @@ typedef struct devinfo_intr {
 
 	ddi_intr_handle_t *devi_intr_handle_p;	/* Hdl for legacy intr APIs */
 
-#if defined(__i386) || defined(__amd64)
+	/* XXXPCI: Why no sparc? */
+#if defined(__x86) || defined(__aarch64__)
 	/* Save the PCI config space handle */
 	ddi_acc_handle_t devi_cfg_handle;
 	int		 devi_cap_ptr;		/* MSI or MSI-X cap pointer */
@@ -346,7 +347,7 @@ void	i_ddi_set_intr_handle(dev_info_t *dip, int inum, ddi_intr_handle_t hdl);
 ddi_intr_msix_t	*i_ddi_get_msix(dev_info_t *dip);
 void	i_ddi_set_msix(dev_info_t *dip, ddi_intr_msix_t *msix_p);
 
-#if defined(__i386) || defined(__amd64)
+#if defined(__x86) || defined(__aarch64__)
 ddi_acc_handle_t	i_ddi_get_pci_config_handle(dev_info_t *dip);
 void	i_ddi_set_pci_config_handle(dev_info_t *dip, ddi_acc_handle_t handle);
 int	i_ddi_get_msi_msix_cap_ptr(dev_info_t *dip);
@@ -398,6 +399,14 @@ typedef struct devinfo_intr devinfo_intr_t;
 struct intrspec {
 	uint_t intrspec_pri;		/* interrupt priority */
 	uint_t intrspec_vec;		/* vector # (0 if none) */
+/*
+ * XXXROOTNEX: This is the same hack we end up repeating in the interrupt hdl
+ * platform private data, which _also_ has an intrsec in it, and all left
+ * hanging in the hopes of properly architected interrupts.
+ */
+#if defined(__aarch64__)
+	uint_t intrspec_cfg;		/* GIC-private  interrupt flags */
+#endif
 	uint_t (*intrspec_func)();	/* function to call for interrupt, */
 					/* If (uint_t (*)()) 0, none. */
 					/* If (uint_t (*)()) 1, then */

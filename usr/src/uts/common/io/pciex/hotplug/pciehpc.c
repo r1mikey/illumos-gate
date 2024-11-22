@@ -574,6 +574,7 @@ pciehpc_init(dev_info_t *dip, caddr_t arg)
 	ctrl_p->hc_ops.enable_hpc_intr = pciehpc_enable_intr;
 	ctrl_p->hc_ops.disable_hpc_intr = pciehpc_disable_intr;
 
+	/* XXXPCI: We should, but do not yet, do this */
 #if	defined(__x86)
 	pciehpc_update_ops(ctrl_p);
 #endif
@@ -1096,6 +1097,9 @@ pciehpc_set_slot_name(pcie_hp_ctrl_t *ctrl_p)
 	 *	else if valid slot number exists then it is "pcie<slot-num>".
 	 *	else it will be "pcie<sec-bus-number>dev0"
 	 */
+	/* XXXPCI: it's not important for correctness, but we should fix this */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 	if (ddi_getlongprop(DDI_DEV_T_ANY, ctrl_p->hc_dip, DDI_PROP_DONTPASS,
 	    "slot-names", (caddr_t)&slotname_data, &len) == DDI_PROP_SUCCESS) {
 		char tmp_name[256];
@@ -1122,6 +1126,7 @@ pciehpc_set_slot_name(pcie_hp_ctrl_t *ctrl_p)
 			    KM_SLEEP);
 		}
 	}
+#pragma GCC diagnostic pop
 }
 
 /*
@@ -3739,7 +3744,7 @@ pciehpc_dump_hpregs(pcie_hp_ctrl_t *ctrl_p)
 	PCIE_DBG("HotPlug interrupt Enabled	 = %s\n",
 	    control & PCIE_SLOTCTL_HP_INTR_EN ? "Yes":"No");
 
-	PCIE_DBG("Power Indicator LED = %s", pcie_led_state_text(
+	PCIE_DBG("Power Indicator LED = %s\n", pcie_led_state_text(
 	    pciehpc_led_state_to_hpc(pcie_slotctl_pwr_indicator_get(control))));
 
 	PCIE_DBG("Attn Indicator LED = %s\n",

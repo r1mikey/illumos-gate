@@ -49,7 +49,7 @@
 #include <sys/prom_plat.h>
 #include <sys/sunndi.h>
 #include <sys/ndi_impldefs.h>
-#include <sys/ddi_impldefs.h>
+
 #include <sys/sysmacros.h>
 #include <sys/systeminfo.h>
 #include <sys/utsname.h>
@@ -65,11 +65,13 @@
 #include <sys/lgrp.h>
 #include <sys/mach_intr.h>
 #include <vm/hat_aarch64.h>
+#include <sys/gic.h>
 
 size_t dma_max_copybuf_size = 0x101000;		/* 1M + 4K */
 uint64_t ramdisk_start, ramdisk_end;
 
 static void impl_bus_initialprobe(void);
+static void impl_bus_reprobe(void);
 
 /*
  * Platform drivers on this platform
@@ -1096,12 +1098,175 @@ i_ddi_remove_softint(ddi_softint_hdl_impl_t *hdlp)
 	(void) rem_avsoftintr((void *)hdlp, hdlp->ih_pri, hdlp->ih_cb_func);
 }
 
+
+
+/*
+ * Return the device node that claims ownership of this interrupt domain
+ * following "interrupt-parent" as necessary.
+ *
+ * In practical terms, this is the node with the "#interrupt-cells" which
+ * applies to `pdip`.  This may be `pdip` itself.
+ *
+ * As I read the 1275 PCI bindings, I believe we don't need to handle
+ * "interrupt-map" here, because we should always have an "#interrupt-cells"
+ * on that same node.
+ */
+dev_info_t *
+i_ddi_interrupt_domain(dev_info_t *pdip)
+{
+	dev_info_t *ret = NULL;
+	dev_info_t *p = pdip;
+
+	while (p != NULL) {
+		phandle_t phandle;
+
+		/* If we have "#interrupt-cells", we're what we want */
+		if (ddi_prop_exists(DDI_DEV_T_ANY, p, DDI_PROP_DONTPASS,
+		    "#interrupt-cells") != 0) {
+			ret = p;
+			break;
+		}
+
+		/* If not, if there's an interrupt-parent follow it */
+		if ((phandle = ddi_prop_get_int(DDI_DEV_T_ANY, p,
+		    DDI_PROP_DONTPASS, "interrupt-parent", -1)) != -1) {
+			p = e_ddi_nodeid_to_dip(phandle);
+			VERIFY3P(p, !=, NULL);
+			continue;
+		}
+
+		/* If that didn't work, follow the tree itself */
+		p = ddi_get_parent(p);
+	}
+
+	return (ret);
+}
+
+/*
+ * i_ddi_get_interrupt - Get the interrupt property from the specified device for a
+ * given interrupt. Note that this function is called only for the FIXED
+ * interrupt type.
+ *
+ * NB: i_ddi_get_inum returns a single uint32_t, which is insufficient to
+ * fully describe an interrupt.  We are returning the full interrupt
+ * descriptor, plus the length of the vector (for the purpose of freeing it).
+ */
+size_t
+i_ddi_get_interrupt(dev_info_t *dip, uint_t inumber, int **ret)
+{
+	int32_t			max_intrs;
+	int			*ip;
+	uint_t			ip_sz;
+	uint32_t		intr = 0;
+
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "interrupts", &ip, &ip_sz) == DDI_SUCCESS) {
+		dev_info_t *id = i_ddi_interrupt_domain(dip);
+
+		VERIFY3P(id, !=, NULL);
+
+		int intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, id, 0,
+		    "#interrupt-cells", 1);
+
+		if (inumber >= ip_sz / intr_cells) {
+			return (0); /* failure */
+		}
+
+		int *intrp = ip + (inumber * intr_cells);
+
+		*ret = kmem_zalloc(CELLS_1275_TO_BYTES(intr_cells),
+		    KM_SLEEP);
+		memcpy(*ret, intrp, CELLS_1275_TO_BYTES(intr_cells));
+
+		ddi_prop_free(ip);
+		return (intr_cells);
+	}
+
+	return (0);
+}
+
+/*
+ * i_ddi_get_inum - Get the interrupt number property from the
+ * specified device. Note that this function is called only for
+ * the FIXED interrupt type.
+ */
+uint32_t
+i_ddi_get_inum(dev_info_t *dip, uint_t inumber)
+{
+	int32_t			max_intrs;
+	int			*ip;
+	uint_t			ip_sz;
+	uint32_t		intr = 0;
+	size_t			intr_cells;
+
+	intr_cells = i_ddi_get_interrupt(dip, inumber, &ip);
+
+	switch (intr_cells) {
+	case 0:
+		intr = 0;
+		break;
+	case 1:
+		intr = *ip;
+		break;
+	case 3:
+		intr = *(ip + 1);
+		break;
+	default:
+		dev_err(dip, CE_PANIC, "unknown #interrupt-cells: %zd",
+		    intr_cells);
+		return (0);		/* Unreachable */
+	}
+
+	/*
+	 * XXXPCI: I hate this, it's weird now we have to handle 0.  We should
+	 * stop handling 0 and fix the virtio nodes
+	 */
+	if (intr_cells > 0)
+		kmem_free(ip, CELLS_1275_TO_BYTES(intr_cells));
+	return (intr);
+}
+
+/*
+ * i_ddi_get_intr_pri - Get the interrupt-priorities property from
+ * the specified device. Note that this function is called only for
+ * the FIXED interrupt type.
+ */
+uint32_t
+i_ddi_get_intr_pri(dev_info_t *dip, uint_t inumber)
+{
+	int	*intr_prio_p;
+	uint_t	intr_prio_num;
+	uint32_t	pri = 0;
+
+	/*
+	 * Use the "interrupt-priorities" property to determine the
+	 * the pil/ipl for the interrupt handler.
+	 */
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "interrupt-priorities", &intr_prio_p,
+	    &intr_prio_num) == DDI_SUCCESS) {
+		if (inumber < intr_prio_num)
+			pri = intr_prio_p[inumber];
+		ddi_prop_free(intr_prio_p);
+	}
+
+	return (pri);
+}
+
 int
 i_ddi_intr_ops(dev_info_t *dip, dev_info_t *rdip, ddi_intr_op_t op,
     ddi_intr_handle_impl_t *hdlp, void * result)
 {
 	dev_info_t	*pdip = (dev_info_t *)DEVI(dip)->devi_parent;
 	int		ret = DDI_FAILURE;
+
+	if (hdlp->ih_type == DDI_INTR_TYPE_FIXED) {
+		if (hdlp->ih_vector == 0)
+			hdlp->ih_vector = i_ddi_get_inum(rdip, hdlp->ih_inum);
+
+		if (hdlp->ih_pri == 0)
+			hdlp->ih_pri = i_ddi_get_intr_pri(rdip, hdlp->ih_inum);
+	}
 
 	if (NEXUS_HAS_INTR_OP(pdip))
 		ret = (*(DEVI(pdip)->devi_ops->devo_bus_ops->bus_intr_op))(
@@ -1154,6 +1319,279 @@ i_ddi_free_intr_phdl(ddi_intr_handle_impl_t *hdlp)
 	hdlp->ih_private = NULL;
 }
 
+/*
+ * Pull a unitaddress for dip from reg[0], and put it in *out.
+ * Returns the actual number of address cells, or -1 on failure
+ */
+static int
+i_ddi_unitaddr(dev_info_t *dip, uint_t *out, size_t out_cells)
+{
+	int *reg;
+	uint_t reg_cells;
+
+	int addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip, 0,
+	    "#address-cells", 2);
+
+	if (addr_cells == 0)
+		return (0);
+
+	if (addr_cells > out_cells)
+		return (-1);
+
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "reg", &reg, &reg_cells) != DDI_SUCCESS) {
+		dev_err(dip, CE_PANIC, "Mapping interrupts on device with no registers");
+		return (-1);	/* Unreachable */
+	}
+
+	memcpy(out, reg, CELLS_1275_TO_BYTES(out_cells));
+	ddi_prop_free(reg);
+	return (addr_cells);
+}
+
+typedef struct {
+	size_t ui_nelems;	/* Number of elements in ui_v */
+	uint32_t ui_v[];	/* unit/interrupt descriptor */
+} unit_intr_t;
+
+static unit_intr_t *
+i_ddi_unitintr(dev_info_t *dip, uint_t inum)
+{
+	unit_intr_t *ui;
+	int addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip, 0,
+	    "#address-cells", 2);
+
+	int *intrs = NULL;
+	int intr_cells = i_ddi_get_interrupt(dip, inum, &intrs);
+
+	if (intr_cells == 0) {
+		dev_err(dip, CE_PANIC, "Mapping interrupts on device with no interrupts?");
+		return (NULL);
+	}
+
+	ui = kmem_zalloc(sizeof (*ui) +
+	    CELLS_1275_TO_BYTES(addr_cells + intr_cells), KM_SLEEP);
+	ui->ui_nelems = addr_cells + intr_cells;
+
+	if (i_ddi_unitaddr(dip, ui->ui_v, addr_cells) != addr_cells) {
+		dev_err(dip, CE_PANIC, "couldn't interpret unit address");
+		return (NULL);	/* Unreachable */
+	}
+
+	memcpy(ui->ui_v + addr_cells, intrs, CELLS_1275_TO_BYTES(intr_cells));
+	kmem_free(intrs, CELLS_1275_TO_BYTES(intr_cells));
+
+	return (ui);
+}
+
+static dev_info_t *
+map_interrupt_core(dev_info_t *dip, unit_intr_t **ui)
+{
+	if (ddi_prop_exists(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "interrupt-controller") != 0) {
+		phandle_t ip = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
+		    DDI_PROP_DONTPASS, "interrupt-parent", -1);
+
+		/*
+		 * In the algorithm presented in the spec we would
+		 * build a unitintr based on our "reg"[0] and
+		 * "interrupts"[intr] and continue our search to the
+		 * top.  We stop at every interrupt controller to
+		 * allow for their programming and allow them to then
+		 * pass things on up the tree as appropriate.
+		 *
+		 * XXXPCI: In theory, anyway.  I don't have an
+		 * environment with cascaded controllers.
+		 */
+		if (ip != -1) {
+			return (e_ddi_nodeid_to_dip(ip));
+		} else {
+			/* interrupt-controller with no parent, done */
+			return (dip);
+		}
+	} else {
+		int *intr_map, *intr_mask;
+		uint_t intr_map_sz, intr_mask_sz;
+
+		/* Not an interrupt controller, check the interrupt-map */
+		if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+		    "interrupt-map", &intr_map, &intr_map_sz) == DDI_SUCCESS) {
+			if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+			    "interrupt-map-mask", &intr_mask, &intr_mask_sz) != DDI_SUCCESS) {
+				intr_mask_sz = 0;
+			}
+
+			/* By definition, if we have an interrupt-map we're the interrupt domain */
+			ASSERT3P(i_ddi_interrupt_domain(dip), ==, dip);
+
+			int intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
+			    DDI_PROP_DONTPASS, "#interrupt-cells", 1);
+
+			VERIFY((intr_mask_sz == (*ui)->ui_nelems) ||
+			    (intr_mask_sz == 0));
+
+			/* Apply the mask if we have one */
+			for (int i = 0; i < intr_mask_sz; i++) {
+				(*ui)->ui_v[i] &= intr_mask[i];
+			}
+
+			int unitintr_cells = (*ui)->ui_nelems;
+
+			/*
+			 * The effective stride through the table, the width
+			 * of the row we're reading as we're reading it.
+			 */
+			int effective_stride = 0;
+			for (int *scan = intr_map;
+			     scan < intr_map + intr_map_sz;
+			     scan += effective_stride) {
+				dev_info_t *parent;
+
+				/*
+				 * Our stride is at least as far as our own
+				 * unit-interrupt specifier plus the parent
+				 * phandle
+				 */
+				effective_stride = unitintr_cells + 1;
+
+				parent = e_ddi_nodeid_to_dip(scan[effective_stride - 1]);
+
+				VERIFY3P(parent, !=, NULL);
+
+				int par_addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY,
+				    parent, 0, "#address-cells", 2);
+				int par_intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY,
+				    parent, 0, "#interrupt-cells", 1);
+
+				if (memcmp((*ui)->ui_v, scan,
+				    CELLS_1275_TO_BYTES((*ui)->ui_nelems)) == 0) {
+					int nelems = par_addr_cells + par_intr_cells;
+
+					kmem_free(*ui, sizeof (**ui) +
+					    CELLS_1275_TO_BYTES((*ui)->ui_nelems));
+					*ui = kmem_zalloc(sizeof (**ui) +
+					    CELLS_1275_TO_BYTES(nelems), KM_SLEEP);
+					(*ui)->ui_nelems = nelems;
+					memcpy((*ui)->ui_v, scan + effective_stride,
+					    CELLS_1275_TO_BYTES((*ui)->ui_nelems));
+
+					ddi_prop_free(intr_map);
+					if (intr_mask != NULL)
+						ddi_prop_free(intr_mask);
+					return (parent);
+				}
+
+				effective_stride += par_addr_cells + par_intr_cells;
+			}
+
+			ddi_prop_free(intr_map);
+			if (intr_mask != NULL)
+				ddi_prop_free(intr_mask);
+		}
+
+		/*
+		 * It may feel like the size here could not possibly change,
+		 * because if it did then this would require an
+		 * "interrupt-map", but that's not true, it's entirely
+		 * possible for "#address-cells" to change.
+		 */
+		int intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip, 0,
+		    "#interrupt-cells", 1);
+		int addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip, 0,
+		    "#address-cells", 2);
+
+		if ((intr_cells + addr_cells) == (*ui)->ui_nelems) {
+			/* Same size, just overwrite the unit address */
+			if (i_ddi_unitaddr(dip, (*ui)->ui_v, addr_cells) != addr_cells) {
+				dev_err(dip, CE_PANIC, "couldn't interpret unit address");
+				return (NULL);	/* Unreachable */
+			}
+		} else {
+			/* Different size, we need a replacement */
+			unit_intr_t *nu = kmem_zalloc(sizeof (*nu) +
+			    CELLS_1275_TO_BYTES(intr_cells + addr_cells),
+			    KM_SLEEP);
+
+			if (i_ddi_unitaddr(dip, nu->ui_v, addr_cells) != addr_cells) {
+				dev_err(dip, CE_PANIC, "couldn't interpret unit address");
+				return (NULL);	/* Unreachable */
+			}
+
+			/*
+			 * Use the same interrupt specifier as before.  Note
+			 * that we're careful not to use "addr_cells", as that
+			 * refers to the wrong node.
+			 */
+			memcpy(nu->ui_v + addr_cells, (*ui)->ui_v +
+			    ((*ui)->ui_nelems - intr_cells), intr_cells);
+			kmem_free(*ui, CELLS_1275_TO_BYTES((*ui)->ui_nelems));
+			*ui = nu;
+		}
+
+		phandle_t ip = ddi_prop_get_int(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+		    "interrupt-parent", -1);
+		if (ip != -1) {
+			return (map_interrupt_core(e_ddi_nodeid_to_dip(ip), ui));
+		}
+
+		return (map_interrupt_core(ddi_get_parent(dip), ui));
+	}
+
+	ASSERT(0 && "Unreachable!");
+	return ((dev_info_t *)-1); /* That dip is PoOOiiiSoooOOOoon */
+}
+
+dev_info_t *
+map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
+{
+	unit_intr_t *ui = i_ddi_unitintr(dip, hdlp->ih_inum);
+
+	VERIFY3P(ui, !=, NULL);
+
+	dev_info_t *par = map_interrupt_core(dip, &ui);
+
+	/*
+	 * XXXPCI: Doing this via the private data in the hdl, v. just
+	 * returning it, is bullshit.
+	 */
+	ihdl_plat_t *priv = (ihdl_plat_t *)hdlp->ih_private;
+	VERIFY3P(priv, !=, NULL);
+
+	int addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, par, 0,
+	    "#address-cells", 2); /* XXXPCI: default? */
+	int intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, par, 0,
+	    "#interrupt-cells", 1); /* XXXPCI: default? */
+
+	VERIFY3S(ui->ui_nelems, ==, addr_cells + intr_cells);
+
+	/*
+	 * XXXPCI: What would a non-0 unit address at the top of the tree
+	 * _mean_?
+	 *
+	 * This should let us catch one if we find one in the wild, and
+	 * actively choose whether to ignore it or what.
+	 */
+	for (int i = 0; i < addr_cells; i++) {
+		VERIFY3S(ui->ui_v[i], ==, 0);
+	}
+
+	/*
+	 * XXXPCI: Actually, this is specific to the device in `par`, we just
+	 * assume we know what to do.  Another case where we should check
+	 * "compatible" or, ideally, architect interrupts properly.
+	 */
+	VERIFY3S(intr_cells, ==, 3);
+
+	priv->ip_gic_cfg = ui->ui_v[addr_cells + 0];
+	priv->ip_gic_sense = ui->ui_v[addr_cells + 2];
+	hdlp->ih_vector = ui->ui_v[addr_cells + 1];
+
+	kmem_free(ui, sizeof (*ui) +
+	    CELLS_1275_TO_BYTES(ui->ui_nelems));
+
+	return (par);
+}
+
 int
 i_ddi_get_intx_nintrs(dev_info_t *dip)
 {
@@ -1162,13 +1600,17 @@ i_ddi_get_intx_nintrs(dev_info_t *dip)
 	int *ip;
 	int ret = 0;
 
-	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS |
-	    DDI_PROP_CANSLEEP,
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
 	    "interrupts", &ip, &intrlen) == DDI_SUCCESS) {
-		intr_sz = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
-		    0, "#interrupt-cells", 1);
+		dev_info_t *intrd = i_ddi_interrupt_domain(dip);
 
-		intr_sz = CELLS_1275_TO_BYTES(intr_sz);
+		VERIFY3P(intrd, !=, NULL);
+
+		intr_sz = ddi_prop_get_int(DDI_DEV_T_ANY, intrd,
+		    0, "#interrupt-cells", -1);
+
+		VERIFY3S(intr_sz, !=, -1);
+
 		ret = intrlen / intr_sz;
 
 		ddi_prop_free(ip);
@@ -1215,37 +1657,363 @@ impl_fix_props(dev_info_t *dip, dev_info_t *ch_dip, char *name,
 }
 
 static int
-get_prop_int_array(dev_info_t *di, char *pname, int **pval, uint_t *plen)
+get_address_cells(pnode_t node)
 {
-	int ret;
+	int address_cells = 0;
 
-	if ((ret = ddi_prop_lookup_int_array(DDI_DEV_T_ANY, di,
-	    DDI_PROP_DONTPASS, pname, pval, plen))
-	    == DDI_PROP_SUCCESS) {
-		*plen = (*plen) * (sizeof (int));
+	while (node > 0) {
+		int len = prom_getproplen(node, "#address-cells");
+		if (len > 0) {
+			ASSERT(len == sizeof (int));
+			int prop;
+			prom_getprop(node, "#address-cells", (caddr_t)&prop);
+			address_cells = ntohl(prop);
+			break;
+		}
+		node = prom_parentnode(node);
 	}
-	return (ret);
+	return (address_cells);
+}
+
+static int
+get_size_cells(pnode_t node)
+{
+	int size_cells = 0;
+
+	while (node > 0) {
+		int len = prom_getproplen(node, "#size-cells");
+		if (len > 0) {
+			ASSERT(len == sizeof (int));
+			int prop;
+			prom_getprop(node, "#size-cells", (caddr_t)&prop);
+			size_cells = ntohl(prop);
+			break;
+		}
+		node = prom_parentnode(node);
+	}
+	return (size_cells);
+}
+
+/*
+ * For armv8, we're prepared to claim that the interrupt string is either in
+ * the form of a list of <vec> specifications
+ *
+ * or the arm,gic format: a list of <type, vec, flags> specifications
+ */
+#define	VEC_MIN	0
+#define	VEC_MAX	987
+
+static int
+impl_xlate_intrs(dev_info_t *child, uint32_t *in, size_t in_len,
+    struct ddi_parent_private_data *pdptr)
+{
+	dev_info_t *idomain = i_ddi_interrupt_domain(child);
+	struct intrspec *new;
+	int *got_prop;
+	int n;
+	int *inpri = NULL;
+	uint_t got_len;
+
+	VERIFY3P(idomain, !=, NULL);
+	int interrupt_cells = ddi_prop_get_int(DDI_DEV_T_ANY, idomain,
+	    DDI_PROP_DONTPASS, "#interrupt-cells", -1);
+
+	static const char bad_intr_fmt[] =
+	    "bad interrupt spec from %s%d - ipl %d, irq %d\n";
+
+	/*
+	 * 1 == normal <vec>
+	 * 3 == arm,gic <type, vec, flags>
+	 *
+	 * XXXROOTNEX: There's no reason that someone couldn't use a 1 or
+	 * 3-tuple to a different end.  We should probably be checking the
+	 * node more carefully, at least "compatible".  Or restructure
+	 * interrupts so interrupt controllers handle this, like would make
+	 * sense.
+	 */
+	VERIFY(interrupt_cells == 1 || interrupt_cells == 3);
+
+	/*
+	 * We only support output of the "new style" property, a list of <vec>
+	 */
+	n = in_len / interrupt_cells;
+	pdptr->par_nintr = n;
+	new = pdptr->par_intr = kmem_zalloc(n * sizeof (struct intrspec),
+	    KM_SLEEP);
+
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, child, DDI_PROP_DONTPASS,
+	    "interrupt-priorities", &got_prop, &got_len) == DDI_PROP_SUCCESS) {
+		if (n != got_len) {
+			cmn_err(CE_CONT,
+			    "bad interrupt-priorities length"
+			    " from %s%d: expected %d, got %d\n",
+			    DEVI(child)->devi_name,
+			    DEVI(child)->devi_instance, n,
+			    got_len);
+			goto broken;
+		}
+		inpri = (int *)got_prop;
+	}
+
+	for (int i = 0; i < n; i++) {
+		uint32_t type, vec, flags;
+		uint32_t level = 5;
+
+		if (interrupt_cells == 3) {
+			type = *in++;
+			vec = *in++;
+			flags = *in++;
+		} else {
+			type = 0;
+			vec = *in++;
+			flags = 4;
+		}
+
+		vec = GIC_VEC_TO_IRQ(type, vec);
+
+		if (inpri == NULL)
+			level = 5;
+		else
+			level = *inpri++;
+
+		if (level < 1 || level > MAXIPL ||
+		    vec < VEC_MIN || vec > VEC_MAX) {
+			cmn_err(CE_CONT, bad_intr_fmt,
+			    DEVI(child)->devi_name,
+			    DEVI(child)->devi_instance, level, vec);
+			goto broken;
+		}
+
+		new->intrspec_pri = level;
+		new->intrspec_vec = vec;
+		new->intrspec_cfg = flags;
+		new++;
+	}
+
+	if (inpri != NULL)
+		ddi_prop_free(got_prop);
+	return (DDI_SUCCESS);
+
+broken:
+	kmem_free(pdptr->par_intr, pdptr->par_nintr * sizeof (struct intrspec));
+	pdptr->par_intr = NULL;
+	pdptr->par_nintr = 0;
+
+	if (inpri != NULL)
+		ddi_prop_free(got_prop);
+
+	return (DDI_FAILURE);
+}
+
+/*
+ * We're prepared for either 2 or 1 address cells and 2 or 1 size cells
+ */
+static int
+impl_xlate_regs(dev_info_t *child, uint32_t *in, size_t in_len,
+    struct ddi_parent_private_data *pdptr)
+{
+	struct regspec *rp = NULL;
+	dev_info_t *parent = NULL;
+
+	parent = ddi_get_parent(child);
+
+	if (parent == NULL) {
+		return (-1);
+	}
+
+	int parent_addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, parent,
+	    0, "#address-cells", 0);
+	int parent_size_cells = ddi_prop_get_int(DDI_DEV_T_ANY, parent,
+	    0, "#size-cells", 0);
+
+	if (parent_size_cells < 1 || parent_size_cells > 2) {
+		dev_err(child, CE_WARN, "unsupported size cells %d",
+		    parent_size_cells);
+		return (1);
+	}
+
+	if (parent_addr_cells < 1 || parent_addr_cells > 2) {
+		dev_err(child, CE_WARN, "unsupported addr cells %d",
+		    parent_addr_cells);
+		return (1);
+	}
+
+	int reg_size = parent_addr_cells + parent_size_cells;
+	int nregs = in_len / reg_size;
+
+	if (nregs > 0) {
+		rp = pdptr->par_reg = kmem_zalloc(nregs * sizeof (struct regspec),
+		    KM_SLEEP);
+		pdptr->par_nreg = nregs;
+
+		for (int i = 0; i < nregs; i++, rp++) {
+			uint64_t addr = 0;
+			uint64_t size = 0;
+
+			for (int j = 0; j < parent_addr_cells; j++) {
+				addr = (addr << 32) | in[(reg_size * i) + j];
+			}
+
+			for (int j = 0; j < parent_size_cells; j++) {
+				size = (size << 32) | in[(reg_size * i) +
+				    (parent_addr_cells + j)];
+			}
+
+			if (addr > UINT32_MAX) {
+				dev_err(child, CE_WARN, "regspec %d needs 64bit "
+				    "addressing", i);
+			}
+			if (size > UINT32_MAX) {
+				dev_err(child, CE_WARN, "regspec %d needs 64bit "
+				    "sizing", i);
+			}
+
+			rp->regspec_addr = addr;
+			rp->regspec_size = size;
+		}
+	}
+
+	return (0);
+}
+
+/*
+ * Create a ddi_parent_private_data structure from the ddi properties of
+ * the dev_info node.
+ *
+ * The "reg" and "interrupts" properties are required
+ * if the driver wishes to create mappings or field interrupts on behalf
+ * of the device.
+ *
+ * The "reg" property is in a firmware-defined shape and converted into
+ * `struct regspec`.
+ *
+ * The "interrupts" property is in firmware-defined shape and converted into
+ * `struct intrspec`
+ *
+ * XXXROOTNEX: "ranges" is currently left alone, unless it is of a
+ * pre-determined shape.  This matches behaviour on SPARC (for eg), but we
+ * easily could genericize it if we had a 64bit range structure to use.
+ */
+void
+make_ddi_ppd(dev_info_t *child, struct ddi_parent_private_data **ppd)
+{
+	struct ddi_parent_private_data *pdptr;
+	int n;
+	int *reg_prop, *rng_prop, *irupts_prop;
+	uint_t reg_len, rng_len, irupts_len;
+	dev_info_t *parent;
+	int parent_addr_cells, parent_size_cells;
+	int child_addr_cells, child_size_cells;
+
+	*ppd = pdptr = kmem_zalloc(sizeof (*pdptr), KM_SLEEP);
+
+	/* The root node has no PPD */
+	if ((parent = ddi_get_parent(child)) == NULL)
+		return;
+
+	/*
+	 * Handle the 'reg' property.
+	 */
+	if ((ddi_prop_lookup_int_array(DDI_DEV_T_ANY, child, DDI_PROP_DONTPASS,
+	    "reg", &reg_prop, &reg_len) == DDI_PROP_SUCCESS) &&
+	    (reg_len != 0)) {
+		if (impl_xlate_regs(child, (uint32_t *)reg_prop, reg_len,
+		    pdptr) != 0) {
+			dev_err(child, CE_WARN, "couldn't initialize regs in "
+			    "parent data");
+		}
+
+		ddi_prop_free(reg_prop);
+	}
+
+	/*
+	 * Handle the 'interrupts' property
+	 */
+	if ((ddi_prop_lookup_int_array(DDI_DEV_T_ANY, child,
+	    DDI_PROP_DONTPASS, "interrupts", &irupts_prop,
+	    &irupts_len) == DDI_PROP_SUCCESS) && (irupts_len != 0)) {
+		/*
+		 * Translate the 'interrupts' property into an array
+		 * of intrspecs for the rest of the DDI framework to
+		 * toy with.  Only our ancestors really know how to
+		 * do this, so ask 'em.  We massage the 'interrupts'
+		 * property so that it is pre-pended by a count of
+		 * the number of integers in the argument.
+		 */
+		if (impl_xlate_intrs(child, (uint32_t *)irupts_prop, irupts_len,
+		    pdptr) != DDI_SUCCESS) {
+			dev_err(child, CE_CONT,
+			    "Unable to translate 'interrupts'\n");
+		}
+
+		ddi_prop_free(irupts_prop);
+	}
+
+	child_addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, child,
+	    0, "#address-cells", 0);
+	child_size_cells = ddi_prop_get_int(DDI_DEV_T_ANY, child,
+	    0, "#size-cells", 0);
+	parent_addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, parent,
+	    0, "#address-cells", 0);
+	parent_size_cells = ddi_prop_get_int(DDI_DEV_T_ANY, parent,
+	    0, "#size-cells", 0);
+
+	ASSERT3U(child_addr_cells, !=, 0);
+	ASSERT3U(child_size_cells, !=, 0);
+	ASSERT3U(parent_addr_cells, !=, 0);
+	ASSERT3U(parent_size_cells, !=, 0);
+
+	/*
+	 * Ranges, of of which we only handle certain shapes.
+	 *
+	 * XXXROOTNEX: Genericize, like we do regs and interrupts?
+	 *
+	 * This is only used in relation to `i_ddi_apply_range` so we easily
+	 * _could_, though we'd then run into the same 32bit assumptions as
+	 * with "regs"
+	 */
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, child,
+	    DDI_PROP_DONTPASS, "ranges", &rng_prop, &rng_len)
+	    == DDI_PROP_SUCCESS) {
+		if (child_addr_cells != 2 || parent_addr_cells != 2 ||
+		    child_size_cells != 1 || parent_size_cells != 1) {
+			NDI_CONFIG_DEBUG((CE_NOTE,
+			    "!ranges not made in parent data; "
+			    "#address-cells or #size-cells have "
+			    "non-default values\n"
+			    "\tparent: #address-cells = %d, #size-cells = %d\n"
+			    "\tchild: #address-cells = %d, #size-cells = %d",
+			    parent_addr_cells, parent_size_cells,
+			    child_addr_cells, child_size_cells));
+			ddi_prop_free(rng_prop);
+			return;
+		}
+
+		pdptr->par_nrng = CELLS_1275_TO_BYTES(rng_len) /
+		    (sizeof (struct rangespec));
+		pdptr->par_rng = (struct rangespec *)rng_prop;
+	}
 }
 
 static int
 impl_sunbus_name_child(dev_info_t *child, char *name, int namelen)
 {
-	name[0] = '\0';
+	/* Fill in parent-private data */
 	if (ddi_get_parent_data(child) == NULL) {
-		struct ddi_parent_private_data *pdptr =
-		    kmem_zalloc(sizeof (*pdptr), KM_SLEEP);
+		struct ddi_parent_private_data *pdptr;
+		make_ddi_ppd(child, &pdptr);
 		ddi_set_parent_data(child, pdptr);
 	}
 
-	pnode_t node = ddi_get_nodeid(child);
-	if (node > 0) {
-		char buf[MAXNAMELEN] = {0};
-		int len = prom_getproplen(node, "unit-address");
-		if (0 < len && len < MAXNAMELEN) {
-			prom_getprop(node, "unit-address", buf);
-			if (strlen(buf) < namelen)
-				strcpy(name, buf);
-		}
+	name[0] = '\0';
+
+	if (sparc_pd_getnreg(child) > 0) {
+		/*
+		 * Note that unlike other platforms, we don't include the
+		 * bustype, to match practice in devicetree.
+		 */
+		(void) snprintf(name, namelen, "%x",
+		    (uint_t)sparc_pd_getreg(child, 0)->regspec_addr);
 	}
 
 	return (DDI_SUCCESS);
@@ -1265,6 +2033,7 @@ impl_ddi_sunbus_initchild(dev_info_t *child)
 		impl_ddi_sunbus_removechild(child);
 		return (DDI_FAILURE);
 	}
+
 	return (DDI_SUCCESS);
 }
 
@@ -1283,8 +2052,9 @@ impl_free_ddi_ppd(dev_info_t *dip)
 	if ((n = (size_t)pdptr->par_nrng) != 0)
 		ddi_prop_free((void *)pdptr->par_rng);
 
-	if ((n = pdptr->par_nreg) != 0)
-		ddi_prop_free((void *)pdptr->par_reg);
+	if ((n = pdptr->par_nreg) != 0) {
+		kmem_free(pdptr->par_reg, n * sizeof (struct regspec));
+	}
 
 	kmem_free(pdptr, sizeof (*pdptr));
 	ddi_set_parent_data(dip, NULL);
@@ -2091,46 +2861,7 @@ i_ddi_cacheattr_to_hatacc(uint_t flags, uint_t *hataccp)
 	}
 }
 
-static int
-get_address_cells(pnode_t node)
-{
-	int address_cells = 0;
-
-	while (node > 0) {
-		int len = prom_getproplen(node, "#address-cells");
-		if (len > 0) {
-			ASSERT(len == sizeof (int));
-			int prop;
-			prom_getprop(node, "#address-cells", (caddr_t)&prop);
-			address_cells = ntohl(prop);
-			break;
-		}
-		node = prom_parentnode(node);
-	}
-	return (address_cells);
-}
-
-static int
-get_size_cells(pnode_t node)
-{
-	int size_cells = 0;
-
-	while (node > 0) {
-		int len = prom_getproplen(node, "#size-cells");
-		if (len > 0) {
-			ASSERT(len == sizeof (int));
-			int prop;
-			prom_getprop(node, "#size-cells", (caddr_t)&prop);
-			size_cells = ntohl(prop);
-			break;
-		}
-		node = prom_parentnode(node);
-	}
-	return (size_cells);
-}
-
-struct dma_range
-{
+struct dma_range {
 	uint64_t cpu_addr;
 	uint64_t bus_addr;
 	size_t size;
@@ -2787,6 +3518,9 @@ configure(void)
 	extern void i_ddi_init_root();
 
 	i_ddi_init_root();
+	impl_bus_reprobe();	/* Reprogram devices not set up by firmware */
+
+	/* XXXARM: intel doesn't do this.  Is this a lurking netboot fix? */
 	i_ddi_attach_hw_nodes("dld");
 }
 
@@ -2807,18 +3541,6 @@ static struct bus_probe {
 } *bus_probes;
 void
 impl_bus_add_probe(void (*func)(int));
-static int
-print_dip(dev_info_t *dip, void *arg)
-{
-	char *model_str;
-	prom_printf("%s: dip=%p\n", __FUNCTION__, dip);
-	if (ddi_prop_lookup_string(
-	    DDI_DEV_T_ANY, dip, 0, "name", &model_str) != DDI_SUCCESS)
-		return (DDI_WALK_CONTINUE);
-	prom_printf("%s: name=%s\n", __FUNCTION__, model_str);
-	ddi_prop_free(model_str);
-	return (DDI_WALK_CONTINUE);
-}
 
 /*
  * impl_bus_initialprobe
@@ -2838,8 +3560,24 @@ impl_bus_initialprobe(void)
 		(*probe->probe)(0);
 		probe = probe->next;
 	}
+}
 
-//	ddi_walk_devs(ddi_root_node(), print_dip, (void *)0);
+
+/*
+ * impl_bus_reprobe
+ *	Reprogram devices not set up by firmware.
+ */
+static void
+impl_bus_reprobe(void)
+{
+	struct bus_probe *probe;
+
+	probe = bus_probes;
+	while (probe) {
+		/* run the probe function */
+		(*probe->probe)(1);
+		probe = probe->next;
+	}
 }
 
 void
@@ -2953,4 +3691,193 @@ i_ddi_dma_max(dev_info_t *dip, ddi_dma_attr_t *attrp)
 	}
 
 	return ((uint32_t)maxxfer);
+}
+
+/*
+ * we've just done a cautious put/get. Check if it was successful by
+ * calling pci_ereport_post() on all puts and for any gets that return -1
+ */
+static int
+pci_peekpoke_check_fma(dev_info_t *dip, void *arg, ddi_ctl_enum_t ctlop,
+    void (*scan)(dev_info_t *, ddi_fm_error_t *))
+{
+	int	rval = DDI_SUCCESS;
+	peekpoke_ctlops_t *in_args = (peekpoke_ctlops_t *)arg;
+	ddi_fm_error_t de;
+	ddi_acc_impl_t *hp = (ddi_acc_impl_t *)in_args->handle;
+	ddi_acc_hdl_t *hdlp = (ddi_acc_hdl_t *)in_args->handle;
+	int check_err = 0;
+	int repcount = in_args->repcount;
+
+	if (ctlop == DDI_CTLOPS_POKE &&
+	    hdlp->ah_acc.devacc_attr_access != DDI_CAUTIOUS_ACC)
+		return (DDI_SUCCESS);
+
+	if (ctlop == DDI_CTLOPS_PEEK &&
+	    hdlp->ah_acc.devacc_attr_access != DDI_CAUTIOUS_ACC) {
+		for (; repcount; repcount--) {
+			switch (in_args->size) {
+			case sizeof (uint8_t):
+				if (*(uint8_t *)in_args->host_addr == 0xff)
+					check_err = 1;
+				break;
+			case sizeof (uint16_t):
+				if (*(uint16_t *)in_args->host_addr == 0xffff)
+					check_err = 1;
+				break;
+			case sizeof (uint32_t):
+				if (*(uint32_t *)in_args->host_addr ==
+				    0xffffffff)
+					check_err = 1;
+				break;
+			case sizeof (uint64_t):
+				if (*(uint64_t *)in_args->host_addr ==
+				    0xffffffffffffffff)
+					check_err = 1;
+				break;
+			}
+		}
+		if (check_err == 0)
+			return (DDI_SUCCESS);
+	}
+	/*
+	 * for a cautious put or get or a non-cautious get that returned -1 call
+	 * io framework to see if there really was an error
+	 */
+	bzero(&de, sizeof (ddi_fm_error_t));
+	de.fme_version = DDI_FME_VERSION;
+	de.fme_ena = fm_ena_generate(0, FM_ENA_FMT1);
+	if (hdlp->ah_acc.devacc_attr_access == DDI_CAUTIOUS_ACC) {
+		de.fme_flag = DDI_FM_ERR_EXPECTED;
+		de.fme_acc_handle = in_args->handle;
+	} else if (hdlp->ah_acc.devacc_attr_access == DDI_DEFAULT_ACC) {
+		/*
+		 * We only get here with DDI_DEFAULT_ACC for config space gets.
+		 * Non-hardened drivers may be probing the hardware and
+		 * expecting -1 returned. So need to treat errors on
+		 * DDI_DEFAULT_ACC as DDI_FM_ERR_EXPECTED.
+		 */
+		de.fme_flag = DDI_FM_ERR_EXPECTED;
+		de.fme_acc_handle = in_args->handle;
+	} else {
+		/*
+		 * Hardened driver doing protected accesses shouldn't
+		 * get errors unless there's a hardware problem. Treat
+		 * as nonfatal if there's an error, but set UNEXPECTED
+		 * so we raise ereports on any errors and potentially
+		 * fault the device
+		 */
+		de.fme_flag = DDI_FM_ERR_UNEXPECTED;
+	}
+	(void) scan(dip, &de);
+	if (hdlp->ah_acc.devacc_attr_access != DDI_DEFAULT_ACC &&
+	    de.fme_status != DDI_FM_OK) {
+		ndi_err_t *errp = (ndi_err_t *)hp->ahi_err;
+		rval = DDI_FAILURE;
+		errp->err_ena = de.fme_ena;
+		errp->err_expected = de.fme_flag;
+		errp->err_status = DDI_FM_NONFATAL;
+	}
+	return (rval);
+}
+
+/*
+ * pci_peekpoke_check_nofma() is for when an error occurs on a register access
+ * during pci_ereport_post(). We can't call pci_ereport_post() again or we'd
+ * recurse, so assume all puts are OK and gets have failed if they return -1
+ */
+static int
+pci_peekpoke_check_nofma(void *arg, ddi_ctl_enum_t ctlop)
+{
+	int rval = DDI_SUCCESS;
+	peekpoke_ctlops_t *in_args = (peekpoke_ctlops_t *)arg;
+	ddi_acc_impl_t *hp = (ddi_acc_impl_t *)in_args->handle;
+	ddi_acc_hdl_t *hdlp = (ddi_acc_hdl_t *)in_args->handle;
+	int repcount = in_args->repcount;
+
+	if (ctlop == DDI_CTLOPS_POKE)
+		return (rval);
+
+	for (; repcount; repcount--) {
+		switch (in_args->size) {
+		case sizeof (uint8_t):
+			if (*(uint8_t *)in_args->host_addr == 0xff)
+				rval = DDI_FAILURE;
+			break;
+		case sizeof (uint16_t):
+			if (*(uint16_t *)in_args->host_addr == 0xffff)
+				rval = DDI_FAILURE;
+			break;
+		case sizeof (uint32_t):
+			if (*(uint32_t *)in_args->host_addr == 0xffffffff)
+				rval = DDI_FAILURE;
+			break;
+		case sizeof (uint64_t):
+			if (*(uint64_t *)in_args->host_addr ==
+			    0xffffffffffffffff)
+				rval = DDI_FAILURE;
+			break;
+		}
+	}
+	if (hdlp->ah_acc.devacc_attr_access != DDI_DEFAULT_ACC &&
+	    rval == DDI_FAILURE) {
+		ndi_err_t *errp = (ndi_err_t *)hp->ahi_err;
+		errp->err_ena = fm_ena_generate(0, FM_ENA_FMT1);
+		errp->err_expected = DDI_FM_ERR_UNEXPECTED;
+		errp->err_status = DDI_FM_NONFATAL;
+	}
+	return (rval);
+}
+
+int
+pci_peekpoke_check(dev_info_t *dip, dev_info_t *rdip,
+    ddi_ctl_enum_t ctlop, void *arg, void *result,
+    int (*handler)(dev_info_t *, dev_info_t *, ddi_ctl_enum_t, void *,
+    void *), kmutex_t *err_mutexp, kmutex_t *peek_poke_mutexp,
+    void (*scan)(dev_info_t *, ddi_fm_error_t *))
+{
+	int rval;
+	peekpoke_ctlops_t *in_args = (peekpoke_ctlops_t *)arg;
+	ddi_acc_impl_t *hp = (ddi_acc_impl_t *)in_args->handle;
+
+	/*
+	 * this function only supports cautious accesses, not peeks/pokes
+	 * which don't have a handle
+	 */
+	if (hp == NULL)
+		return (DDI_FAILURE);
+
+	if (hp->ahi_acc_attr & DDI_ACCATTR_CONFIG_SPACE) {
+		if (!mutex_tryenter(err_mutexp)) {
+			/*
+			 * As this may be a recursive call from within
+			 * pci_ereport_post() we can't wait for the mutexes.
+			 * Fortunately we know someone is already calling
+			 * pci_ereport_post() which will handle the error bits
+			 * for us, and as this is a config space access we can
+			 * just do the access and check return value for -1
+			 * using pci_peekpoke_check_nofma().
+			 */
+			rval = handler(dip, rdip, ctlop, arg, result);
+			if (rval == DDI_SUCCESS)
+				rval = pci_peekpoke_check_nofma(arg, ctlop);
+			return (rval);
+		}
+		/*
+		 * This can't be a recursive call. Drop the err_mutex and get
+		 * both mutexes in the right order. If an error hasn't already
+		 * been detected by the ontrap code, use pci_peekpoke_check_fma
+		 * which will call pci_ereport_post() to check error status.
+		 */
+		mutex_exit(err_mutexp);
+	}
+	mutex_enter(peek_poke_mutexp);
+	rval = handler(dip, rdip, ctlop, arg, result);
+	if (rval == DDI_SUCCESS) {
+		mutex_enter(err_mutexp);
+		rval = pci_peekpoke_check_fma(dip, arg, ctlop, scan);
+		mutex_exit(err_mutexp);
+	}
+	mutex_exit(peek_poke_mutexp);
+	return (rval);
 }

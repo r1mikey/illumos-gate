@@ -129,6 +129,8 @@ gic_remove_state(int irq)
 {
 	gic_intr_state_t lookup, *st;
 
+	ASSERT(MUTEX_HELD(&gic_intrs_lock));
+
 	lookup.gi_vector = irq;
 	st = avl_find(&gic_intrs, &lookup, NULL);
 	VERIFY3P(st, !=, NULL);

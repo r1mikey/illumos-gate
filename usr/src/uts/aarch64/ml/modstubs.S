@@ -848,15 +848,6 @@ fcnname##_info:								\
 	END_MODULE(pcicfg);
 #endif
 
-/*
- * Stubs for pcieb nexus driver.
- */
-#ifndef PCIEB_MODULE
-	MODULE(pcieb,drv);
-	STUB(pcieb, pcieb_intel_error_workaround, 0);
-	END_MODULE(pcieb);
-#endif
-
 #ifndef IWSCN_MODULE
 	MODULE(iwscn,drv);
 	STUB(iwscn, srpop, 0);

@@ -297,6 +297,13 @@ cbe_init_pre(void)
 	arch_timer_enable();
 }
 
+/*
+ * This all happens via the prom interfaces and not the DDI, because this is
+ * established so early.
+ *
+ * We assume that the generic timer will never have a complicated interrupt
+ * hierarchy involing "interrupt-map" or the like.
+ */
 static int
 get_interrupt_cells(pnode_t node)
 {
@@ -340,7 +347,8 @@ get_cbe_vector(void)
 			prom_getprop(timer, "compatible", compatible);
 			int offset = 0;
 			while (offset < len) {
-				if (strcmp(compatible, "arm,armv8-timer") == 0) {
+				if (strcmp(compatible,
+				    "arm,armv8-timer") == 0) {
 					found = B_TRUE;
 					break;
 				}
@@ -350,6 +358,7 @@ get_cbe_vector(void)
 
 		if (found) {
 			len = prom_getproplen(timer, "interrupts");
+
 			if (len > 0) {
 				int interrupt_cells = get_interrupt_cells(timer);
 				int num = len / CELLS_1275_TO_BYTES(interrupt_cells);
@@ -409,8 +418,9 @@ cbe_init(void)
 	int cbe_vector = get_cbe_vector();
 	if (cbe_vector > 0) {
 		/* XXXARM */
-		(void) add_avintr(NULL, CBE_HIGH_PIL, (avfunc)(uintptr_t)cbe_fire_master,
-		    "cbe_fire_master", cbe_vector, 0, NULL, NULL, NULL);
+		(void) add_avintr(NULL, CBE_HIGH_PIL,
+		    (avfunc)(uintptr_t)cbe_fire_master, "cbe_fire_master",
+		    cbe_vector, 0, NULL, NULL, NULL);
 	}
 
 	/* XXXARM */

@@ -34,11 +34,10 @@
  * This module provides a set of resource management interfaces
  * to manage bus resources globally in the system.
  *
- * The bus nexus drivers are typically responsible to setup resource
- * maps for the bus resources available for a bus instance. However
- * this module also provides resource setup functions for PCI bus
- * (used by both SPARC and X86 platforms) and ISA bus instances (used
- * only for X86 platforms).
+ * The bus nexus drivers are typically responsible to setup resource maps for
+ * the bus resources available for a bus instance. However this module also
+ * provides resource setup functions for PCI bus (used by aarch64, SPARC, and
+ * X86 platforms) and ISA bus instances (used only for X86 platforms).
  */
 
 #include <sys/types.h>
