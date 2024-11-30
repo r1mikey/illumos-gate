@@ -55,6 +55,7 @@
 #include <sys/cpuinfo.h>
 
 extern void return_instr(void);
+extern void nomod_minus_one(void);
 
 uint_t cp_haltset_fanout = 0;
 int (*addintr)(void *, int, avfunc, char *, int, caddr_t, caddr_t, uint64_t *,
@@ -64,7 +65,7 @@ void (*setsoftint)(int, struct av_softinfo *) =
 	(void (*)(int, struct av_softinfo *))return_instr;
 void (*kdisetsoftint)(int, struct av_softinfo *) =
 	(void (*)(int, struct av_softinfo *))return_instr;
-int (*slvltovect)(int) = (int (*)(int))return_instr;
+int (*slvltovect)(int) = (int (*)(int))nomod_minus_one;
 
 static int
 mach_softlvl_to_vect(int ipl)

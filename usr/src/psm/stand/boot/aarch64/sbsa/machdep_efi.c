@@ -147,15 +147,15 @@ init_physmem(void)
 			size = RNDUP(p->PhysicalStart + (p->NumberOfPages * MMU_PAGESIZE), MMU_PAGESIZE) - addr;
 			rtot += size;
 			if (p->Type == EfiReservedMemoryType)
-				dbg2_puts("EfiReservedMemoryType: ");
+				dprintf("EfiReservedMemoryType: ");
 			else if (p->Type == EfiPalCode)
-				dbg2_puts("EfiPalCode: ");
+				dprintf("EfiPalCode: ");
 			else if (p->Type == EfiUnusableMemory)
-				dbg2_puts("EfiUnusableMemory: ");
+				dprintf("EfiUnusableMemory: ");
 			else if (p->Type == EfiACPIReclaimMemory)
-				dbg2_puts("EfiACPIReclaimMemory: ");
+				dprintf("EfiACPIReclaimMemory: ");
 			else if (p->Type == EfiACPIMemoryNVS)
-				dbg2_puts("EfiACPIMemoryNVS: ");
+				dprintf("EfiACPIMemoryNVS: ");
 			dprintf("memory resv 0x%lx - 0x%lx\n", addr, addr + size - 1);
 			if (memlist_find(pfreelistp, addr))
 				memlist_delete_span(addr, size, &pfreelistp);

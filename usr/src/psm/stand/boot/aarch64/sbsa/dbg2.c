@@ -87,10 +87,15 @@ dbg2_init(struct xboot_info *xbi)
 	_sbsa_dbg2_addr = xbi->bi_bsvc_uart_mmio_base;
 	_sbsa_dbg2_type = xbi->bi_bsvc_uart_type;
 	_dbg2_init();
+#if defined(DEBUG)
 	dbg2_puts("dbg2_init: DBG2 initialised from loader environment\n");
+#endif
 #if defined(_EARLY_DBG2) && _EARLY_DBG2 > 0
-	if (reinit)
-		dbg2_puts("dbg2_init: DBG2 reinitialised from loader data\n");
+	if (reinit) {
+#if defined(DEBUG)
+		dbg2_puts("dbg2_init: DBG2 reinitialised from loader environment\n");
+#endif
+	}
 #endif
 }
 

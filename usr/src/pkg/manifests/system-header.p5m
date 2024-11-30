@@ -1592,6 +1592,7 @@ dir  path=usr/platform group=sys
 $(aarch64_ONLY)dir path=usr/platform/armv8
 $(aarch64_ONLY)dir path=usr/platform/armv8/include
 $(aarch64_ONLY)dir path=usr/platform/armv8/include/sys
+$(aarch64_ONLY)file path=usr/platform/armv8/include/sys/acpidev.h
 $(aarch64_ONLY)file path=usr/platform/armv8/include/sys/clock.h
 $(aarch64_ONLY)file path=usr/platform/armv8/include/sys/ddi_subrdefs.h
 $(aarch64_ONLY)file path=usr/platform/armv8/include/sys/irq.h

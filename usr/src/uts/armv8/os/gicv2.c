@@ -69,10 +69,15 @@
 #include <sys/promif.h>
 #include <sys/smp_impldefs.h>
 #include <sys/archsystm.h>
+#include <sys/bootinfo.h>
+#include <sys/acpi/platform/acsolaris.h>
+#include <sys/acpi/actypes.h>
+#include <sys/acpi/actbl.h>
 
 extern void gic_remove_state(int);
 
 extern char *gic_module_name;
+extern struct xboot_info *xboot_info_p;
 
 typedef struct {
 	/* Base address of the CPU interface */
@@ -504,10 +509,41 @@ gicv2_get_target(void)
 }
 
 /*
+ * Return the ACPI MADT, or NULL if none was found.
+ */
+static ACPI_TABLE_MADT *
+find_gic_acpi(void)
+{
+	ACPI_TABLE_XSDT *xsdt;
+	ACPI_TABLE_HEADER *tab;
+	uint64_t *entry;
+	uint32_t entries;
+	size_t slen;
+	uint32_t i;
+
+	xsdt = (ACPI_TABLE_XSDT *)xboot_info_p->bi_acpi_xsdt;
+	entries = (xsdt->Header.Length -
+	    sizeof (xsdt->Header)) / ACPI_XSDT_ENTRY_SIZE;
+	entry = &xsdt->TableOffsetEntry[0];
+	slen = strlen(ACPI_SIG_MADT);
+	tab = NULL;
+
+	for (i = 0; i < entries; ++i) {
+		tab = (ACPI_TABLE_HEADER *)entry[i];
+		if (tab == NULL)
+			continue;
+		if (strncmp(tab->Signature, ACPI_SIG_MADT, slen) == 0)
+			return ((ACPI_TABLE_MADT *)tab);
+	}
+
+	return (NULL);
+}
+
+/*
  * Return the GICv2 PROM node, or OBP_NONODE if none was found.
  */
 static pnode_t
-find_gic(pnode_t nodeid, int depth)
+find_gic_fdt(pnode_t nodeid, int depth)
 {
 	pnode_t	node;
 	pnode_t	child;
@@ -521,7 +557,7 @@ find_gic(pnode_t nodeid, int depth)
 
 	child = prom_childnode(nodeid);
 	while (child > 0) {
-		node = find_gic(child, depth + 1);
+		node = find_gic_fdt(child, depth + 1);
 		if (node > 0)
 			return (node);
 		child = prom_nextnode(child);
@@ -533,9 +569,117 @@ find_gic(pnode_t nodeid, int depth)
 /*
  * Map the GICv2 distributor and CPU interface MMIO regions into the device
  * arena.
+ *
+ * Two versions (ACPI and FDT), selected at runtime.
  */
+
 static int
-gicv2_map(void)
+gicv2_map_acpi(void)
+{
+	ACPI_TABLE_MADT			*madt;
+	ACPI_SUBTABLE_HEADER		*item;
+	ACPI_SUBTABLE_HEADER		*end;
+	ACPI_MADT_GENERIC_DISTRIBUTOR	*gicd;
+	ACPI_MADT_GENERIC_INTERRUPT	*gicc;
+	uint64_t			gicd_size;
+	uint64_t			gicc_size;
+	uint64_t			gicc_addr;
+	caddr_t				addr;
+
+	GICV2_ASSERT_GICD_LOCK_HELD();
+
+	madt = find_gic_acpi();
+	if (madt == NULL)
+		return (-1);
+
+	gicd_size = 4096;	/* always 4k */
+	gicc_size = 8192;	/* always 8k */
+	gicc_addr = 0;
+
+	/*
+	 * First up, find and process the GIC distributor.
+	 */
+
+	end = (ACPI_SUBTABLE_HEADER *)
+	    (madt->Header.Length + (uintptr_t)madt);
+	item = (ACPI_SUBTABLE_HEADER *)
+	    ((uintptr_t)madt + sizeof (*madt));
+
+	while (item < end) {
+		if (item->Type != ACPI_MADT_TYPE_GENERIC_DISTRIBUTOR) {
+			item = (ACPI_SUBTABLE_HEADER *)
+			    ((uintptr_t)item + item->Length);
+			continue;
+		}
+		gicd = (ACPI_MADT_GENERIC_DISTRIBUTOR *)item;
+
+		addr = psm_map_phys((paddr_t)gicd->BaseAddress,
+		    gicd_size, PROT_READ|PROT_WRITE);
+		if (addr == NULL)
+			return (-1);
+		conf.gc_gicd = (void *)addr;
+		break;
+	}
+
+	if (conf.gc_gicd == NULL)
+		return (-1);
+
+	/*
+	 * Now the CPU interface.
+	 *
+	 * This is a little complicated, as FDT exposes a single address for
+	 * the CPU interface (the IP maps CPU-specific frames at the same
+	 * address for each CPU). ACPI, however, can in theory expose a
+	 * different physical address per CPU.
+	 *
+	 * For now we simply insist that the same physical address is exposed
+	 * for all presented CPUs, then map that physical address once.
+	 *
+	 * In the future we could keep a mapping per target (0-7), then select
+	 * the appropriate mapping based on the calls CPU, but that seems
+	 * unnecessary right now.
+	 */
+	end = (ACPI_SUBTABLE_HEADER *)
+	    (madt->Header.Length + (uintptr_t)madt);
+	item = (ACPI_SUBTABLE_HEADER *)
+	    ((uintptr_t)madt + sizeof (*madt));
+
+	while (item < end) {
+		if (item->Type != ACPI_MADT_TYPE_GENERIC_INTERRUPT) {
+			item = (ACPI_SUBTABLE_HEADER *)
+			    ((uintptr_t)item + item->Length);
+			continue;
+		}
+		gicc = (ACPI_MADT_GENERIC_INTERRUPT *)item;
+
+		if (gicc_addr != 0 && (uint64_t)gicc->BaseAddress != gicc_addr)
+			prom_panic("GICv2: homogenous GICC base addresses "
+			    "are required\n");
+
+		gicc_addr = (uint64_t)gicc->BaseAddress;
+		item = (ACPI_SUBTABLE_HEADER *)((uintptr_t)item + item->Length);
+	}
+
+	if (gicc_addr == 0) {
+		psm_unmap_phys((caddr_t)conf.gc_gicd, gicd_size);
+		conf.gc_gicd = NULL;
+		return (-1);
+	}
+
+	addr = psm_map_phys((paddr_t)gicc_addr,
+	    gicc_size, PROT_READ|PROT_WRITE);
+	if (addr == NULL) {
+		psm_unmap_phys((caddr_t)conf.gc_gicd, gicd_size);
+		conf.gc_gicd = NULL;
+		return (-1);
+	}
+
+	conf.gc_gicc = (void *)addr;
+	return (0);
+}
+
+static int
+gicv2_map_fdt(void)
 {
 	pnode_t		node;
 	uint64_t	gicd_base;
@@ -546,7 +690,7 @@ gicv2_map(void)
 
 	GICV2_ASSERT_GICD_LOCK_HELD();
 
-	node = find_gic(prom_rootnode(), 0);
+	node = find_gic_fdt(prom_rootnode(), 0);
 	if (node <= 0)
 		return (-1);
 
@@ -576,6 +720,17 @@ gicv2_map(void)
 	conf.gc_gicc = (void *)addr;
 
 	return (0);
+}
+
+static int
+gicv2_map(void)
+{
+	if (xboot_info_p && xboot_info_p->bi_fdt)
+		return (gicv2_map_fdt());
+	else if (xboot_info_p && xboot_info_p->bi_acpi_xsdt)
+		return (gicv2_map_acpi());
+
+	return (-1);
 }
 
 /*

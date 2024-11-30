@@ -971,6 +971,15 @@ startup_end(void)
 
 	mach_init();
 
+#if defined(_AARCH64_ACPI)
+	/*
+	 * We're done with bootops.  We don't unmap the bootstrap yet because
+	 * we're still using bootsvcs.
+	 */
+	PRM_POINT("NULLing out bootops");
+	bootops = (struct bootops *)NULL;
+#endif
+
 	PRM_POINT("Enabling interrupts");
 	set_base_spl();
 	enable_irq();
@@ -1567,6 +1576,21 @@ startup_vm(void)
 	segdev_init();
 
 	PRM_POINT("startup_vm() done");
+}
+
+/*
+ * Hideous, but it's a useful place to hook into main.
+ *
+ * Called from main after all system initialisation functions have been called.
+ */
+void
+post_startup_early(void)
+{
+#if defined(_AARCH64_ACPI)
+	extern void impl_late_hardware_probe(void);
+
+	impl_late_hardware_probe();
+#endif
 }
 
 void

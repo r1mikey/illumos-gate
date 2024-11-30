@@ -48,6 +48,14 @@
 #include "shim.h"
 #include "early_dbg2.h"
 
+/*
+ * The Pi4 is not entirely SBSA compliant, and presents memory attributes that
+ * are not defined for aarch64.
+ *
+ * To be more strict, uncomment this define.
+ */
+/* #define	STRICT_MEMORY_ATTRIBUTES	1 */
+
 #ifdef DEBUG
 static int	debug = 1;
 #else /* DEBUG */
@@ -135,17 +143,33 @@ efi_to_pte_attrs(uint64_t efi)
 		pte |= (PTE_ATTR_NORMEM_UC);
 	else if (efi & (EFI_MEMORY_UC))
 		pte |= ((PTE_ATTR_DEVICE)|(PTE_PXN));
-	else if (efi & (EFI_MEMORY_UCE))
+	else if (efi & (EFI_MEMORY_UCE)) {
+#if defined(STRICT_MEMORY_ATTRIBUTES)
 		prom_panic("efi_to_pte_attrs: EFI_MEMORY_UCE undefined for "
 			   "aarch64\n");
+#else
+		dprintf("efi_to_pte_attrs: EFI_MEMORY_UCE undefined for "
+		    "aarch64\n");
+#endif
+	}
 
-	if (efi & (EFI_MEMORY_WP))
+	if (efi & (EFI_MEMORY_WP)) {
+#if defined(STRICT_MEMORY_ATTRIBUTES)
 		prom_panic("efi_to_pte_attrs: EFI_MEMORY_WP undefined for "
 			   "aarch64\n");
-	else if (efi & (EFI_MEMORY_RP))
+#else
+		dprintf("efi_to_pte_attrs: EFI_MEMORY_WP undefined for "
+		    "aarch64\n");
+#endif
+	} else if (efi & (EFI_MEMORY_RP)) {
+#if defined(STRICT_MEMORY_ATTRIBUTES)
 		prom_panic("efi_to_pte_attrs: EFI_MEMORY_RP undefined for "
 			   "aarch64\n");
-	else if (efi & (EFI_MEMORY_XP))
+#else
+		dprintf("efi_to_pte_attrs: EFI_MEMORY_RP undefined for "
+		    "aarch64\n");
+#endif
+	} else if (efi & (EFI_MEMORY_XP))
 		pte |= ((PTE_UXN)|(PTE_PXN));
 	else if (efi & (EFI_MEMORY_RO))
 		pte |= (PTE_AP_RO);

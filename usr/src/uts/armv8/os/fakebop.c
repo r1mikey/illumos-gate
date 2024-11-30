@@ -61,6 +61,11 @@
 #include <vm/hat_pte.h>
 #include <sys/kobj.h>
 #include <sys/kobj_lex.h>
+#if defined(_AARCH64_ACPI)
+#include <sys/efi.h>
+#include <sys/acpi/acconfig.h>
+#include <sys/acpi/acpi.h>
+#endif
 #include <sys/ddipropdefs.h>	/* For DDI prop types */
 #include <netinet/inetutil.h>	/* for hexascii_to_octet */
 #include <libfdt.h>
@@ -106,6 +111,10 @@ typedef struct bootprop {
 static bootprop_t *bprops = NULL;
 static char *curr_page = NULL;		/* ptr to avail bprop memory */
 static size_t curr_space = 0;		/* amount of memory at curr_page */
+
+#if defined(_AARCH64_ACPI)
+ACPI_TABLE_GTDT *acpi_gtdt_low_ptr;
+#endif
 
 /*
  * Debugging macros
@@ -1009,12 +1018,170 @@ build_firmware_properties_fdt(const void *fdtp)
 	}
 }
 
+#if defined(_AARCH64_ACPI)
+static boolean_t
+same_guids(const efi_guid_t *g1, const efi_guid_t *g2)
+{
+	int i;
+
+	if (g1->time_low != g2->time_low)
+		return (B_FALSE);
+	if (g1->time_mid != g2->time_mid)
+		return (B_FALSE);
+	if (g1->time_hi_and_version != g2->time_hi_and_version)
+		return (B_FALSE);
+	if (g1->clock_seq_hi_and_reserved != g2->clock_seq_hi_and_reserved)
+		return (B_FALSE);
+	if (g1->clock_seq_low != g2->clock_seq_low)
+		return (B_FALSE);
+	for (i = 0; i < 6; i++)
+		if (g1->node_addr[i] != g2->node_addr[i])
+			return (B_FALSE);
+
+	return (B_TRUE);
+}
+
+static void *
+find_uefi_config_table(EFI_SYSTEM_TABLE64 *st, const efi_guid_t *needle)
+{
+	EFI_CONFIGURATION_TABLE64 *cf;
+	UINT32 i;
+	efi_guid_t vguid;
+
+	cf = (EFI_CONFIGURATION_TABLE64 *)st->ConfigurationTable;
+	if (cf == NULL)
+		return (NULL);
+
+	for (i = 0; i < st->NumberOfTableEntries; ++i) {
+		bcopy(&cf[i].VendorGuid, &vguid, sizeof (vguid));
+
+		if (same_guids(&vguid, needle)) {
+			return ((void *)(uint64_t)cf[i].VendorTable);
+		}
+	}
+
+	return (NULL);
+}
+
+static void *
+find_smbios3_table(EFI_SYSTEM_TABLE64 *st)
+{
+	const efi_guid_t smbios3 = SMBIOS3_TABLE_GUID;
+	return (find_uefi_config_table(st, &smbios3));
+}
+
+static void *
+find_acpi2_table(EFI_SYSTEM_TABLE64 *st)
+{
+	const efi_guid_t acpi2 = EFI_ACPI_TABLE_GUID;	/* EFI_ACPI_20_TABLE_GUID */
+	return (find_uefi_config_table(st, &acpi2));
+}
+
+static ACPI_TABLE_HEADER *
+find_fw_table(ACPI_TABLE_RSDP *rsdp, const char *signature)
+{
+	static int revision = 0;
+	static ACPI_TABLE_XSDT *xsdt;
+	static int len;
+	int n;
+	ACPI_TABLE_HEADER *tp;
+	paddr_t table_addr;
+
+	if (strlen(signature) != ACPI_NAMESEG_SIZE)
+		return (NULL);
+
+	if (revision == 0) {
+		paddr_t xsdt_addr;
+
+		if (rsdp == NULL)
+			return (NULL);
+
+		revision = rsdp->Revision;
+		if (revision > 2)
+			revision = 2;
+
+		/* no aarch64 support until revision 2 */
+		ASSERT(revision >= 2);
+		xsdt_addr = rsdp->XsdtPhysicalAddress;
+		/* only 64bit-capable */
+		ASSERT(xsdt_addr != 0);
+		xsdt = (ACPI_TABLE_XSDT *)xsdt_addr;
+		len = (xsdt->Header.Length - sizeof (xsdt->Header)) /
+		    sizeof (uint64_t);
+	}
+
+	/*
+	 * Scan the table headers looking for a signature match
+	 */
+	for (n = 0; n < len; n++) {
+		if ((table_addr = xsdt->TableOffsetEntry[n]) == 0)
+			continue;
+		tp = (ACPI_TABLE_HEADER *)table_addr;
+		if (strncmp(tp->Signature, signature, ACPI_NAMESEG_SIZE) == 0)
+			return (tp);
+	}
+
+	return (NULL);
+}
+
+static void
+build_firmware_properties_acpi(const struct xboot_info *xbp)
+{
+	EFI_SYSTEM_TABLE64 *st;
+	ACPI_TABLE_HEADER *tp = NULL;
+	const void *smbios3;
+	ACPI_TABLE_RSDP *rsdp;
+
+	/*
+	 * This is SBSA, the only supported UEFI is 64-bit.
+	 */
+
+	/* XXXARM: check the checksum? */
+	if ((st = (EFI_SYSTEM_TABLE64 *)xbp->bi_uefi_systab) == NULL)
+		prom_panic("No UEFI system table");
+	bsetprop64("efi-systab", (uint64_t)st);
+	if (kbm_debug)
+		bop_printf(NULL,
+		    "UEFI system table found at physical 0x%lx\n", (uint64_t)st);
+
+	/* XXXARM: validate? */
+	if ((smbios3 = find_smbios3_table(st)) == NULL)
+		prom_panic("No SMBIOS3 configuration table");
+	bsetprop64("smbios-address", (uint64_t)smbios3);
+	if (kbm_debug)
+		bop_printf(NULL, "SMBIOS3 table found at physical 0x%lx\n",
+		    (uint64_t)smbios3);
+
+	/* XXXARM: validate? */
+	if ((rsdp = find_acpi2_table(st)) == NULL)
+		prom_panic("No ACPI2.0 configuration table");
+	bsetprop64("acpi-root-tab", (uint64_t)rsdp);
+	if (kbm_debug)
+		bop_printf(NULL,
+		    "ACPI RSDP found at physical 0x%lx\n", (uint64_t)rsdp);
+
+	/*
+	 * XXXARM: There's nore we want
+	 * ACPI_SIG_SRAT
+	 * ACPI_SIG_MSCT (only if SRAT exists)
+	 * ACPI_TABLE_SLIT
+	 * ACPI_SIG_MADT
+	 * ACPI_SIG_MCFG
+	 * ACPI_SIG_HPET (actually GTDT)
+	 */
+	acpi_gtdt_low_ptr =
+	    (ACPI_TABLE_GTDT *)find_fw_table(rsdp, ACPI_SIG_GTDT);
+	ASSERT(acpi_gtdt_low_ptr != NULL);	/* needed by cbe */
+}
+#endif
+
 /*
  * Populate properties from firmware values.
  */
 static void
 build_firmware_properties(struct xboot_info *xbp)
 {
+#if defined(_AARCH64_FDT)
 	if (xbp->bi_fdt != 0) {
 		const void *fdtp = (void *)xbp->bi_fdt;
 
@@ -1022,6 +1189,13 @@ build_firmware_properties(struct xboot_info *xbp)
 			build_firmware_properties_fdt(fdtp);
 		}
 	}
+#elif defined(_AARCH64_ACPI)
+	if (xbp->bi_uefi_systab != 0) {
+		build_firmware_properties_acpi(xbp);
+	}
+#else
+#error "Unknown firmware type"
+#endif
 }
 
 /*

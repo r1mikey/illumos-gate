@@ -44,6 +44,8 @@
 #include <sys/modctl.h>
 #include <sys/termios.h>
 
+extern char * impl_plat_ttypath(void);
+
 int
 plat_use_polled_debug()
 {
@@ -86,65 +88,16 @@ plat_mousepath(void)
 	return (NULL);
 }
 
-static char *
-plat_ttypath(void)
-{
-	int len;
-	static char *ttypath = NULL;
-	char buf[MAXPATHLEN];
-
-	if (ttypath != NULL)
-		return (ttypath);
-
-	len = prom_getproplen(prom_chosennode(), "stdout-path");
-	if (len <= 0)
-		return (NULL);
-
-
-	prom_getprop(prom_chosennode(), "stdout-path", buf);
-	buf[len] = '\0';
-
-	char *p = strchr(buf, ':');
-	if (p != NULL)
-		*p = '\0';
-
-	/* If the path appears relative, it refers to an alias */
-	if (buf[0] != '/') {
-		pnode_t node = prom_finddevice("/aliases");
-		if (node <= 0) {
-			return (NULL);
-		}
-
-		int nlen = prom_getproplen(node, buf);
-		if (nlen <= 0) {
-			return (NULL);
-		}
-
-		char b[MAXPATHLEN];
-		prom_getprop(node, buf, b);
-		bcopy(b, buf, MAXPATHLEN);
-		len = nlen;
-	}
-
-	ttypath = kmem_zalloc(MAXPATHLEN, KM_SLEEP);
-	if (i_ddi_prompath_to_devfspath(buf, ttypath) != DDI_SUCCESS) {
-		kmem_free(ttypath, MAXPATHLEN);
-		return (NULL);
-	}
-
-	return (ttypath);
-}
-
 char *
 plat_stdinpath(void)
 {
-	return (plat_ttypath());
+	return (impl_plat_ttypath());
 }
 
 char *
 plat_stdoutpath(void)
 {
-	return (plat_ttypath());
+	return (impl_plat_ttypath());
 }
 
 char *

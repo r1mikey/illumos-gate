@@ -33,48 +33,36 @@
  * Copyright 2024 Michael van der Westhuizen
  */
 
+/*
+ * aarch64-specific DDI implementation, firmware independent routines.
+ */
 #include <sys/types.h>
-#include <sys/autoconf.h>
-#include <sys/avintr.h>
-#include <sys/bootconf.h>
-#include <sys/conf.h>
-#include <sys/cpuvar.h>
-#include <sys/ddi_impldefs.h>
-#include <sys/ethernet.h>
-#include <sys/instance.h>
-#include <sys/kmem.h>
-#include <sys/machsystm.h>
-#include <sys/modctl.h>
-#include <sys/promif.h>
-#include <sys/prom_plat.h>
+#include <sys/sunddi.h>
 #include <sys/sunndi.h>
-#include <sys/ndi_impldefs.h>
-#include <sys/ddi_impldefs.h>
+#include <sys/avintr.h>
+#include <sys/mach_intr.h>
+#include <sys/promif.h>
 #include <sys/sysmacros.h>
-#include <sys/systeminfo.h>
-#include <sys/utsname.h>
-#include <sys/atomic.h>
-#include <sys/spl.h>
-#include <sys/archsystm.h>
-#include <vm/seg_kmem.h>
+#include <sys/stddef.h>
+#include <sys/font.h>
+#include <sys/conf.h>
+#include <sys/ramdisk.h>
+#include <sys/bootconf.h>
 #include <sys/ontrap.h>
 #include <sys/fm/protocol.h>
-#include <sys/ramdisk.h>
-#include <sys/sunndi.h>
-#include <sys/vmem.h>
-#include <sys/lgrp.h>
-#include <sys/mach_intr.h>
+#include <vm/seg_kmem.h>
 #include <vm/hat_aarch64.h>
 
-size_t dma_max_copybuf_size = 0x101000;		/* 1M + 4K */
-uint64_t ramdisk_start, ramdisk_end;
-
-static void impl_bus_initialprobe(void);
-
 /*
- * Platform drivers on this platform
+ * Define IMPL_DDI_DUMP_DEVTREE_INITIAL to dump the device tree immediately
+ * after the initial probe completes.
  */
-char *platform_module_list[] = { NULL };
+/* #define	IMPL_DDI_DUMP_DEVTREE_INITIAL */
+/*
+ * Define IMPL_DDI_DUMP_DEVTREE_REPROBE to dump the device tree immediately
+ * after the reprobe completes.
+ */
+/* #define IMPL_DDI_DUMP_DEVTREE_REPROBE */
 
 /*
  * We use an AVL tree to store contiguous address allocations made with the
@@ -84,17 +72,30 @@ char *platform_module_list[] = { NULL };
  * just as for kmem_alloc().
  */
 struct ctgas {
-	avl_node_t ctg_link;
-	void *ctg_addr;
-	size_t ctg_size;
+	avl_node_t	ctg_link;
+	void		*ctg_addr;
+	size_t		ctg_size;
 };
 
-static avl_tree_t ctgtree;
-
+static avl_tree_t	ctgtree;
 static kmutex_t		ctgmutex;
 #define	CTGLOCK()	mutex_enter(&ctgmutex)
 #define	CTGUNLOCK()	mutex_exit(&ctgmutex)
 
+/*
+ * Minimum pfn value of page_t's put on the free list.  This is to simplify
+ * support of ddi dma memory requests which specify small, non-zero addr_lo
+ * values.
+ *
+ * The default value of 2, which corresponds to the only known non-zero addr_lo
+ * value used, means a single page will be sacrificed (pfn typically starts
+ * at 1).  ddiphysmin can be set to 0 to disable. It cannot be set above 0x100
+ * otherwise mp startup panics.
+ */
+pfn_t	ddiphysmin = 2;
+
+size_t dma_max_copybuf_size = 0x101000;		/* 1M + 4K */
+uint64_t ramdisk_start, ramdisk_end;
 
 uint8_t
 i_ddi_get8(ddi_acc_impl_t *hdlp, uint8_t *addr)
@@ -930,10 +931,17 @@ i_ddi_io_swap_rep_put64(ddi_acc_impl_t *hdlp, uint64_t *host_addr,
 			    : "memory");
 }
 
+/*
+ * The following functions ready a cautious request to go up to the nexus
+ * driver.  It is up to the nexus driver to decide how to process the request.
+ * It may choose to call i_ddi_do_caut_get/put in this file, or do it
+ * differently.
+ */
+
 static void
 i_ddi_caut_getput_ctlops(ddi_acc_impl_t *hp, uint64_t host_addr,
-    uint64_t dev_addr, size_t size, size_t repcount,
-    uint_t flags, ddi_ctl_enum_t cmd)
+    uint64_t dev_addr, size_t size, size_t repcount, uint_t flags,
+    ddi_ctl_enum_t cmd)
 {
 	peekpoke_ctlops_t	cautacc_ctlops_arg;
 
@@ -944,8 +952,8 @@ i_ddi_caut_getput_ctlops(ddi_acc_impl_t *hp, uint64_t host_addr,
 	cautacc_ctlops_arg.repcount = repcount;
 	cautacc_ctlops_arg.flags = flags;
 
-	(void) ddi_ctlops(hp->ahi_common.ah_dip, hp->ahi_common.ah_dip,
-	    cmd, &cautacc_ctlops_arg, NULL);
+	(void) ddi_ctlops(hp->ahi_common.ah_dip, hp->ahi_common.ah_dip, cmd,
+	    &cautacc_ctlops_arg, NULL);
 }
 
 uint8_t
@@ -1080,22 +1088,16 @@ i_ddi_caut_rep_put64(ddi_acc_impl_t *hp, uint64_t *host_addr,
 	    sizeof (uint64_t), repcount, flags, DDI_CTLOPS_POKE);
 }
 
-int
-i_ddi_add_softint(ddi_softint_hdl_impl_t *hdlp)
-{
-	int ret;
+/*
+ * New DDI interrupt framework
+ */
 
-	ret = add_avsoftintr((void *)hdlp, hdlp->ih_pri, hdlp->ih_cb_func,
-	    DEVI(hdlp->ih_dip)->devi_name, hdlp->ih_cb_arg1, hdlp->ih_cb_arg2);
-	return (ret ? DDI_SUCCESS : DDI_FAILURE);
-}
-
-void
-i_ddi_remove_softint(ddi_softint_hdl_impl_t *hdlp)
-{
-	(void) rem_avsoftintr((void *)hdlp, hdlp->ih_pri, hdlp->ih_cb_func);
-}
-
+/*
+ * i_ddi_intr_ops:
+ *
+ * This is the interrupt operator function wrapper for the bus function
+ * bus_intr_op.
+ */
 int
 i_ddi_intr_ops(dev_info_t *dip, dev_info_t *rdip, ddi_intr_op_t op,
     ddi_intr_handle_impl_t *hdlp, void * result)
@@ -1103,6 +1105,7 @@ i_ddi_intr_ops(dev_info_t *dip, dev_info_t *rdip, ddi_intr_op_t op,
 	dev_info_t	*pdip = (dev_info_t *)DEVI(dip)->devi_parent;
 	int		ret = DDI_FAILURE;
 
+	/* request parent to process this interrupt op */
 	if (NEXUS_HAS_INTR_OP(pdip))
 		ret = (*(DEVI(pdip)->devi_ops->devo_bus_ops->bus_intr_op))(
 		    pdip, rdip, op, hdlp, result);
@@ -1113,6 +1116,28 @@ i_ddi_intr_ops(dev_info_t *dip, dev_info_t *rdip, ddi_intr_op_t op,
 		    ddi_get_name(pdip), ddi_get_instance(pdip));
 	return (ret);
 }
+
+/*
+ * i_ddi_add_softint - allocate and add a soft interrupt to the system
+ */
+int
+i_ddi_add_softint(ddi_softint_hdl_impl_t *hdlp)
+{
+	int ret;
+
+	/* add soft interrupt handler */
+	ret = add_avsoftintr((void *)hdlp, hdlp->ih_pri, hdlp->ih_cb_func,
+	    DEVI(hdlp->ih_dip)->devi_name, hdlp->ih_cb_arg1, hdlp->ih_cb_arg2);
+	return (ret ? DDI_SUCCESS : DDI_FAILURE);
+}
+
+
+void
+i_ddi_remove_softint(ddi_softint_hdl_impl_t *hdlp)
+{
+	(void) rem_avsoftintr((void *)hdlp, hdlp->ih_pri, hdlp->ih_cb_func);
+}
+
 
 extern void (*setsoftint)(int, struct av_softinfo *);
 extern boolean_t av_check_softint_pending(struct av_softinfo *, boolean_t);
@@ -1129,11 +1154,21 @@ i_ddi_trigger_softint(ddi_softint_hdl_impl_t *hdlp, void *arg2)
 	return (DDI_SUCCESS);
 }
 
+/*
+ * i_ddi_set_softint_pri:
+ *
+ * The way this works is that it first tries to add a softint vector
+ * at the new priority in hdlp. If that succeeds; then it removes the
+ * existing softint vector at the old priority.
+ */
 int
 i_ddi_set_softint_pri(ddi_softint_hdl_impl_t *hdlp, uint_t old_pri)
 {
 	int ret;
 
+	/*
+	 * If a softint is pending at the old priority then fail the request.
+	 */
 	if (av_check_softint_pending(hdlp->ih_pending, B_TRUE))
 		return (DDI_FAILURE);
 
@@ -1154,114 +1189,241 @@ i_ddi_free_intr_phdl(ddi_intr_handle_impl_t *hdlp)
 	hdlp->ih_private = NULL;
 }
 
-int
-i_ddi_get_intx_nintrs(dev_info_t *dip)
-{
-	uint_t intrlen;
-	int intr_sz;
-	int *ip;
-	int ret = 0;
-
-	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS |
-	    DDI_PROP_CANSLEEP,
-	    "interrupts", &ip, &intrlen) == DDI_SUCCESS) {
-		intr_sz = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
-		    0, "#interrupt-cells", 1);
-
-		intr_sz = CELLS_1275_TO_BYTES(intr_sz);
-		ret = intrlen / intr_sz;
-
-		ddi_prop_free(ip);
-	}
-
-	return (ret);
-}
-
-void
-i_ddi_intr_redist_all_cpus()
-{
-	/* nothing (yet) */
-}
-
+/*
+ * Implementation instance override functions
+ *
+ * No override on aarch64
+ */
 uint_t
-impl_assign_instance(dev_info_t *dip)
+impl_assign_instance(dev_info_t *dip __unused)
 {
 	return ((uint_t)-1);
 }
 
 int
-impl_keep_instance(dev_info_t *dip)
+impl_keep_instance(dev_info_t *dip __unused)
 {
 	return (DDI_FAILURE);
 }
 
 int
-impl_free_instance(dev_info_t *dip)
+impl_free_instance(dev_info_t *dip __unused)
 {
 	return (DDI_FAILURE);
 }
 
 int
-impl_check_cpu(dev_info_t *devi)
+impl_check_cpu(dev_info_t *devi __unused)
 {
 	return (DDI_SUCCESS);
 }
 
+/*
+ * Allow for implementation specific correction of PROM property values.
+ */
+
 void
-impl_fix_props(dev_info_t *dip, dev_info_t *ch_dip, char *name,
-    int len, caddr_t buffer)
+impl_fix_props(dev_info_t *dip __unused, dev_info_t *ch_dip __unused,
+    char *name __unused, int len __unused, caddr_t buffer __unused)
 {
-	/* nothing (yet) */
+	/*
+	 * There are no adjustments needed in this implementation.
+	 *
+	 * If adjustments are needed for one of FDT or ACPI, promote this
+	 * function to the one that does not need the changes, remove it here
+	 * and imnplement it in the one that does need changes.
+	 */
+}
+
+uint_t
+softlevel1(caddr_t arg1 __unused, caddr_t arg2 __unused)
+{
+	softint();
+	return (1);
+}
+
+/*
+ * The "status" property indicates the operational status of a device.
+ * If this property is present, the value is a string indicating the
+ * status of the device as follows:
+ *
+ *	"okay"		operational.
+ *	"disabled"	not operational, but might become operational.
+ *	"fail"		not operational because a fault has been detected,
+ *			and it is unlikely that the device will become
+ *			operational without repair. no additional details
+ *			are available.
+ *	"fail-xxx"	not operational because a fault has been detected,
+ *			and it is unlikely that the device will become
+ *			operational without repair. "xxx" is additional
+ *			human-readable information about the particular
+ *			fault condition that was detected.
+ *
+ * The absence of this property means that the operational status is
+ * unknown or okay.
+ *
+ * This routine checks the status property of the specified device node
+ * and returns 0 if the operational status indicates failure, and 1 otherwise.
+ *
+ * The property may exist on plug-in cards the existed before IEEE 1275-1994.
+ * And, in that case, the property may not even be a string. So we carefully
+ * check for the value "fail", in the beginning of the string, noting
+ * the property length.
+ */
+static int
+status_okay(int id, char *buf, int buflen)
+{
+	char status_buf[OBP_MAXPROPNAME];
+	char *bufp = buf;
+	int len = buflen;
+	int proplen;
+	static const char *status = "status";
+	static const char *fail = "fail";
+	int fail_len = (int)strlen(fail);
+
+	/*
+	 * Get the proplen ... if it's smaller than "fail",
+	 * or doesn't exist ... then we don't care, since
+	 * the value can't begin with the char string "fail".
+	 *
+	 * NB: proplen, if it's a string, includes the NULL in the
+	 * the size of the property, and fail_len does not.
+	 */
+	proplen = prom_getproplen((pnode_t)id, (caddr_t)status);
+	if (proplen <= fail_len)	/* nonexistant or uninteresting len */
+		return (1);
+
+	/*
+	 * if a buffer was provided, use it
+	 */
+	if ((buf == (char *)NULL) || (buflen <= 0)) {
+		bufp = status_buf;
+		len = sizeof (status_buf);
+	}
+	*bufp = (char)0;
+
+	/*
+	 * Get the property into the buffer, to the extent of the buffer,
+	 * and in case the buffer is smaller than the property size,
+	 * NULL terminate the buffer. (This handles the case where
+	 * a buffer was passed in and the caller wants to print the
+	 * value, but the buffer was too small).
+	 */
+	(void) prom_bounded_getprop((pnode_t)id, (caddr_t)status,
+	    (caddr_t)bufp, len);
+	*(bufp + len - 1) = (char)0;
+
+	/*
+	 * If the value begins with the char string "fail",
+	 * then it means the node is failed. We don't care
+	 * about any other values. We assume the node is ok
+	 * although it might be 'disabled'.
+	 */
+	if (strncmp(bufp, fail, fail_len) == 0)
+		return (0);
+
+	return (1);
 }
 
 static int
-get_prop_int_array(dev_info_t *di, char *pname, int **pval, uint_t *plen)
+getlongprop_buf(int id, char *name, char *buf, int maxlen)
 {
-	int ret;
+	int size;
 
-	if ((ret = ddi_prop_lookup_int_array(DDI_DEV_T_ANY, di,
-	    DDI_PROP_DONTPASS, pname, pval, plen))
-	    == DDI_PROP_SUCCESS) {
-		*plen = (*plen) * (sizeof (int));
-	}
-	return (ret);
-}
+	size = prom_getproplen((pnode_t)id, name);
+	if (size <= 0 || (size > maxlen - 1))
+		return (-1);
 
-static int
-impl_sunbus_name_child(dev_info_t *child, char *name, int namelen)
-{
-	name[0] = '\0';
-	if (ddi_get_parent_data(child) == NULL) {
-		struct ddi_parent_private_data *pdptr =
-		    kmem_zalloc(sizeof (*pdptr), KM_SLEEP);
-		ddi_set_parent_data(child, pdptr);
-	}
+	if (-1 == prom_getprop((pnode_t)id, name, buf))
+		return (-1);
 
-	pnode_t node = ddi_get_nodeid(child);
-	if (node > 0) {
-		char buf[MAXNAMELEN] = {0};
-		int len = prom_getproplen(node, "unit-address");
-		if (0 < len && len < MAXNAMELEN) {
-			prom_getprop(node, "unit-address", buf);
-			if (strlen(buf) < namelen)
-				strcpy(name, buf);
+	if (strcmp("name", name) == 0) {
+		if (buf[size - 1] != '\0') {
+			buf[size] = '\0';
+			size += 1;
 		}
 	}
 
-	return (DDI_SUCCESS);
+	return (size);
 }
 
+/*
+ * Check the status of the device node passed as an argument.
+ *
+ *	if ((status is OKAY) || (status is DISABLED))
+ *		return DDI_SUCCESS
+ *	else
+ *		print a warning and return DDI_FAILURE
+ */
+/*ARGSUSED1*/
+int
+check_status(int id, char *name, dev_info_t *parent)
+{
+	char status_buf[64];
+	char devtype_buf[OBP_MAXPROPNAME];
+	int retval = DDI_FAILURE;
+
+	/*
+	 * is the status okay?
+	 */
+	if (status_okay(id, status_buf, sizeof (status_buf)))
+		return (DDI_SUCCESS);
+
+	/*
+	 * a status property indicating bad memory will be associated
+	 * with a node which has a "device_type" property with a value of
+	 * "memory-controller". in this situation, return DDI_SUCCESS
+	 */
+	if (getlongprop_buf(id, OBP_DEVICETYPE, devtype_buf,
+	    sizeof (devtype_buf)) > 0) {
+		if (strcmp(devtype_buf, "memory-controller") == 0)
+			retval = DDI_SUCCESS;
+	}
+
+	/*
+	 * print the status property information
+	 */
+	cmn_err(CE_WARN, "status '%s' for '%s'", status_buf, name);
+	return (retval);
+}
+
+/*
+ * Called from the bus_ctl op of sunbus (sbus, obio, etc) nexus drivers
+ * to implement the DDI_CTLOPS_INITCHILD operation.  That is, it names
+ * the children of sun busses based on the reg spec.
+ *
+ * Handles the following properties (in make_ddi_ppd):
+ *	Property		value
+ *	  Name			type
+ *	reg		register spec
+ *	intr		old-form interrupt spec
+ *	interrupts	new (bus-oriented) interrupt spec
+ *	ranges		range spec
+ */
 int
 impl_ddi_sunbus_initchild(dev_info_t *child)
 {
+	char name[MAXNAMELEN];
 	void impl_ddi_sunbus_removechild(dev_info_t *);
-	char name[MAXNAMELEN] = {0};
+	extern int impl_sunbus_name_child(
+	    dev_info_t *child, char *name, int namelen);
 
-	impl_sunbus_name_child(child, name, MAXNAMELEN);
+	/*
+	 * Name the child, also makes parent private data if appropriate for
+	 * the implementation.
+	 */
+	(void) impl_sunbus_name_child(child, name, MAXNAMELEN);
 	ddi_set_name_addr(child, name);
 
+	/*
+	 * Attempt to merge a .conf node; if successful, remove the
+	 * .conf node.
+	 */
 	if ((ndi_dev_is_persistent_node(child) == 0) &&
 	    (ndi_merge_node(child, impl_sunbus_name_child) == DDI_SUCCESS)) {
+		/*
+		 * Return failure to remove node
+		 */
 		impl_ddi_sunbus_removechild(child);
 		return (DDI_FAILURE);
 	}
@@ -1278,6 +1440,14 @@ impl_free_ddi_ppd(dev_info_t *dip)
 		return;
 
 	if ((n = (size_t)pdptr->par_nintr) != 0)
+		/*
+		 * Note that kmem_free is used here (instead of
+		 * ddi_prop_free) because the contents of the
+		 * property were placed into a separate buffer and
+		 * mucked with a bit before being stored in par_intr.
+		 * The actual return value from the prop lookup
+		 * was freed with ddi_prop_free previously.
+		 */
 		kmem_free(pdptr->par_intr, n * sizeof (struct intrspec));
 
 	if ((n = (size_t)pdptr->par_nrng) != 0)
@@ -1295,191 +1465,11 @@ impl_ddi_sunbus_removechild(dev_info_t *dip)
 {
 	impl_free_ddi_ppd(dip);
 	ddi_set_name_addr(dip, NULL);
+	/*
+	 * Strip the node to properly convert it back to prototype form
+	 */
 	impl_rem_dev_props(dip);
 }
-
-/*
- * Copy name to property_name, since name
- * is in the low address range below kernelbase.
- */
-static void
-copy_boot_str(const char *boot_str, char *kern_str, int len)
-{
-	int i = 0;
-
-	while (i < len - 1 && boot_str[i] != '\0') {
-		kern_str[i] = boot_str[i];
-		i++;
-	}
-
-	kern_str[i] = 0;	/* null terminate */
-	if (boot_str[i] != '\0')
-		cmn_err(CE_WARN,
-		    "boot property string is truncated to %s", kern_str);
-}
-
-static void
-get_boot_properties(void)
-{
-	extern char hw_provider[];
-	dev_info_t *devi;
-	char *name;
-	int length, flags;
-	char property_name[50], property_val[50];
-	void *bop_staging_area;
-
-	bop_staging_area = kmem_zalloc(MMU_PAGESIZE, KM_NOSLEEP);
-
-	/*
-	 * Import "root" properties from the boot.
-	 *
-	 * We do this by invoking BOP_NEXTPROP until the list
-	 * is completely copied in.
-	 */
-
-	devi = ddi_root_node();
-	for (name = BOP_NEXTPROP(bootops, "");		/* get first */
-	    name;					/* NULL => DONE */
-	    name = BOP_NEXTPROP(bootops, name)) {	/* get next */
-
-		/* copy string to memory above kernelbase */
-		copy_boot_str(name, property_name, 50);
-
-		/*
-		 * Skip vga properties. They will be picked up later
-		 * by get_vga_properties.
-		 */
-		if (strcmp(property_name, "display-edif-block") == 0 ||
-		    strcmp(property_name, "display-edif-id") == 0) {
-			continue;
-		}
-
-		length = BOP_GETPROPLEN(bootops, property_name);
-		if (length < 0)
-			continue;
-		if (length > MMU_PAGESIZE) {
-			cmn_err(CE_NOTE,
-			    "boot property %s longer than 0x%lx, ignored\n",
-			    property_name, MMU_PAGESIZE);
-			continue;
-		}
-		BOP_GETPROP(bootops, property_name, bop_staging_area);
-		flags = do_bsys_getproptype(bootops, property_name);
-
-		/*
-		 * special properties:
-		 * si-machine, si-hw-provider
-		 *	goes to kernel data structures.
-		 * bios-boot-device and stdout
-		 *	goes to hardware property list so it may show up
-		 *	in the prtconf -vp output. This is needed by
-		 *	Install/Upgrade. Once we fix install upgrade,
-		 *	this can be taken out.
-		 * XXXARM: It's unclear whether we need bios-boot-device.
-		 */
-		if (strcmp(name, "si-machine") == 0) {
-			(void) strncpy(utsname.machine, bop_staging_area,
-			    SYS_NMLN);
-			utsname.machine[SYS_NMLN - 1] = '\0';
-			continue;
-		}
-		if (strcmp(name, "si-hw-provider") == 0) {
-			(void) strncpy(hw_provider, bop_staging_area, SYS_NMLN);
-			hw_provider[SYS_NMLN - 1] = '\0';
-			continue;
-		}
-		if (strcmp(name, "bios-boot-device") == 0) {
-			copy_boot_str(bop_staging_area, property_val, 50);
-			(void) ndi_prop_update_string(DDI_DEV_T_NONE, devi,
-			    property_name, property_val);
-			continue;
-		}
-		if (strcmp(name, "stdout") == 0) {
-			(void) ndi_prop_update_int(DDI_DEV_T_NONE, devi,
-			    property_name, *((int *)bop_staging_area));
-			continue;
-		}
-
-		/* Boolean property */
-		if (length == 0) {
-			(void) e_ddi_prop_create(DDI_DEV_T_NONE, devi,
-			    DDI_PROP_CANSLEEP, property_name, NULL, 0);
-			continue;
-		}
-
-		/* Now anything else based on type. */
-		switch (flags) {
-		case DDI_PROP_TYPE_INT:
-			if (length == sizeof (int)) {
-				(void) e_ddi_prop_update_int(DDI_DEV_T_NONE,
-				    devi, property_name,
-				    *((int *)bop_staging_area));
-			} else {
-				(void) e_ddi_prop_update_int_array(
-				    DDI_DEV_T_NONE, devi, property_name,
-				    bop_staging_area, length / sizeof (int));
-			}
-			break;
-		case DDI_PROP_TYPE_STRING:
-			(void) e_ddi_prop_update_string(DDI_DEV_T_NONE, devi,
-			    property_name, bop_staging_area);
-			break;
-		case DDI_PROP_TYPE_BYTE:
-			(void) e_ddi_prop_update_byte_array(DDI_DEV_T_NONE,
-			    devi, property_name, bop_staging_area, length);
-			break;
-		case DDI_PROP_TYPE_INT64:
-			if (length == sizeof (int64_t)) {
-				(void) e_ddi_prop_update_int64(DDI_DEV_T_NONE,
-				    devi, property_name,
-				    *((int64_t *)bop_staging_area));
-			} else {
-				(void) e_ddi_prop_update_int64_array(
-				    DDI_DEV_T_NONE, devi, property_name,
-				    bop_staging_area,
-				    length / sizeof (int64_t));
-			}
-			break;
-		default:
-			/* Property type unknown, use old prop interface */
-			(void) e_ddi_prop_create(DDI_DEV_T_NONE, devi,
-			    DDI_PROP_CANSLEEP, property_name, bop_staging_area,
-			    length);
-		}
-	}
-
-	kmem_free(bop_staging_area, MMU_PAGESIZE);
-}
-
-void
-impl_setup_ddi(void)
-{
-	dev_info_t *xdip, *isa_dip;
-	rd_existing_t rd_mem_prop;
-	int err;
-
-	ndi_devi_alloc_sleep(
-	    ddi_root_node(), "ramdisk", (pnode_t)DEVI_SID_NODEID, &xdip);
-	(void) BOP_GETPROP(bootops, "ramdisk_start", (void *)&ramdisk_start);
-	(void) BOP_GETPROP(bootops, "ramdisk_end", (void *)&ramdisk_end);
-
-	rd_mem_prop.phys = ramdisk_start;
-	rd_mem_prop.size = ramdisk_end - ramdisk_start + 1;
-
-	ndi_prop_update_byte_array(DDI_DEV_T_NONE, xdip, RD_EXISTING_PROP_NAME,
-	    (uchar_t *)&rd_mem_prop, sizeof (rd_mem_prop));
-	err = ndi_devi_bind_driver(xdip, 0);
-	ASSERT(err == 0);
-
-	/*
-	 * Read in the properties from the boot.
-	 */
-	get_boot_properties();
-
-	/* do bus dependent probes. */
-	impl_bus_initialprobe();
-}
-
 
 /*
  * DDI Memory/DMA
@@ -1821,7 +1811,7 @@ getctgsz(void *addr)
  */
 
 /*ARGSUSED*/
-static void *
+void *
 contig_alloc(size_t size, ddi_dma_attr_t *attr, uintptr_t align, int cansleep)
 {
 	pgcnt_t		pgcnt = btopr(size);
@@ -1880,7 +1870,7 @@ contig_alloc(size_t size, ddi_dma_attr_t *attr, uintptr_t align, int cansleep)
 	return (addr);
 }
 
-static void
+void
 contig_free(void *addr, size_t size)
 {
 	pgcnt_t	pgcnt = btopr(size);
@@ -1920,8 +1910,11 @@ kalloca(size_t size, size_t align, int cansleep, int physcontig,
 	size_t *addr, *raddr, rsize;
 	size_t hdrsize = 4 * sizeof (size_t);	/* must be power of 2 */
 	int a, i, c;
-	vmem_t *vmp;
+	vmem_t *vmp = NULL;
 	kmem_cache_t *cp = NULL;
+
+	if (attr->dma_attr_addr_lo > mmu_ptob((uint64_t)ddiphysmin)) /* XXXARM: this is not in the FDT impl */
+		return (NULL);
 
 	align = MAX(align, hdrsize);
 	ASSERT((align & (align - 1)) == 0);
@@ -1935,7 +1928,8 @@ kalloca(size_t size, size_t align, int cansleep, int physcontig,
 	rsize = P2ROUNDUP_TYPED(size + align, KA_ALIGN, size_t);
 
 	if (physcontig && rsize > PAGESIZE) {
-		if (addr = contig_alloc(size, attr, align, cansleep)) {
+		if ((addr = contig_alloc(size, attr, align, cansleep)) !=
+		    NULL) {
 			if (!putctgas(addr, size))
 				contig_free(addr, size);
 			else
@@ -2023,7 +2017,6 @@ kfreea(void *addr)
 	}
 }
 
-/*ARGSUSED*/
 void
 i_ddi_devacc_to_hatacc(const ddi_device_acc_attr_t *devaccp, uint_t *hataccp)
 {
@@ -2053,6 +2046,9 @@ i_ddi_check_cache_attr(uint_t flags)
 	return (B_FALSE);
 }
 
+/*
+ * XXXARM: this is from the Arm port, and subtly different to i86pc
+ */
 /* set HAT cache attributes from the cache attributes */
 void
 i_ddi_cacheattr_to_hatacc(uint_t flags, uint_t *hataccp)
@@ -2091,265 +2087,6 @@ i_ddi_cacheattr_to_hatacc(uint_t flags, uint_t *hataccp)
 	}
 }
 
-static int
-get_address_cells(pnode_t node)
-{
-	int address_cells = 0;
-
-	while (node > 0) {
-		int len = prom_getproplen(node, "#address-cells");
-		if (len > 0) {
-			ASSERT(len == sizeof (int));
-			int prop;
-			prom_getprop(node, "#address-cells", (caddr_t)&prop);
-			address_cells = ntohl(prop);
-			break;
-		}
-		node = prom_fdt_parentnode(node);
-	}
-	return (address_cells);
-}
-
-static int
-get_size_cells(pnode_t node)
-{
-	int size_cells = 0;
-
-	while (node > 0) {
-		int len = prom_getproplen(node, "#size-cells");
-		if (len > 0) {
-			ASSERT(len == sizeof (int));
-			int prop;
-			prom_getprop(node, "#size-cells", (caddr_t)&prop);
-			size_cells = ntohl(prop);
-			break;
-		}
-		node = prom_fdt_parentnode(node);
-	}
-	return (size_cells);
-}
-
-struct dma_range
-{
-	uint64_t cpu_addr;
-	uint64_t bus_addr;
-	size_t size;
-};
-
-static int
-get_dma_ranges(dev_info_t *dip, struct dma_range **range, int *nrange)
-{
-	int dma_range_num = 0;
-	struct dma_range *dma_ranges = NULL;
-	boolean_t *update = NULL;
-	int ret = DDI_SUCCESS;
-
-	if (dip == NULL)
-		goto err_exit;
-
-	for (;;) {
-		dip = ddi_get_parent(dip);
-		if (dip == NULL)
-			break;
-		pnode_t node = ddi_get_nodeid(dip);
-		if (node <= 0)
-			break;
-		if (prom_getproplen(node, "dma-ranges") <= 0)
-			continue;
-
-		int bus_address_cells;
-		int bus_size_cells;
-		int parent_address_cells;
-		pnode_t parent;
-
-		parent = prom_fdt_parentnode(node);
-		if (parent <= 0) {
-			cmn_err(CE_WARN,
-			    "%s: root node has a dma-ranges property.",
-			    __func__);
-			goto err_exit;
-		}
-
-		bus_address_cells = get_address_cells(node);
-		bus_size_cells = get_size_cells(node);
-		parent_address_cells = get_address_cells(parent);
-
-		int len = prom_getproplen(node, "dma-ranges");
-		if (len % CELLS_1275_TO_BYTES(bus_address_cells +
-		    parent_address_cells + bus_size_cells) != 0) {
-			cmn_err(CE_WARN,
-			    "%s: dma-ranges property length is invalid\n"
-			    "bus_address_cells %d\n"
-			    "parent_address_cells %d\n"
-			    "bus_size_cells %d\n"
-			    "len %d\n",
-			    __func__, bus_address_cells, parent_address_cells,
-			    bus_size_cells, len);
-			ret = DDI_FAILURE;
-			goto err_exit;
-		}
-		int num = len / CELLS_1275_TO_BYTES(bus_address_cells +
-		    parent_address_cells + bus_size_cells);
-		uint32_t *cells = __builtin_alloca(len);
-		prom_getprop(node, "dma-ranges", (caddr_t)cells);
-
-		boolean_t first = (dma_ranges == NULL);
-		if (first) {
-			dma_range_num = num;
-			dma_ranges = kmem_zalloc(
-			    sizeof (struct dma_range) * dma_range_num,
-			    KM_SLEEP);
-			update = kmem_zalloc(
-			    sizeof (boolean_t) * dma_range_num, KM_SLEEP);
-		} else {
-			memset(update, 0, sizeof (boolean_t) * dma_range_num);
-		}
-
-		for (int i = 0; i < num; i++) {
-			uint64_t bus_address = 0;
-			uint64_t parent_address = 0;
-			uint64_t bus_size = 0;
-			for (int j = 0; j < bus_address_cells; j++) {
-				bus_address <<= 32;
-				bus_address += ntohl(cells[(
-				    bus_address_cells + parent_address_cells +
-				    bus_size_cells) * i + j]);
-			}
-			for (int j = 0; j < parent_address_cells; j++) {
-				parent_address <<= 32;
-				parent_address += ntohl(
-				    cells[(bus_address_cells +
-				    parent_address_cells + bus_size_cells) *
-				    i + bus_address_cells + j]);
-			}
-			for (int j = 0; j < bus_size_cells; j++) {
-				bus_size <<= 32;
-				bus_size += ntohl(cells[(bus_address_cells +
-				    parent_address_cells + bus_size_cells) *
-				    i + bus_address_cells +
-				    parent_address_cells + j]);
-			}
-
-			if (first) {
-				dma_ranges[i].cpu_addr = parent_address;
-				dma_ranges[i].bus_addr = bus_address;
-				dma_ranges[i].size = bus_size;
-				update[i] = B_TRUE;
-			} else {
-				for (int j = 0; j < dma_range_num; j++) {
-					if (bus_address <=
-					    dma_ranges[j].cpu_addr &&
-					    dma_ranges[j].cpu_addr +
-					    dma_ranges[j].size - 1 <=
-					    bus_address + bus_size - 1) {
-						dma_ranges[j].cpu_addr +=
-						    (parent_address -
-						    bus_address);
-						update[j] = B_TRUE;
-						break;
-					}
-				}
-			}
-		}
-		for (int i = 0; i < dma_range_num; i++) {
-			if (!update[i]) {
-				cmn_err(CE_WARN,
-				    "%s: dma-ranges property is invalid",
-				    __func__);
-				ret = DDI_FAILURE;
-				goto err_exit;
-			}
-		}
-	}
-
-	*nrange = dma_range_num;
-	*range = dma_ranges;
-err_exit:
-	if (ret != DDI_SUCCESS && dma_ranges) {
-		kmem_free(
-		    dma_ranges, sizeof (struct dma_range) * dma_range_num);
-	}
-	if (update) {
-		kmem_free(update, sizeof (boolean_t) * dma_range_num);
-	}
-	return (ret);
-}
-
-int
-i_ddi_convert_dma_attr(
-    ddi_dma_attr_t *dst, dev_info_t *dip, const ddi_dma_attr_t *src)
-{
-	*dst = *src;
-
-	int dma_range_num = 0;
-	struct dma_range *dma_ranges = NULL;
-	int ret = get_dma_ranges(dip, &dma_ranges, &dma_range_num);
-	if (ret != DDI_SUCCESS)
-		return (DDI_FAILURE);
-
-	if (dma_range_num > 0) {
-		int i;
-		for (i = 0; i < dma_range_num; i++) {
-			if (dma_ranges[i].bus_addr <= dst->dma_attr_addr_lo &&
-			    dst->dma_attr_addr_hi <=
-			    dma_ranges[i].bus_addr + dma_ranges[i].size - 1) {
-				dst->dma_attr_addr_lo +=
-				    (dma_ranges[i].cpu_addr -
-				    dma_ranges[i].bus_addr);
-				dst->dma_attr_addr_hi +=
-				    (dma_ranges[i].cpu_addr -
-				    dma_ranges[i].bus_addr);
-				break;
-			}
-		}
-		if (i == dma_range_num) {
-			cmn_err(CE_WARN,
-			    "%s: ddi_dma_attr_t is invalid range", __func__);
-			ret = DDI_FAILURE;
-		}
-	}
-
-	if (dma_ranges) {
-		kmem_free(
-		    dma_ranges, sizeof (struct dma_range) * dma_range_num);
-	}
-	return (ret);
-}
-
-int
-i_ddi_update_dma_attr(dev_info_t *dip, ddi_dma_attr_t *attr)
-{
-	int dma_range_num = 0;
-	struct dma_range *dma_ranges = NULL;
-	int ret = get_dma_ranges(dip, &dma_ranges, &dma_range_num);
-	if (ret != DDI_SUCCESS)
-		return (DDI_FAILURE);
-
-	if (dma_range_num > 0) {
-		int dma_range_index = 0;
-		for (int i = 0; i < dma_range_num; i++) {
-			if (dma_ranges[i].cpu_addr <
-			    dma_ranges[dma_range_index].cpu_addr) {
-				dma_range_index = i;
-			}
-		}
-
-		attr->dma_attr_addr_lo = dma_ranges[dma_range_index].bus_addr;
-		attr->dma_attr_addr_hi =
-		    dma_ranges[dma_range_index].bus_addr +
-		    dma_ranges[dma_range_index].size - 1;
-	} else {
-		ret = DDI_FAILURE;
-	}
-
-	if (dma_ranges) {
-		kmem_free(
-		    dma_ranges, sizeof (struct dma_range) * dma_range_num);
-	}
-
-	return (ret);
-}
-
 /*
  * This should actually be called i_ddi_dma_mem_alloc. There should
  * also be an i_ddi_pio_mem_alloc. i_ddi_dma_mem_alloc should call
@@ -2374,6 +2111,10 @@ i_ddi_mem_alloc(dev_info_t *dip, ddi_dma_attr_t *oattr,
 	pgcnt_t minctg;
 	uint_t order;
 	int e;
+
+	extern int i_ddi_convert_dma_attr(ddi_dma_attr_t *dst, dev_info_t *dip,
+	    const ddi_dma_attr_t *src);
+
 	/*
 	 * Check legality of arguments
 	 */
@@ -2500,22 +2241,602 @@ i_ddi_mem_free(caddr_t kaddr, ddi_acc_hdl_t *ap)
 	kfreea(kaddr);
 }
 
+/*
+ * Access Barriers
+ *
+ */
+/*ARGSUSED*/
+int
+i_ddi_ontrap(ddi_acc_handle_t hp)
+{
+	return (DDI_FAILURE);
+}
+
+/*ARGSUSED*/
+void
+i_ddi_notrap(ddi_acc_handle_t hp)
+{
+}
+
+/*
+ * Copy console font to kernel memory. The temporary font setup
+ * to use font module was done in early console setup, using low
+ * memory and data from font module. Now we need to allocate
+ * kernel memory and copy data over, so the low memory can be freed.
+ * We can have at most one entry in font list from early boot.
+ */
+static void
+get_console_font(void)
+{
+#if 0
+	struct fontlist *fp, *fl;
+	bitmap_data_t *bd;
+	struct font *fd, *tmp;
+	int i;
+
+	if (STAILQ_EMPTY(&fonts))
+		return;
+
+	fl = STAILQ_FIRST(&fonts);
+	STAILQ_REMOVE_HEAD(&fonts, font_next);
+	fp = kmem_zalloc(sizeof (*fp), KM_SLEEP);
+	bd = kmem_zalloc(sizeof (*bd), KM_SLEEP);
+	fd = kmem_zalloc(sizeof (*fd), KM_SLEEP);
+
+	fp->font_name = NULL;
+	fp->font_flags = FONT_BOOT;
+	fp->font_data = bd;
+
+	bd->width = fl->font_data->width;
+	bd->height = fl->font_data->height;
+	bd->uncompressed_size = fl->font_data->uncompressed_size;
+	bd->font = fd;
+
+	tmp = fl->font_data->font;
+	fd->vf_width = tmp->vf_width;
+	fd->vf_height = tmp->vf_height;
+	for (i = 0; i < VFNT_MAPS; i++) {
+		if (tmp->vf_map_count[i] == 0)
+			continue;
+		fd->vf_map_count[i] = tmp->vf_map_count[i];
+		fd->vf_map[i] = kmem_alloc(fd->vf_map_count[i] *
+		    sizeof (*fd->vf_map[i]), KM_SLEEP);
+		bcopy(tmp->vf_map[i], fd->vf_map[i], fd->vf_map_count[i] *
+		    sizeof (*fd->vf_map[i]));
+	}
+	fd->vf_bytes = kmem_alloc(bd->uncompressed_size, KM_SLEEP);
+	bcopy(tmp->vf_bytes, fd->vf_bytes, bd->uncompressed_size);
+	STAILQ_INSERT_HEAD(&fonts, fp, font_next);
+#endif
+}
+
+static void
+check_driver_disable(void)
+{
+	int proplen = 128;
+	char *prop_name;
+	char *drv_name, *propval;
+	major_t major;
+
+	prop_name = kmem_alloc(proplen, KM_SLEEP);
+	for (major = 0; major < devcnt; major++) {
+		drv_name = ddi_major_to_name(major);
+		if (drv_name == NULL)
+			continue;
+		(void) snprintf(prop_name, proplen, "disable-%s", drv_name);
+		if (ddi_prop_lookup_string(DDI_DEV_T_ANY, ddi_root_node(),
+		    DDI_PROP_DONTPASS, prop_name, &propval) == DDI_SUCCESS) {
+			if (strcmp(propval, "true") == 0) {
+				devnamesp[major].dn_flags |= DN_DRIVER_REMOVED;
+				cmn_err(CE_NOTE, "driver %s disabled",
+				    drv_name);
+			}
+			ddi_prop_free(propval);
+		}
+	}
+	kmem_free(prop_name, proplen);
+}
+
+static struct bus_probe {
+	struct bus_probe *next;
+	void (*probe)(int);
+} *bus_probes;
 
 void
-translate_devid(dev_info_t *dip)
+impl_bus_add_probe(void (*func)(int))
 {
+	struct bus_probe *probe;
+	struct bus_probe *lastprobe = NULL;
+
+	probe = kmem_alloc(sizeof (*probe), KM_SLEEP);
+	probe->probe = func;
+	probe->next = NULL;
+
+	if (!bus_probes) {
+		bus_probes = probe;
+		return;
+	}
+
+	lastprobe = bus_probes;
+	while (lastprobe->next)
+		lastprobe = lastprobe->next;
+	lastprobe->next = probe;
 }
 
-pfn_t
-i_ddi_paddr_to_pfn(paddr_t paddr)
+/*ARGSUSED*/
+void
+impl_bus_delete_probe(void (*func)(int))
 {
-	pfn_t pfn;
+	struct bus_probe *prev = NULL;
+	struct bus_probe *probe = bus_probes;
 
-	pfn = mmu_btop(paddr);
+	while (probe) {
+		if (probe->probe == func)
+			break;
+		prev = probe;
+		probe = probe->next;
+	}
 
-	return (pfn);
+	if (probe == NULL)
+		return;
+
+	if (prev)
+		prev->next = probe->next;
+	else
+		bus_probes = probe->next;
+
+	kmem_free(probe, sizeof (struct bus_probe));
 }
 
+#if defined(IMPL_DDI_DUMP_DEVTREE_INITIAL) || \
+    defined(IMPL_DDI_DUMP_DEVTREE_REPROBE)
+static void
+impl_bus_dump_node_prefix(unsigned int lvl)
+{
+	unsigned int n;
+
+	for (n = 0; n < lvl; ++n) {
+		prom_printf("  ");
+	}
+}
+
+static void
+impl_bus_dump_node_info(dev_info_t *dip, unsigned int lvl)
+{
+	uint_t nelements;
+	char **data;
+	impl_bus_dump_node_prefix(lvl);
+	prom_printf(
+	    "name/instance=%s%d, binding_name=%s, driver_name=%s\n",
+	    ddi_node_name(dip), ddi_get_instance(dip),
+	    ddi_binding_name(dip), ddi_driver_name(dip));
+	impl_bus_dump_node_prefix(lvl);
+	if (ddi_prop_lookup_string_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "compatible", &data, &nelements) == DDI_PROP_SUCCESS) {
+		uint_t n;
+		prom_printf(" -> compatible: ");
+		for (n = 0; n < nelements; ++n) {
+			prom_printf(data[n]);
+			if (n != nelements - 1)
+				prom_printf(", ");
+		}
+		prom_printf("\n");
+		ddi_prop_free(data);
+	} else {
+		prom_printf(" -> no compatible\n");
+	}
+
+	impl_bus_dump_node_prefix(lvl);
+	if (ddi_prop_exists(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "acpi-namespace") == 1) {
+		char *propval;
+		if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip,
+		    DDI_PROP_DONTPASS, "acpi-namespace", &propval) ==
+		    DDI_SUCCESS) {
+			prom_printf(" -> acpi-namespace property: '%s'\n",
+			    propval);
+			ddi_prop_free(propval);
+		} else {
+			prom_printf(" -> acpi-namespace property exists\n");
+		}
+	} else {
+		prom_printf(" -> registers property absent\n");
+	}
+
+	impl_bus_dump_node_prefix(lvl);
+	if (ddi_prop_exists(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS, "reg") == 1)
+		prom_printf(" -> registers property exists\n");
+	else
+		prom_printf(" -> registers property absent\n");
+
+	impl_bus_dump_node_prefix(lvl);
+	if (ddi_prop_exists(DDI_DEV_T_ANY, dip,
+	    DDI_PROP_DONTPASS, "assigned-addresses") == 1)
+		prom_printf(" -> assigned-addresses property exists\n");
+	else
+		prom_printf(" -> assigned-addresses property absent\n");
+
+	impl_bus_dump_node_prefix(lvl);
+	if (ddi_prop_exists(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "interrupts") == 1) {
+		int *irupts;
+		uint_t nirupts;
+		uint_t j;
+		prom_printf(" -> interrupts property exists");
+		if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip,
+		    DDI_PROP_DONTPASS, "interrupts", &irupts, &nirupts)
+		    == DDI_PROP_SUCCESS) {
+			prom_printf(" with %u elements\n", nirupts);
+			impl_bus_dump_node_prefix(lvl);
+			prom_printf("      ");
+			for (j = 0; j < nirupts; ++j) {
+				prom_printf("%d", irupts[j]);
+				if (j < (nirupts - 1))
+					prom_printf(", ");
+			}
+			prom_printf("\n");
+			ddi_prop_free(irupts);
+		} else {
+			prom_printf("\n      <error fetching interrupts>\n");
+		}
+	} else {
+		prom_printf(" -> interrupts property absent\n");
+	}
+
+	impl_bus_dump_node_prefix(lvl);
+	if (ddi_prop_exists(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "dma-channels") == 1)
+		prom_printf(" -> dma-channels property exists\n");
+	else
+		prom_printf(" -> dma-channels property absent\n");
+
+	impl_bus_dump_node_prefix(lvl);
+	if (ddi_prop_exists(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "ranges") == 1)
+		prom_printf(" -> ranges property exists\n");
+	else
+		prom_printf(" -> ranges property absent\n");
+
+	impl_bus_dump_node_prefix(lvl);
+	if (ddi_prop_exists(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "bus-range") == 1)
+		prom_printf(" -> bus-range property exists\n");
+	else
+		prom_printf(" -> bus-range property absent\n");
+
+	impl_bus_dump_node_prefix(lvl);
+	prom_printf(" -> flags:\n");
+	if (!DEVI_IS_DEVICE_DOWN(dip) && !DEVI_IS_DEVICE_DEGRADED(dip) &&
+	    !DEVI_IS_DEVICE_OFFLINE(dip)) {
+		impl_bus_dump_node_prefix(lvl);
+		prom_printf("    * is online\n");
+	}
+	if (DEVI_IS_DEVICE_OFFLINE(dip)) {
+		impl_bus_dump_node_prefix(lvl);
+		prom_printf("    * is offline\n");
+	}
+	if (DEVI_IS_DEVICE_DOWN(dip)) {
+		impl_bus_dump_node_prefix(lvl);
+		prom_printf("    * is down\n");
+	}
+	if (DEVI_IS_DEVICE_DEGRADED(dip)) {
+		impl_bus_dump_node_prefix(lvl);
+		prom_printf("    * is degraded\n");
+	}
+	if (DEVI_IS_DEVICE_REMOVED(dip)) {
+		impl_bus_dump_node_prefix(lvl);
+		prom_printf("    * is removed\n");
+	}
+	if (DEVI_IS_BUS_QUIESCED(dip)) {
+		impl_bus_dump_node_prefix(lvl);
+		prom_printf("    * is bus quiesced\n");
+	}
+	if (DEVI_IS_BUS_DOWN(dip)) {
+		impl_bus_dump_node_prefix(lvl);
+		prom_printf("    * is bus down\n");
+	}
+	if (DEVI_NEED_NDI_CONFIG(dip)) {
+		impl_bus_dump_node_prefix(lvl);
+		prom_printf("    * needs NDI config\n");
+	}
+	if (DEVI_IS_ATTACHING(dip)) {
+		impl_bus_dump_node_prefix(lvl);
+		prom_printf("    * is attaching\n");
+	}
+	if (DEVI_IS_DETACHING(dip)) {
+		impl_bus_dump_node_prefix(lvl);
+		prom_printf("    * is detaching\n");
+	}
+	if (DEVI_IS_ONLINING(dip)) {
+		impl_bus_dump_node_prefix(lvl);
+		prom_printf("    * is onlining\n");
+	}
+	if (DEVI_IS_OFFLINING(dip)) {
+		impl_bus_dump_node_prefix(lvl);
+		prom_printf("    * is offlining\n");
+	}
+	if (DEVI_IS_IN_RECONFIG(dip)) {
+		impl_bus_dump_node_prefix(lvl);
+		prom_printf("    * is in reconfig\n");
+	}
+	if (DEVI_IS_INVOKING_DACF(dip)) {
+		impl_bus_dump_node_prefix(lvl);
+		prom_printf("    * is invoking DACF\n");
+	}
+}
+
+static void
+impl_bus_dump_node(dev_info_t *dip, unsigned int lvl)
+{
+	dev_info_t *cdip;
+	impl_bus_dump_node_info(dip, lvl);
+
+	for (cdip = ddi_get_child(dip);
+	    cdip != NULL;
+	    cdip = ddi_get_next_sibling(cdip))
+		impl_bus_dump_node(cdip, lvl + 1);
+}
+#endif	/* IMPL_DDI_DUMP_DEVTREE_INITIAL || IMPL_DDI_DUMP_DEVTREE_REPROBE */
+
+/*
+ * impl_bus_initialprobe
+ *	Modload the prom simulator, then let it probe to verify existence
+ *	and type of PCI support.
+ */
+static void
+impl_bus_initialprobe(void)
+{
+	struct bus_probe *probe;
+
+#if XXXARM
+	/* load modules to install bus probes */
+	if (modload("misc", "pci_autoconfig") < 0) {
+		panic("failed to load misc/pci_autoconfig");
+	}
+#else
+	/*
+	 * XXXARM: Do we actually want this at all?
+	 *
+	 * In theory we should be able to just attach npe based on the ACPI
+	 * probe and let it get on with things.
+	 *
+	 * Regardless, leave it here for now - if we want it, pull in the
+	 * error checking block above.
+	 */
+	(void) modload("misc", "pci_autoconfig");
+#endif
+#if defined(_AARCH64_ACPI)
+	if (modload("misc", "acpidev") < 0)
+		panic("failed to load misc/acpidev");
+#endif
+
+	probe = bus_probes;
+	while (probe) {
+		/* run the probe functions */
+		(*probe->probe)(0);
+		probe = probe->next;
+	}
+
+#if defined(IMPL_DDI_DUMP_DEVTREE_INITIAL)
+	prom_printf("Initial device tree:\n");
+	impl_bus_dump_node(ddi_root_node(), 0);
+#endif
+}
+
+/*
+ * impl_bus_reprobe
+ *	Reprogram devices not set up by firmware.
+ */
+void
+impl_bus_reprobe(void)
+{
+	struct bus_probe *probe;
+
+	probe = bus_probes;
+	while (probe) {
+		/* run the probe function */
+		(*probe->probe)(1);
+		probe = probe->next;
+	}
+
+#if defined(IMPL_DDI_DUMP_DEVTREE_REPROBE)
+	prom_printf("Reprobed device tree:\n");
+	impl_bus_dump_node(ddi_root_node(), 0);
+#endif
+}
+
+/*
+ * Copy name to property_name, since name
+ * is in the low address range below kernelbase.
+ */
+static void
+copy_boot_str(const char *boot_str, char *kern_str, int len)
+{
+	int i = 0;
+
+	while (i < len - 1 && boot_str[i] != '\0') {
+		kern_str[i] = boot_str[i];
+		i++;
+	}
+
+	kern_str[i] = 0;	/* null terminate */
+	if (boot_str[i] != '\0')
+		cmn_err(CE_WARN,
+		    "boot property string is truncated to %s", kern_str);
+}
+
+static void
+get_boot_properties(void)
+{
+	extern char hw_provider[];
+	dev_info_t *devi;
+	char *name;
+	int length, flags;
+	char property_name[50], property_val[50];
+	void *bop_staging_area;
+
+	bop_staging_area = kmem_zalloc(MMU_PAGESIZE, KM_NOSLEEP);
+
+	/*
+	 * Import "root" properties from the boot.
+	 *
+	 * We do this by invoking BOP_NEXTPROP until the list
+	 * is completely copied in.
+	 */
+
+	devi = ddi_root_node();
+	for (name = BOP_NEXTPROP(bootops, "");		/* get first */
+	    name;					/* NULL => DONE */
+	    name = BOP_NEXTPROP(bootops, name)) {	/* get next */
+
+		/* copy string to memory above kernelbase */
+		copy_boot_str(name, property_name, 50);
+
+		/*
+		 * Skip vga properties. They will be picked up later
+		 * by get_vga_properties.
+		 */
+		if (strcmp(property_name, "display-edif-block") == 0 ||
+		    strcmp(property_name, "display-edif-id") == 0) {
+			continue;
+		}
+
+		length = BOP_GETPROPLEN(bootops, property_name);
+		if (length < 0)
+			continue;
+		if (length > MMU_PAGESIZE) {
+			cmn_err(CE_NOTE,
+			    "boot property %s longer than 0x%lx, ignored\n",
+			    property_name, MMU_PAGESIZE);
+			continue;
+		}
+		BOP_GETPROP(bootops, property_name, bop_staging_area);
+		flags = do_bsys_getproptype(bootops, property_name);
+
+		/*
+		 * special properties:
+		 * si-machine, si-hw-provider
+		 *	goes to kernel data structures.
+		 * bios-boot-device and stdout
+		 *	goes to hardware property list so it may show up
+		 *	in the prtconf -vp output. This is needed by
+		 *	Install/Upgrade. Once we fix install upgrade,
+		 *	this can be taken out.
+		 */
+		if (strcmp(name, "si-machine") == 0) {
+			(void) strncpy(utsname.machine, bop_staging_area,
+			    SYS_NMLN);
+			utsname.machine[SYS_NMLN - 1] = '\0';
+			continue;
+		}
+		if (strcmp(name, "si-hw-provider") == 0) {
+			(void) strncpy(hw_provider, bop_staging_area, SYS_NMLN);
+			hw_provider[SYS_NMLN - 1] = '\0';
+			continue;
+		}
+		if (strcmp(name, "bios-boot-device") == 0) {
+			copy_boot_str(bop_staging_area, property_val, 50);
+			(void) ndi_prop_update_string(DDI_DEV_T_NONE, devi,
+			    property_name, property_val);
+			continue;
+		}
+		if (strcmp(name, "stdout") == 0) {
+			(void) ndi_prop_update_int(DDI_DEV_T_NONE, devi,
+			    property_name, *((int *)bop_staging_area));
+			continue;
+		}
+
+		/* Boolean property */
+		if (length == 0) {
+			(void) e_ddi_prop_create(DDI_DEV_T_NONE, devi,
+			    DDI_PROP_CANSLEEP, property_name, NULL, 0);
+			continue;
+		}
+
+		/* Now anything else based on type. */
+		switch (flags) {
+		case DDI_PROP_TYPE_INT:
+			if (length == sizeof (int)) {
+				(void) e_ddi_prop_update_int(DDI_DEV_T_NONE,
+				    devi, property_name,
+				    *((int *)bop_staging_area));
+			} else {
+				(void) e_ddi_prop_update_int_array(
+				    DDI_DEV_T_NONE, devi, property_name,
+				    bop_staging_area, length / sizeof (int));
+			}
+			break;
+		case DDI_PROP_TYPE_STRING:
+			(void) e_ddi_prop_update_string(DDI_DEV_T_NONE, devi,
+			    property_name, bop_staging_area);
+			break;
+		case DDI_PROP_TYPE_BYTE:
+			(void) e_ddi_prop_update_byte_array(DDI_DEV_T_NONE,
+			    devi, property_name, bop_staging_area, length);
+			break;
+		case DDI_PROP_TYPE_INT64:
+			if (length == sizeof (int64_t)) {
+				(void) e_ddi_prop_update_int64(DDI_DEV_T_NONE,
+				    devi, property_name,
+				    *((int64_t *)bop_staging_area));
+			} else {
+				(void) e_ddi_prop_update_int64_array(
+				    DDI_DEV_T_NONE, devi, property_name,
+				    bop_staging_area,
+				    length / sizeof (int64_t));
+			}
+			break;
+		default:
+			/* Property type unknown, use old prop interface */
+			(void) e_ddi_prop_create(DDI_DEV_T_NONE, devi,
+			    DDI_PROP_CANSLEEP, property_name, bop_staging_area,
+			    length);
+		}
+	}
+
+	kmem_free(bop_staging_area, MMU_PAGESIZE);
+}
+
+void
+impl_setup_ddi(void)
+{
+	dev_info_t *xdip;
+	rd_existing_t rd_mem_prop;
+	int err __maybe_unused;
+
+	ndi_devi_alloc_sleep(ddi_root_node(), "ramdisk",
+	    (pnode_t)DEVI_SID_NODEID, &xdip);
+
+	(void) BOP_GETPROP(bootops,
+	    "ramdisk_start", (void *)&ramdisk_start);
+	(void) BOP_GETPROP(bootops,
+	    "ramdisk_end", (void *)&ramdisk_end);
+
+	rd_mem_prop.phys = ramdisk_start;
+	rd_mem_prop.size = ramdisk_end - ramdisk_start + 1;
+
+	(void) ndi_prop_update_byte_array(DDI_DEV_T_NONE, xdip,
+	    RD_EXISTING_PROP_NAME, (uchar_t *)&rd_mem_prop,
+	    sizeof (rd_mem_prop));
+	err = ndi_devi_bind_driver(xdip, 0);
+	ASSERT(err == 0);
+
+	/*
+	 * Read in the properties from the boot.
+	 */
+	get_boot_properties();
+
+	/* Copy console font if provided by boot. */
+	get_console_font();
+
+	/*
+	 * Check for administratively disabled drivers.
+	 */
+	check_driver_disable();
+
+	/* do bus dependent probes. */
+	impl_bus_initialprobe();
+}
 
 /*
  * Perform a copy from a memory mapped device (whose devinfo pointer is devi)
@@ -2541,150 +2862,6 @@ e_ddi_copytodev(dev_info_t *devi,
 {
 	bcopy(kaddr, devaddr, len);
 	return (0);
-}
-
-static int
-getlongprop_buf(int id, char *name, char *buf, int maxlen)
-{
-	int size;
-
-	size = prom_getproplen((pnode_t)id, name);
-	if (size <= 0 || (size > maxlen - 1))
-		return (-1);
-
-	if (-1 == prom_getprop((pnode_t)id, name, buf))
-		return (-1);
-
-	if (strcmp("name", name) == 0) {
-		if (buf[size - 1] != '\0') {
-			buf[size] = '\0';
-			size += 1;
-		}
-	}
-
-	return (size);
-}
-/*
- * The "status" property indicates the operational status of a device.
- * If this property is present, the value is a string indicating the
- * status of the device as follows:
- *
- *	"okay"		operational.
- *	"disabled"	not operational, but might become operational.
- *	"fail"		not operational because a fault has been detected,
- *			and it is unlikely that the device will become
- *			operational without repair. no additional details
- *			are available.
- *	"fail-xxx"	not operational because a fault has been detected,
- *			and it is unlikely that the device will become
- *			operational without repair. "xxx" is additional
- *			human-readable information about the particular
- *			fault condition that was detected.
- *
- * The absence of this property means that the operational status is
- * unknown or okay.
- *
- * This routine checks the status property of the specified device node
- * and returns 0 if the operational status indicates failure, and 1 otherwise.
- *
- * The property may exist on plug-in cards the existed before IEEE 1275-1994.
- * And, in that case, the property may not even be a string. So we carefully
- * check for the value "fail", in the beginning of the string, noting
- * the property length.
- */
-int
-status_okay(int id, char *buf, int buflen)
-{
-	char status_buf[OBP_MAXPROPNAME];
-	char *bufp = buf;
-	int len = buflen;
-	int proplen;
-	static const char *status = "status";
-	static const char *fail = "fail";
-	int fail_len = (int)strlen(fail);
-
-	/*
-	 * Get the proplen ... if it's smaller than "fail",
-	 * or doesn't exist ... then we don't care, since
-	 * the value can't begin with the char string "fail".
-	 *
-	 * NB: proplen, if it's a string, includes the NULL in the
-	 * the size of the property, and fail_len does not.
-	 */
-	proplen = prom_getproplen((pnode_t)id, (caddr_t)status);
-	if (proplen <= fail_len)	/* nonexistant or uninteresting len */
-		return (1);
-
-	/*
-	 * if a buffer was provided, use it
-	 */
-	if ((buf == (char *)NULL) || (buflen <= 0)) {
-		bufp = status_buf;
-		len = sizeof (status_buf);
-	}
-	*bufp = (char)0;
-
-	/*
-	 * Get the property into the buffer, to the extent of the buffer,
-	 * and in case the buffer is smaller than the property size,
-	 * NULL terminate the buffer. (This handles the case where
-	 * a buffer was passed in and the caller wants to print the
-	 * value, but the buffer was too small).
-	 */
-	(void) prom_bounded_getprop((pnode_t)id, (caddr_t)status,
-	    (caddr_t)bufp, len);
-	*(bufp + len - 1) = (char)0;
-
-	/*
-	 * If the value begins with the char string "fail",
-	 * then it means the node is failed. We don't care
-	 * about any other values. We assume the node is ok
-	 * although it might be 'disabled'.
-	 */
-	if (strncmp(bufp, fail, fail_len) == 0)
-		return (0);
-
-	return (1);
-}
-
-/*
- * Check the status of the device node passed as an argument.
- *
- *	if ((status is OKAY) || (status is DISABLED))
- *		return DDI_SUCCESS
- *	else
- *		print a warning and return DDI_FAILURE
- */
-/*ARGSUSED1*/
-int
-check_status(int id, char *name, dev_info_t *parent)
-{
-	char status_buf[64];
-	char devtype_buf[OBP_MAXPROPNAME];
-	int retval = DDI_FAILURE;
-
-	/*
-	 * is the status okay?
-	 */
-	if (status_okay(id, status_buf, sizeof (status_buf)))
-		return (DDI_SUCCESS);
-
-	/*
-	 * a status property indicating bad memory will be associated
-	 * with a node which has a "device_type" property with a value of
-	 * "memory-controller". in this situation, return DDI_SUCCESS
-	 */
-	if (getlongprop_buf(id, OBP_DEVICETYPE, devtype_buf,
-	    sizeof (devtype_buf)) > 0) {
-		if (strcmp(devtype_buf, "memory-controller") == 0)
-			retval = DDI_SUCCESS;
-	}
-
-	/*
-	 * print the status property information
-	 */
-	cmn_err(CE_WARN, "status '%s' for '%s'", status_buf, name);
-	return (retval);
 }
 
 static int
@@ -2768,26 +2945,203 @@ peek_mem(peekpoke_ctlops_t *in_args)
 	return (err);
 }
 
+/*
+ * This is called only to process peek/poke when the DIP is NULL.
+ * Assume that this is for memory, as nexi take care of device safe accesses.
+ */
 int
 peekpoke_mem(ddi_ctl_enum_t cmd, peekpoke_ctlops_t *in_args)
 {
 	return (cmd == DDI_CTLOPS_PEEK ? peek_mem(in_args) : poke_mem(in_args));
 }
 
-uint_t
-softlevel1(caddr_t arg1, caddr_t arg2)
+/*
+ * we've just done a cautious put/get. Check if it was successful by
+ * calling pci_ereport_post() on all puts and for any gets that return -1
+ */
+static int
+pci_peekpoke_check_fma(dev_info_t *dip, void *arg, ddi_ctl_enum_t ctlop,
+    void (*scan)(dev_info_t *, ddi_fm_error_t *))
 {
-	softint();
-	return (1);
+	int	rval = DDI_SUCCESS;
+	peekpoke_ctlops_t *in_args = (peekpoke_ctlops_t *)arg;
+	ddi_fm_error_t de;
+	ddi_acc_impl_t *hp = (ddi_acc_impl_t *)in_args->handle;
+	ddi_acc_hdl_t *hdlp = (ddi_acc_hdl_t *)in_args->handle;
+	int check_err = 0;
+	int repcount = in_args->repcount;
+
+	if (ctlop == DDI_CTLOPS_POKE &&
+	    hdlp->ah_acc.devacc_attr_access != DDI_CAUTIOUS_ACC)
+		return (DDI_SUCCESS);
+
+	if (ctlop == DDI_CTLOPS_PEEK &&
+	    hdlp->ah_acc.devacc_attr_access != DDI_CAUTIOUS_ACC) {
+		for (; repcount; repcount--) {
+			switch (in_args->size) {
+			case sizeof (uint8_t):
+				if (*(uint8_t *)in_args->host_addr == 0xff)
+					check_err = 1;
+				break;
+			case sizeof (uint16_t):
+				if (*(uint16_t *)in_args->host_addr == 0xffff)
+					check_err = 1;
+				break;
+			case sizeof (uint32_t):
+				if (*(uint32_t *)in_args->host_addr ==
+				    0xffffffff)
+					check_err = 1;
+				break;
+			case sizeof (uint64_t):
+				if (*(uint64_t *)in_args->host_addr ==
+				    0xffffffffffffffff)
+					check_err = 1;
+				break;
+			}
+		}
+		if (check_err == 0)
+			return (DDI_SUCCESS);
+	}
+	/*
+	 * for a cautious put or get or a non-cautious get that returned -1 call
+	 * io framework to see if there really was an error
+	 */
+	bzero(&de, sizeof (ddi_fm_error_t));
+	de.fme_version = DDI_FME_VERSION;
+	de.fme_ena = fm_ena_generate(0, FM_ENA_FMT1);
+	if (hdlp->ah_acc.devacc_attr_access == DDI_CAUTIOUS_ACC) {
+		de.fme_flag = DDI_FM_ERR_EXPECTED;
+		de.fme_acc_handle = in_args->handle;
+	} else if (hdlp->ah_acc.devacc_attr_access == DDI_DEFAULT_ACC) {
+		/*
+		 * We only get here with DDI_DEFAULT_ACC for config space gets.
+		 * Non-hardened drivers may be probing the hardware and
+		 * expecting -1 returned. So need to treat errors on
+		 * DDI_DEFAULT_ACC as DDI_FM_ERR_EXPECTED.
+		 */
+		de.fme_flag = DDI_FM_ERR_EXPECTED;
+		de.fme_acc_handle = in_args->handle;
+	} else {
+		/*
+		 * Hardened driver doing protected accesses shouldn't
+		 * get errors unless there's a hardware problem. Treat
+		 * as nonfatal if there's an error, but set UNEXPECTED
+		 * so we raise ereports on any errors and potentially
+		 * fault the device
+		 */
+		de.fme_flag = DDI_FM_ERR_UNEXPECTED;
+	}
+	(void) scan(dip, &de);
+	if (hdlp->ah_acc.devacc_attr_access != DDI_DEFAULT_ACC &&
+	    de.fme_status != DDI_FM_OK) {
+		ndi_err_t *errp = (ndi_err_t *)hp->ahi_err;
+		rval = DDI_FAILURE;
+		errp->err_ena = de.fme_ena;
+		errp->err_expected = de.fme_flag;
+		errp->err_status = DDI_FM_NONFATAL;
+	}
+	return (rval);
 }
 
-void
-configure(void)
+/*
+ * pci_peekpoke_check_nofma() is for when an error occurs on a register access
+ * during pci_ereport_post(). We can't call pci_ereport_post() again or we'd
+ * recurse, so assume all puts are OK and gets have failed if they return -1
+ */
+static int
+pci_peekpoke_check_nofma(void *arg, ddi_ctl_enum_t ctlop)
 {
-	extern void i_ddi_init_root();
+	int rval = DDI_SUCCESS;
+	peekpoke_ctlops_t *in_args = (peekpoke_ctlops_t *)arg;
+	ddi_acc_impl_t *hp = (ddi_acc_impl_t *)in_args->handle;
+	ddi_acc_hdl_t *hdlp = (ddi_acc_hdl_t *)in_args->handle;
+	int repcount = in_args->repcount;
 
-	i_ddi_init_root();
-	i_ddi_attach_hw_nodes("dld");
+	if (ctlop == DDI_CTLOPS_POKE)
+		return (rval);
+
+	for (; repcount; repcount--) {
+		switch (in_args->size) {
+		case sizeof (uint8_t):
+			if (*(uint8_t *)in_args->host_addr == 0xff)
+				rval = DDI_FAILURE;
+			break;
+		case sizeof (uint16_t):
+			if (*(uint16_t *)in_args->host_addr == 0xffff)
+				rval = DDI_FAILURE;
+			break;
+		case sizeof (uint32_t):
+			if (*(uint32_t *)in_args->host_addr == 0xffffffff)
+				rval = DDI_FAILURE;
+			break;
+		case sizeof (uint64_t):
+			if (*(uint64_t *)in_args->host_addr ==
+			    0xffffffffffffffff)
+				rval = DDI_FAILURE;
+			break;
+		}
+	}
+	if (hdlp->ah_acc.devacc_attr_access != DDI_DEFAULT_ACC &&
+	    rval == DDI_FAILURE) {
+		ndi_err_t *errp = (ndi_err_t *)hp->ahi_err;
+		errp->err_ena = fm_ena_generate(0, FM_ENA_FMT1);
+		errp->err_expected = DDI_FM_ERR_UNEXPECTED;
+		errp->err_status = DDI_FM_NONFATAL;
+	}
+	return (rval);
+}
+
+int
+pci_peekpoke_check(dev_info_t *dip, dev_info_t *rdip,
+    ddi_ctl_enum_t ctlop, void *arg, void *result,
+    int (*handler)(dev_info_t *, dev_info_t *, ddi_ctl_enum_t, void *,
+    void *), kmutex_t *err_mutexp, kmutex_t *peek_poke_mutexp,
+    void (*scan)(dev_info_t *, ddi_fm_error_t *))
+{
+	int rval;
+	peekpoke_ctlops_t *in_args = (peekpoke_ctlops_t *)arg;
+	ddi_acc_impl_t *hp = (ddi_acc_impl_t *)in_args->handle;
+
+	/*
+	 * this function only supports cautious accesses, not peeks/pokes
+	 * which don't have a handle
+	 */
+	if (hp == NULL)
+		return (DDI_FAILURE);
+
+	if (hp->ahi_acc_attr & DDI_ACCATTR_CONFIG_SPACE) {
+		if (!mutex_tryenter(err_mutexp)) {
+			/*
+			 * As this may be a recursive call from within
+			 * pci_ereport_post() we can't wait for the mutexes.
+			 * Fortunately we know someone is already calling
+			 * pci_ereport_post() which will handle the error bits
+			 * for us, and as this is a config space access we can
+			 * just do the access and check return value for -1
+			 * using pci_peekpoke_check_nofma().
+			 */
+			rval = handler(dip, rdip, ctlop, arg, result);
+			if (rval == DDI_SUCCESS)
+				rval = pci_peekpoke_check_nofma(arg, ctlop);
+			return (rval);
+		}
+		/*
+		 * This can't be a recursive call. Drop the err_mutex and get
+		 * both mutexes in the right order. If an error hasn't already
+		 * been detected by the ontrap code, use pci_peekpoke_check_fma
+		 * which will call pci_ereport_post() to check error status.
+		 */
+		mutex_exit(err_mutexp);
+	}
+	mutex_enter(peek_poke_mutexp);
+	rval = handler(dip, rdip, ctlop, arg, result);
+	if (rval == DDI_SUCCESS) {
+		mutex_enter(err_mutexp);
+		rval = pci_peekpoke_check_fma(dip, arg, ctlop, scan);
+		mutex_exit(err_mutexp);
+	}
+	mutex_exit(peek_poke_mutexp);
+	return (rval);
 }
 
 dev_t
@@ -2799,93 +3153,6 @@ getrootdev(void)
 	 * defaults to "/ramdisk:a" otherwise.
 	 */
 	return (ddi_pathname_to_dev_t(rootfs.bo_name));
-}
-
-static struct bus_probe {
-	struct bus_probe *next;
-	void (*probe)(int);
-} *bus_probes;
-void
-impl_bus_add_probe(void (*func)(int));
-static int
-print_dip(dev_info_t *dip, void *arg)
-{
-	char *model_str;
-	prom_printf("%s: dip=%p\n", __FUNCTION__, dip);
-	if (ddi_prop_lookup_string(
-	    DDI_DEV_T_ANY, dip, 0, "name", &model_str) != DDI_SUCCESS)
-		return (DDI_WALK_CONTINUE);
-	prom_printf("%s: name=%s\n", __FUNCTION__, model_str);
-	ddi_prop_free(model_str);
-	return (DDI_WALK_CONTINUE);
-}
-
-/*
- * impl_bus_initialprobe
- *	Modload the prom simulator, then let it probe to verify existence
- *	and type of PCI support.
- */
-static void
-impl_bus_initialprobe(void)
-{
-	struct bus_probe *probe;
-
-	modload("misc", "pci_autoconfig");
-
-	probe = bus_probes;
-	while (probe) {
-		/* run the probe functions */
-		(*probe->probe)(0);
-		probe = probe->next;
-	}
-
-//	ddi_walk_devs(ddi_root_node(), print_dip, (void *)0);
-}
-
-void
-impl_bus_add_probe(void (*func)(int))
-{
-	struct bus_probe *probe;
-	struct bus_probe *lastprobe = NULL;
-
-	probe = kmem_alloc(sizeof (*probe), KM_SLEEP);
-	probe->probe = func;
-	probe->next = NULL;
-
-	if (!bus_probes) {
-		bus_probes = probe;
-		return;
-	}
-
-	lastprobe = bus_probes;
-	while (lastprobe->next)
-		lastprobe = lastprobe->next;
-	lastprobe->next = probe;
-}
-
-/*ARGSUSED*/
-void
-impl_bus_delete_probe(void (*func)(int))
-{
-	struct bus_probe *prev = NULL;
-	struct bus_probe *probe = bus_probes;
-
-	while (probe) {
-		if (probe->probe == func)
-			break;
-		prev = probe;
-		probe = probe->next;
-	}
-
-	if (probe == NULL)
-		return;
-
-	if (prev)
-		prev->next = probe->next;
-	else
-		bus_probes = probe->next;
-
-	kmem_free(probe, sizeof (struct bus_probe));
 }
 
 boolean_t
@@ -2953,4 +3220,25 @@ i_ddi_dma_max(dev_info_t *dip, ddi_dma_attr_t *attrp)
 	}
 
 	return ((uint32_t)maxxfer);
+}
+
+void
+translate_devid(dev_info_t *dip)
+{
+}
+
+pfn_t
+i_ddi_paddr_to_pfn(paddr_t paddr)
+{
+	pfn_t pfn;
+
+	pfn = mmu_btop(paddr);
+
+	return (pfn);
+}
+
+void
+i_ddi_intr_redist_all_cpus()
+{
+	/* nothing (yet) */
 }

@@ -23,15 +23,21 @@
  * and compatible string, then creates a child node per that information,
  * allowing the kernel to attach the correct driver.
  *
- * The nexus does not copy resource information (registers and interrupts) to
- * the child node, as the interpretation of this information is
- * firmware-specific. Instead, the nexus implements the `bus_map' and
- * `bus_intr_op' operations by calling the nexus-parent with the nexus device
- * information pointer as the resource dip, allowing DDI to find the correct
- * resources.
+ * The register copies the `interrupts' property to the child (specifically to
+ * allow interrupt management to continue working on ACPI nexi) and copies,
+ * when present, the `acpi-namespace' property to the child (allowing the
+ * aarch64 ACPI root nexus to properly manage the interrupt sense for the
+ * child device).
+ *
+ * However, the nexus does not copy any other information to the child. Of
+ * particular curiosity is the "reg" property, which is bus-specific and is
+ * dealt with by implementing the `bus_map' operation to call the nexus-parent
+ * with the nexus device information pointer as the resource dip, allowing DDI
+ * to find the correct resources.
  *
  * The nexus unconditionally sets the `virtio-is-mmio' property, instructing
- * the virtio library module to use the MMIO transport.
+ * the virtio library module to use the MMIO transport for any child devices
+ * as well as for itself when it probes the child hardware type.
  */
 
 #include <sys/devops.h>
@@ -45,8 +51,6 @@
 
 static int viommionex_ddi_map(dev_info_t *pdip, dev_info_t *dp,
     ddi_map_req_t *mp, off_t offset, off_t len, caddr_t *addrp);
-static int viommionex_intr_op(dev_info_t *pdip, dev_info_t *rdip,
-    ddi_intr_op_t intr_op, ddi_intr_handle_impl_t *hdlp, void *result);
 static int viommionex_ctlops(dev_info_t *dip, dev_info_t *rdip,
     ddi_ctl_enum_t ctlop, void *arg, void *result);
 static int viommionex_attach(dev_info_t *dip, ddi_attach_cmd_t cmd);
@@ -84,7 +88,7 @@ static struct bus_ops viommionex_bus_ops = {
 	.bus_fm_access_enter	= NULL,
 	.bus_fm_access_exit	= NULL,
 	.bus_power		= NULL,
-	.bus_intr_op		= viommionex_intr_op,
+	.bus_intr_op		= i_ddi_intr_ops,
 	.bus_hp_op		= NULL
 };
 
@@ -151,13 +155,6 @@ viommionex_ddi_map(dev_info_t *pdip, dev_info_t *dp __unused,
     ddi_map_req_t *mp, off_t offset, off_t len, caddr_t *addrp)
 {
 	return (ddi_map(pdip, mp, offset, len, addrp));
-}
-
-static int
-viommionex_intr_op(dev_info_t *pdip, dev_info_t *rdip __unused,
-    ddi_intr_op_t intr_op, ddi_intr_handle_impl_t *hdlp, void *result)
-{
-	return (i_ddi_intr_ops(pdip, pdip, intr_op, hdlp, result));
 }
 
 static int
@@ -246,6 +243,9 @@ viommionex_bus_config(dev_info_t *dip, uint_t flags,
 	char		*driver;
 	char		*compat;
 	char		*compatible[1];
+	int		*irupts;
+	uint_t		nirupts;
+	char		*acpins;
 
 	rdip = NULL;
 
@@ -269,6 +269,48 @@ viommionex_bus_config(dev_info_t *dip, uint_t flags,
 		return (DDI_FAILURE);
 	}
 	ddi_prop_free(compat);
+
+	(void) ddi_prop_update_int(DDI_DEV_T_NONE, rdip, DDI_NO_AUTODETACH, 1);
+
+	if (ndi_prop_update_int(DDI_DEV_T_NONE, dip,
+	    VIRTIO_MMIO_PROPERTY_NAME, 1) != DDI_PROP_SUCCESS) {
+		dev_err(dip, CE_WARN, "?failed to set the '%s' property",
+		    VIRTIO_MMIO_PROPERTY_NAME);
+		return (DDI_FAILURE);
+	}
+
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "interrupts", &irupts, &nirupts) == DDI_PROP_SUCCESS) {
+		if (ndi_prop_update_int_array(DDI_DEV_T_NONE, rdip,
+		    "interrupts", irupts, nirupts) != DDI_PROP_SUCCESS) {
+			ddi_prop_free(irupts);
+			(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
+			ndi_devi_exit(dip);
+			dev_err(dip, CE_WARN, "?failed to copy the "
+			    "'interrupts' property");
+			return (DDI_FAILURE);
+		}
+
+		ddi_prop_free(irupts);
+		irupts = NULL;
+		nirupts = 0;
+	}
+
+	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "acpi-namespace", &acpins) == DDI_PROP_SUCCESS) {
+		if (ndi_prop_update_string(DDI_DEV_T_NONE, rdip,
+		    "acpi-namespace", acpins) != DDI_PROP_SUCCESS) {
+			ddi_prop_free(irupts);
+			(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
+			ndi_devi_exit(dip);
+			dev_err(dip, CE_WARN, "?failed to copy the "
+			    "'acpi-namespace' property");
+			return (DDI_FAILURE);
+		}
+
+		ddi_prop_free(acpins);
+		acpins = NULL;
+	}
 
 	if (ndi_devi_bind_driver(rdip, 0) != NDI_SUCCESS) {
 		(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
@@ -296,13 +338,6 @@ viommionex_bus_unconfig(dev_info_t *parent, uint_t flags,
 static int
 viommionex_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 {
-	if (ddi_prop_update_int(DDI_DEV_T_NONE, dip,
-	    VIRTIO_MMIO_PROPERTY_NAME, 1) != DDI_PROP_SUCCESS) {
-		dev_err(dip, CE_WARN, "?failed to set the '%s' property",
-		    VIRTIO_MMIO_PROPERTY_NAME);
-		return (DDI_FAILURE);
-	}
-
 	if (cmd == DDI_ATTACH)
 		ddi_report_dev(dip);
 

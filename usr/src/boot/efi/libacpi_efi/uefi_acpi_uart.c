@@ -112,7 +112,8 @@ static ACPI_STATUS process_armh0011(ACPI_HANDLE handle, ACPI_DEVICE_INFO *obj,
     void *context, void **b);
 
 static known_uart_t known_uarts[] = {
-	{ .hid = "ARMH0011", .hid_len = 9, .processor = process_armh0011 }
+	{ .hid = "ARMH0011", .hid_len = 9, .processor = process_armh0011 },
+	{ .hid = "BCM2837", .hid_len = 8, .processor = process_armh0011 },
 };
 static size_t num_known_uarts = sizeof (known_uarts) / sizeof (known_uarts[0]);
 
@@ -253,7 +254,9 @@ process_armh0011(ACPI_HANDLE handle, ACPI_DEVICE_INFO *obj,
 	/*
 	 * TODO: a list of supported pl011 types
 	 */
-	if (strcmp(obj->HardwareId.String, "ARMH0011") != 0) {
+	if (strcmp(obj->HardwareId.String, "ARMH0011") != 0 &&
+	    strncmp(obj->HardwareId.String, "BCM2837",
+	    obj->HardwareId.Length) != 0) {
 		return (AE_OK);
 	}
 
@@ -330,6 +333,9 @@ process_armh0011(ACPI_HANDLE handle, ACPI_DEVICE_INFO *obj,
 		AcpiOsFree(dsd_buf.Pointer);
 	}
 
+	/*
+	 * XXXARM: this is lossy, we need the type more accurately
+	 */
 	status = add_uart(devname, obj->HardwareId.String,
 	    (obj->Valid & ACPI_VALID_UID) ?
 	    obj->UniqueId.String : "0", &uefi_acpi_pl011_ops, uart);
@@ -343,6 +349,19 @@ process_armh0011(ACPI_HANDLE handle, ACPI_DEVICE_INFO *obj,
 	return (status);
 }
 
+static uart_processor_t
+is_known_uart(const char *name, size_t len)
+{
+	size_t i;
+
+	for (i = 0; i < num_known_uarts; ++i) {
+		if (strncmp(name, known_uarts[i].hid, len) == 0)
+			return (known_uarts[i].processor);
+	}
+
+	return (NULL);
+}
+
 static ACPI_STATUS
 uefi_acpi_uart_device_callback(ACPI_HANDLE handle, UINT32 level,
     void *context, void **b)
@@ -350,6 +369,8 @@ uefi_acpi_uart_device_callback(ACPI_HANDLE handle, UINT32 level,
 	ACPI_STATUS status;
 	size_t i;
 	ACPI_DEVICE_INFO *obj;
+	UINT32 n;
+	uart_processor_t fn;
 
 	status = AcpiGetObjectInfo(handle, &obj);
         if (ACPI_FAILURE(status))
@@ -360,23 +381,35 @@ uefi_acpi_uart_device_callback(ACPI_HANDLE handle, UINT32 level,
 		return (AE_OK);
 	}
 
-	if ((obj->Valid & ACPI_VALID_HID) == 0) {
-		AcpiOsFree(obj);
-		return (AE_OK);
-	}
-
-	for (i = 0; i < num_known_uarts; ++i) {
-		if (obj->HardwareId.Length == known_uarts[i].hid_len &&
-		    strcmp(obj->HardwareId.String, known_uarts[i].hid) == 0) {
-			status = known_uarts[i].processor(
-			    handle, obj, context, b);
+	/*
+	 * First match on _HID if present
+	 */
+	if (obj->Valid & ACPI_VALID_HID) {
+		if ((fn = is_known_uart(obj->HardwareId.String,
+		    obj->HardwareId.Length)) != NULL) {
+			status = fn(handle, obj, context, b);
 			AcpiOsFree(obj);
 			return (status);
 		}
 	}
 
+	/*
+	 * Also match the _CID values, in (priority) order
+	 */
+	if (obj->Valid & ACPI_VALID_CID) {
+		for (n = 0; n < obj->CompatibleIdList.Count; ++n) {
+			if ((fn = is_known_uart(
+			    obj->CompatibleIdList.Ids[n].String,
+			    obj->CompatibleIdList.Ids[n].Length)) != NULL) {
+				status = fn(handle, obj, context, b);
+				AcpiOsFree(obj);
+				return (status);
+			}
+		}
+	}
+
 	AcpiOsFree(obj);
-        return (AE_OK);
+	return (AE_OK);
 }
 
 static void

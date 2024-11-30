@@ -37,6 +37,19 @@
 #include <vm/hat.h>
 #include <vm/seg_kmem.h>
 #include <sys/smp_impldefs.h>
+#if defined(_AARCH64_ACPI)
+#include <sys/psm.h>
+#include <sys/psm_types.h>
+#include <sys/sunddi.h>
+#include <sys/sunndi.h>
+#endif
+
+#if defined(_AARCH64_ACPI)
+static int mach_cpu_create_devinfo(cpu_t *cp, dev_info_t **dipp);
+
+int (*psm_cpu_create_devinfo)(cpu_t *, dev_info_t **) = mach_cpu_create_devinfo;
+int (*psm_cpu_get_devinfo)(cpu_t *, dev_info_t **) = NULL;
+#endif
 
 /*
  * from startup.c - kernel VA range allocator for device mappings
@@ -67,6 +80,32 @@ psm_map_phys(paddr_t addr, size_t len, int prot)
 	return (cvaddr + pgoffset);
 }
 
+#if defined(_AARCH64_ACPI)
+caddr_t
+psm_map_phys_new(paddr_t addr, size_t len, int prot)
+{
+	return (psm_map_phys(addr, len, prot));
+}
+
+caddr_t
+psm_map(paddr_t addr, size_t len, int prot)
+{
+	int phys_prot = PROT_READ;
+
+	ASSERT(prot == (prot & (PSM_PROT_WRITE | PSM_PROT_READ)));
+	if (prot & PSM_PROT_WRITE)
+		phys_prot |= PROT_WRITE;
+
+        return (psm_map_phys(addr, len, phys_prot));
+}
+
+caddr_t
+psm_map_new(paddr_t addr, size_t len, int prot)
+{
+	return (psm_map(addr, len, prot));
+}
+#endif
+
 void
 psm_unmap_phys(caddr_t addr, size_t len)
 {
@@ -83,3 +122,87 @@ psm_unmap_phys(caddr_t addr, size_t len)
 	hat_unload(kas.a_hat, base, ptob(npages), HAT_UNLOAD_UNLOCK);
 	device_arena_free(base, ptob(npages));
 }
+
+#if defined(_AARCH64_ACPI)
+void
+psm_unmap(caddr_t addr, size_t len)
+{
+	psm_unmap_phys(addr, len);
+}
+
+/*
+ * Default handler to create device node for CPU.
+ * One reference count will be held on created device node.
+ */
+static int
+mach_cpu_create_devinfo(cpu_t *cp, dev_info_t **dipp)
+{
+	int rv;
+	dev_info_t *dip;
+	static kmutex_t cpu_node_lock;
+	static dev_info_t *cpu_nex_devi = NULL;
+
+	ASSERT(cp != NULL);
+	ASSERT(dipp != NULL);
+	*dipp = NULL;
+
+	if (cpu_nex_devi == NULL) {
+		mutex_enter(&cpu_node_lock);
+		/* First check whether cpus exists. */
+		cpu_nex_devi = ddi_find_devinfo("cpus", -1, 0);
+		/* Create cpus if it doesn't exist. */
+		if (cpu_nex_devi == NULL) {
+			ndi_devi_enter(ddi_root_node());
+			rv = ndi_devi_alloc(ddi_root_node(), "cpus",
+			    (pnode_t)DEVI_SID_NODEID, &dip);
+			if (rv != NDI_SUCCESS) {
+				mutex_exit(&cpu_node_lock);
+				cmn_err(CE_CONT,
+				    "?failed to create cpu nexus device.\n");
+				return (PSM_FAILURE);
+			}
+			ASSERT(dip != NULL);
+			(void) ndi_devi_online(dip, 0);
+			ndi_devi_exit(ddi_root_node());
+			cpu_nex_devi = dip;
+		}
+		mutex_exit(&cpu_node_lock);
+	}
+
+	/*
+	 * create a child node for cpu identified as 'cpu_id'
+	 */
+	ndi_devi_enter(cpu_nex_devi);
+	dip = ddi_add_child(cpu_nex_devi, "cpu", DEVI_SID_NODEID, -1);
+	if (dip == NULL) {
+		cmn_err(CE_CONT,
+		    "?failed to create device node for cpu%d.\n", cp->cpu_id);
+		rv = PSM_FAILURE;
+	} else {
+		*dipp = dip;
+		(void) ndi_hold_devi(dip);
+		rv = PSM_SUCCESS;
+	}
+	ndi_devi_exit(cpu_nex_devi);
+
+	return (rv);
+}
+
+/*
+ * The dipp contains one of following values on return:
+ * - NULL if no device node found
+ * - pointer to device node if found
+ */
+int
+mach_cpu_get_device_node(struct cpu *cp, dev_info_t **dipp)
+{
+	*dipp = NULL;
+	if (psm_cpu_get_devinfo != NULL) {
+		if (psm_cpu_get_devinfo(cp, dipp) == PSM_SUCCESS) {
+			return (PSM_SUCCESS);
+		}
+	}
+
+	return (PSM_FAILURE);
+}
+#endif

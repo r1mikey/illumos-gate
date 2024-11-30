@@ -110,6 +110,7 @@ ingest_madt(struct xboot_info *xbi, ACPI_TABLE_MADT *madt)
 	if (madt == NULL || xbi == NULL)
 		return (-1);
 
+#if 0
 	if (!(PFR0_GIC(read_id_aa64pfr0()) & PFR0_FEAT_GIC))
 		dbg2_panic("ingest_madt: ID_AA64PRF0 does not indicate the presence of GICv3+\n");
 
@@ -118,6 +119,7 @@ ingest_madt(struct xboot_info *xbi, ACPI_TABLE_MADT *madt)
 		if (!(read_icc_sre_el1() & 0x1))
 			dbg2_panic("ingest_madt: Failed to enable GIC system register access\n");
 	}
+#endif
 
 	return (0);
 }

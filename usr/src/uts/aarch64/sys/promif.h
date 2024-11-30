@@ -247,12 +247,15 @@ struct prom_compat {
 };
 
 extern int prom_fdt_get_prop_int(pnode_t node, const char *name, int def);
-extern uint64_t prom_fdt_get_prop_u64(pnode_t node, const char *name, uint64_t def);
-extern uint32_t prom_fdt_get_prop_u32(pnode_t node, const char *name, uint32_t def);
+extern uint64_t prom_fdt_get_prop_u64(pnode_t node, const char *name,
+    uint64_t def);
+extern uint32_t prom_fdt_get_prop_u32(pnode_t node, const char *name,
+    uint32_t def);
 extern int prom_fdt_get_reg(pnode_t node, int index, uint64_t *base);
 extern int prom_fdt_get_address_cells(pnode_t node);
 extern int prom_fdt_get_size_cells(pnode_t node);
-extern int prom_fdt_get_clock(pnode_t node, int index, struct prom_hwclock *clock);
+extern int prom_fdt_get_clock(pnode_t node, int index,
+    struct prom_hwclock *clock);
 extern int prom_fdt_get_clock_by_name(pnode_t node, const char *name,
     struct prom_hwclock *clock);
 extern void prom_driver_register(const struct prom_compat *data);

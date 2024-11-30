@@ -45,6 +45,10 @@
 #include <sys/promif.h>
 #include <sys/arch_timer.h>
 #include <sys/gic.h>
+#if defined(_AARCH64_ACPI)
+#include <sys/acpi/acpi.h>
+#include <sys/acpi/actbl1.h>
+#endif
 
 static int cbe_ticks = 0;
 
@@ -297,6 +301,7 @@ cbe_init_pre(void)
 	arch_timer_enable();
 }
 
+#if defined(_AARCH64_FDT)
 static int
 get_interrupt_cells(pnode_t node)
 {
@@ -326,7 +331,7 @@ get_interrupt_cells(pnode_t node)
 }
 
 static int
-get_cbe_vector(void)
+get_cbe_vector_fdt(void)
 {
 	cpu_t *cpu = CPU;
 	pnode_t timer = prom_finddevice("/timer");
@@ -374,6 +379,41 @@ get_cbe_vector(void)
 	}
 
 	return (irq);
+}
+#elif defined(_AARCH64_ACPI)
+static int
+get_cbe_vector_acpi(void)
+{
+	extern ACPI_TABLE_GTDT *acpi_gtdt_low_ptr;
+	int vec;
+
+	if (CPU->cpu_m.mcpu_boot_el == 2)
+		vec = acpi_gtdt_low_ptr->NonSecureEl2Interrupt;
+	else
+		vec = acpi_gtdt_low_ptr->VirtualTimerInterrupt;
+
+	/*
+	 * XXXARM: why are we not worrying about interrupt configuration?
+	 *
+	 * NonSecureEl2Flags
+	 * VirtualTimerFlags
+	 */
+
+	return (vec);
+}
+#else
+#error Unknown firmware interface
+#endif
+
+static int
+get_cbe_vector(void)
+{
+#if defined(_AARCH64_ACPI)
+	return (get_cbe_vector_acpi());
+#endif
+#if defined(_AARCH64_FDT)
+	return (get_cbe_vector_fdt());
+#endif
 }
 
 void

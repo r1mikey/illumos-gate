@@ -315,6 +315,7 @@ fill_cpuinfo_acpi(ACPI_MADT_GENERIC_INTERRUPT *gicc, struct cpuinfo *ci)
 		ci->ci_flags |= CPUINFO_ONLINE_CAPABLE;
 
 	ci->ci_mpidr = gicc->ArmMpidr;
+	ci->ci_uid = gicc->Uid;
 
 	if (gicc->ParkingVersion != 0)
 		prom_panic("CPUINFO: PSCI is the only supported method for "
@@ -372,6 +373,8 @@ fill_cpuinfo(pnode_t node, struct cpuinfo *ci)
 	ci->ci_mpidr = get_cpu_mpidr(node);
 	if (ci->ci_mpidr == CPUNODE_BAD_AFFINITY)
 		return (-1);
+
+	ci->ci_uid = UINT32_MAX;	/* only relevant for ACPI */
 
 	ci->ci_ppver = get_enable_method(node);
 	if (ci->ci_ppver == CPUNODE_BAD_ENABLE_METHOD)

@@ -87,7 +87,6 @@ kobj_start(struct xboot_info *xbp)
 	uint32_t eadr, padr;
 	val_t bootaux[BA_NUM];
 	int i;
-	extern int moddebug;
 
 	xboot_info_p = xbp;	/* MUST GO */
 	bop_init(xbp);		/* XXXARM: not just bsvc_init? */

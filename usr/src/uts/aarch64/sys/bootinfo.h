@@ -109,8 +109,8 @@ struct xboot_info {
 	uint32_t		bi_psci_cpu_off_id;
 	uint32_t		bi_psci_cpu_on_id;
 	uint32_t		bi_psci_migrate_id;
-	uefi_arch_type_t	bi_uefi_arch;
-	uint32_t		bi_boothowto;		/* dunno */
+	uefi_arch_type_t	bi_uefi_arch;		/* must go */
+	uint32_t		bi_boothowto;
 	uint32_t		bi_pad1;
 	uint32_t		bi_pad2;
 };

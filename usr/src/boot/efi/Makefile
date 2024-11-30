@@ -29,7 +29,7 @@ clean	:=	TARGET = clean
 clobber	:=	TARGET = clobber
 install	:=	TARGET = install
 
-loader:	libefi
+loader:	libefi $($(MACH)_SUBDIRS)
 
 .PARALLEL:
 $(SUBDIRS): FRC

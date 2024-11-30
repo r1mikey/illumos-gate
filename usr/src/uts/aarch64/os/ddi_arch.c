@@ -317,7 +317,11 @@ impl_ddi_prop_int_from_prom(uchar_t *intp, int n)
 		i = (i << 8) | *(--intp);
 	}
 
+#if defined(_AARCH64_FDT)
 	return (ntohl(i));
+#else
+	return (i);
+#endif
 }
 
 

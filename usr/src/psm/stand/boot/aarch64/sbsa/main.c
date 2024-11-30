@@ -24,8 +24,8 @@
 
 /* #include "console.h" */
 
-int debug = 1;
-int verbosemode = 1;
+int debug = 0;
+int verbosemode = 0;
 int boothowto = 0;
 
 extern void init_memlists(void);
@@ -177,6 +177,8 @@ main(uint64_t args[6])
 		prom_printf("PSCI did not initialize successfully\n");
 		for (;;) {}     /* we can't reset if PSCI is not up */
 	}
+
+	bi->bi_arch_timer_freq = read_cntfrq();
 
 	if (bi->bi_cmdline != 0) {
 		bootflags(

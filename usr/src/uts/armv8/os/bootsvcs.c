@@ -156,8 +156,13 @@ bsvc_init(struct xboot_info *xbp)
 	if (xbp->bi_bsvc_uart_mmio_base == 0)
 		return;
 
+#if defined(_BOOT)
+	_bsvc_uart_mmio_base =
+	    (caddr_t)(xbp->bi_bsvc_uart_mmio_base);
+#else
 	_bsvc_uart_mmio_base =
 	    (caddr_t)(xbp->bi_bsvc_uart_mmio_base + SEGKPM_BASE);
+#endif
 
 	switch (xbp->bi_bsvc_uart_type) {
 	case XBI_BSVC_UART_PL011:	/* fallthrough */

@@ -49,13 +49,20 @@ $(aarch64_ONLY)dir path=platform/armv8/kernel/dacf/aarch64
 $(aarch64_ONLY)file path=platform/armv8/kernel/dacf/aarch64/consconfig_dacf \
     mode=0755
 $(aarch64_ONLY)dir path=platform/armv8/kernel/drv
+$(aarch64_ONLY)file path=platform/armv8/kernel/drv/$(ARCH64)/acpinex group=sys
 $(aarch64_ONLY)dir path=platform/armv8/kernel/drv/aarch64
+$(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/brcme88c
 $(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/gicv2
 $(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/gicv3
 $(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/ns16550a
 $(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/rootnex
 $(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/simple-bus
+$(aarch64_ONLY)file path=platform/armv8/kernel/drv/brcme88c.conf
 $(aarch64_ONLY)file path=platform/armv8/kernel/drv/ns16550a.conf
+$(aarch64_ONLY)dir path=platform/armv8/kernel/misc mode=0755
+$(aarch64_ONLY)dir path=platform/armv8/kernel/misc/$(ARCH64) mode=0755
+$(aarch64_ONLY)file path=platform/armv8/kernel/misc/$(ARCH64)/acpidev \
+    group=sys mode=0755
 $(i386_ONLY)dir path=platform/i86pc group=sys
 $(i386_ONLY)dir path=platform/i86pc/$(ARCH64) group=sys
 $(i386_ONLY)dir path=platform/i86pc/kernel group=sys
@@ -186,19 +193,23 @@ $(aarch64_ONLY)file path=usr/share/man/man4d/simple-bus.4d
 dir  path=usr/share/man/man5
 $(i386_ONLY)link path=usr/share/man/man5/isa.5 target=sysbus.5
 $(i386_ONLY)file path=usr/share/man/man5/sysbus.5
-$(i386_ONLY)driver name=acpinex alias=acpivirtnex
+driver name=acpinex alias=acpivirtnex
 $(i386_ONLY)driver name=acpippm
 $(i386_ONLY)driver name=amd_iommu perms="* 0644 root sys" \
     alias=pci1002,5a23 \
     alias=pci1022,11ff
 $(i386_ONLY)driver name=balloon perms="* 0444 root sys"
+$(aarch64_ONLY)driver name=brcme88c perms="* 0666 root sys" \
+    clone_perms="brcme88c 0666 root sys" alias=BRCME88C
 $(i386_ONLY)driver name=cpudrv alias=cpu
 $(i386_ONLY)driver name=domcaps perms="* 0444 root sys"
 $(i386_ONLY)driver name=evtchn perms="* 0666 root sys"
 $(i386_ONLY)driver name=isa class=sysbus alias=pciclass,060100
 $(i386_ONLY)driver name=npe alias=pciex_root_complex
-driver name=ns16550a perms="* 0666 root sys" perms="*,cu 0600 uucp uucp" \
-    alias=arm,pl011
+$(aarch64_ONLY)driver name=ns16550a \
+    alias=ARMH0011 \
+    alias=BCM2837 \
+    alias=arm,pl011 perms="* 0666 root sys" perms="*,cu 0600 uucp uucp"
 $(i386_ONLY)driver name=pci class=pci
 $(i386_ONLY)driver name=pit_beep alias=SUNW,pit_beep
 driver name=ppm

@@ -1113,14 +1113,10 @@ fcnname##_info:								\
  */
 #ifndef ACPICA_MODULE
 	MODULE(acpica,misc);
-	NO_UNLOAD_STUB(acpica, AcpiOsReadPort, nomod_minus_one) ;
-	NO_UNLOAD_STUB(acpica, AcpiOsWritePort, nomod_minus_one) ;
 	NO_UNLOAD_STUB(acpica, AcpiInstallNotifyHandler, nomod_minus_one) ;
 	NO_UNLOAD_STUB(acpica, AcpiRemoveNotifyHandler, nomod_minus_one) ;
 	NO_UNLOAD_STUB(acpica, AcpiEvaluateObject, nomod_minus_one) ;
 	NO_UNLOAD_STUB(acpica, AcpiEvaluateObjectTyped, nomod_minus_one) ;
-	NO_UNLOAD_STUB(acpica, AcpiWriteBitRegister, nomod_minus_one) ;
-	NO_UNLOAD_STUB(acpica, AcpiReadBitRegister, nomod_minus_one) ;
 	NO_UNLOAD_STUB(acpica, AcpiOsFree, nomod_minus_one) ;
 	NO_UNLOAD_STUB(acpica, acpica_get_handle_cpu, nomod_minus_one) ;
 	NO_UNLOAD_STUB(acpica, acpica_get_global_FADT, nomod_minus_one) ;

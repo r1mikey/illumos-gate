@@ -24,6 +24,11 @@
 # Copyright 2017 Hayashi Naoyuki
 #
 
+FDT_CORE_OBJS =			\
+	ddi_impl_fdt.o
+ACPI_CORE_OBJS =		\
+	ddi_impl_acpi.o
+
 CORE_OBJS_FDT =			\
 	cpuinfo_fdt.o
 
@@ -46,7 +51,7 @@ CORE_OBJS +=			\
 	htable.o		\
 	vm_machdep.o		\
 	aarch64_mmu.o		\
-	ddi_impl.o		\
+	ddi_impl_common.o	\
 	avintr.o		\
 	exceptions.o		\
 	swtch.o			\
@@ -79,9 +84,17 @@ CORE_OBJS +=			\
 	bootsvcs.o		\
 	arch_timer.o		\
 	earlybsa.o		\
+	cpuid_mach.o		\
+	acpi_stubs.o		\
 	$(CORE_OBJS_FDT)
 
+CORE_OBJS += $($(AARCH64_FW_IMPL)_CORE_OBJS)
 CORE_OBJS += $(PCI_STRING_OBJS)
+
+BOOT_DRIVER_OBJS =		\
+	$(FONT_OBJS)
+
+CORE_OBJS += $(BOOT_DRIVER_OBJS)
 
 SIMPLEBUS_OBJS += simple-bus.o
 
@@ -91,6 +104,40 @@ NS16550A_OBJS += ns16550a.o
 
 GICV2_OBJS += gicv2.o
 GICV3_OBJS += gicv3.o
+
+ACPI_DRV_OBJS +=		\
+	acpi_drv.o		\
+	acpi_video.o
+
+ACPINEX_OBJS +=			\
+	acpinex_drv.o		\
+	acpinex_event.o
+
+ACPIDEV_OBJS +=			\
+	acpidev_drv.o		\
+	acpidev_scope.o		\
+	acpidev_device.o	\
+	acpidev_container.o	\
+	acpidev_cpu.o		\
+	acpidev_devprop.o	\
+	acpidev_dr.o		\
+	acpidev_memory.o	\
+	acpidev_pci.o		\
+	acpidev_resource.o	\
+	acpidev_usbport.o	\
+	acpidev_util.o
+
+FDT_CONSCONFIG_DACF_OBJS +=	\
+	consplat_fdt.o
+
+ACPI_CONSCONFIG_DACF_OBJS +=	\
+	consplat_acpi.o
+
+CONSCONFIG_DACF_OBJS +=		\
+	$($(AARCH64_FW_IMPL)_CONSCONFIG_DACF_OBJS)
+
+BRCME88C_OBJS +=		\
+	brcme88c.o
 
 ASSYM_DEPS +=			\
 	aarch64_subr.o		\

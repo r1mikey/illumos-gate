@@ -30,6 +30,7 @@ include ../Makefile.armv8
 FILEMODE = 644
 
 HDRS= \
+	acpidev.h \
 	clock.h \
 	irq.h \
 	mach_intr.h \

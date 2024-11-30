@@ -1,3 +1,5 @@
+AARCH64_FW_IMPL		= FDT
+
 #
 # Define directories
 #

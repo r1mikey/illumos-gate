@@ -100,6 +100,9 @@ uint32_t acpi_strtoul(const char *, char **, int);
 #define	ACPI_USE_SYSTEM_CLIBRARY
 
 #if defined(__aarch64__)
+#if defined(ACPI_REDUCED_HARDWARE)
+#undef ACPI_REDUCED_HARDWARE
+#endif
 #define	ACPI_REDUCED_HARDWARE	1
 #endif
 

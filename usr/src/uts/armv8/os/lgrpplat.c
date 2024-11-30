@@ -42,6 +42,8 @@
 #define	MAX_NODES		1
 #define	NLGRP			(MAX_NODES * (MAX_NODES - 1) + 1)
 
+uint_t		lgrp_plat_node_cnt = 1;
+
 static lgrp_t	lgrp_space[NLGRP];
 static int	nlgrps_alloc;
 struct lgrp_stats lgrp_stats[NLGRP];

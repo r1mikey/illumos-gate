@@ -23,6 +23,8 @@
 # Copyright 2021 Hayashi Naoyuki
 #
 
+AARCH64_FW_IMPL		= FDT
+
 #
 # Define directories
 #

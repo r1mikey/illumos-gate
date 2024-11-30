@@ -416,6 +416,10 @@ main(void)
 	extern void	fastboot_post_startup(void);
 	extern void	progressbar_start(void);
 #endif
+#if defined(__aarch64__)
+	extern void	post_startup_early(void);
+#endif
+
 	/*
 	 * In the horrible world of x86 in-lines, you can't get symbolic
 	 * structure offsets a la genassym.  This assertion is here so
@@ -485,6 +489,10 @@ main(void)
 	 */
 	for (initptr = &init_tbl[0]; *initptr; initptr++)
 		(**initptr)();
+
+#if defined(__aarch64__)
+	post_startup_early();
+#endif
 	/*
 	 * Load iSCSI boot properties
 	 */

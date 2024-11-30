@@ -32,5 +32,7 @@ file path=kernel/drv/viommionex.conf group=sys
 dir  path=usr/share/man
 dir  path=usr/share/man/man4d
 file path=usr/share/man/man4d/viommionex.4d
-driver name=viommionex perms="* 0666 root sys" alias=virtio,mmio
+driver name=viommionex perms="* 0666 root sys" \
+    alias=LNRO0005 \
+    alias=virtio,mmio
 license lic_CDDL license=lic_CDDL

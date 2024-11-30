@@ -230,7 +230,8 @@ read_elf64(caddr_t payload, size_t payload_size, int print, Elf64_Ehdr *elfhdrp)
 				    size, npagesize))
 					goto elf64error;
 			}
-			dbg2_printf("thdr: 0x%p, dhdr: 0x%p\n", thdr, dhdr);
+			if (print)
+				dbg2_printf("thdr: 0x%p, dhdr: 0x%p\n", thdr, dhdr);
 
 			if (verbosemode) {
 				dprintf("reading 0x%llx bytes into 0x%llx\n",
@@ -323,6 +324,7 @@ load_elf_payload(caddr_t payload, size_t payload_size, int print)
 	    elfhdr.e_ident[EI_CLASS], ELFCLASS32, ELFCLASS64);
 
 	elf64_go2 = read_elf64(payload, payload_size, print, (Elf64_Ehdr *)&elfhdr);
-	dbg2_printf("Kernel entry point is 0x%p\n", elf64_go2);
+	if (print)
+		dbg2_printf("Kernel entry point is 0x%p\n", elf64_go2);
 	return ((elf64_go2 == FAIL_READELF64) ? FAIL : (func_t)elf64_go2);
 }

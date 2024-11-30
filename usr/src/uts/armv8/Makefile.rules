@@ -38,6 +38,22 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/os/%.c
 	$(COMPILE.c) -I$(SRC)/contrib/libfdt -_gcc=-fno-stack-protector -o $@ $<
 	$(CTFCONVERT_O)
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/acpi_drv/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/acpi/acpidev/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/acpi/acpinex/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/brcme88c/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 $(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/vm/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)

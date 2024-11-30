@@ -373,9 +373,15 @@ create_devinfo_tree(void)
 	pnode_t nodeid;
 
 	i_ddi_node_cache_init();
-#if defined(__sparc) || defined(__aarch64__)
-	/* XXXARM: fall back to DEVI_SID_NODEID? */
+#if defined(__sparc)
 	nodeid = prom_nextnode(0);
+#elif defined(__aarch64__)
+	extern boolean_t prom_fw_is_fdt(void);
+
+	if (prom_fw_is_fdt())
+		nodeid = prom_nextnode(0);
+	else
+		nodeid = DEVI_SID_NODEID;
 #else /* x86 */
 	nodeid = DEVI_SID_NODEID;
 #endif

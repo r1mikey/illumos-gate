@@ -59,6 +59,19 @@
 #include <sys/platmod.h>
 #include "ns16550a.h"
 
+/*
+ * XXXARM: Deal more gracefully with ns16550_clock being 0 - this can happen
+ * on ACPI systems when things are absolutely broken.
+ *
+ * Also deal with getting the clock frequency. On ACPI systems we can use the
+ * _DSD method to find and extract properties into the device tree, which will
+ * give us a clock-frequency property. On DTB systems this commonly be a
+ * clock tree lookup. In both cases we should handle this in implementation DDI
+ * code and pull the firmware knowledge out of this driver.
+ *
+ * And, finally, we really need MMIO awareness in asy.
+ */
+
 #define UARTDR		0x00
 #define UARTRSR		0x04
 #define UARTECR		0x04
@@ -679,6 +692,9 @@ ns16550_set_baud(struct ns16550com *ns16550, uint8_t bidx)
 	else
 		baudrate = baudtable[bidx];
 
+	if (ns16550->ns16550_clock == 0)
+		return;
+
 	uint32_t bauddiv = (ns16550->ns16550_clock * 4 + baudrate / 2) / baudrate;
 
 	uint32_t cr = REG_READ(ns16550, UARTCR);
@@ -738,7 +754,6 @@ struct streamtab ns16550_str_info = {
 
 static int ns16550info(dev_info_t *dip, ddi_info_cmd_t infocmd, void *arg,
 		void **result);
-static int ns16550probe(dev_info_t *);
 static int ns16550attach(dev_info_t *, ddi_attach_cmd_t);
 static int ns16550detach(dev_info_t *, ddi_detach_cmd_t);
 static int ns16550quiesce(dev_info_t *);
@@ -766,7 +781,7 @@ struct dev_ops ns16550_ops = {
 	0,			/* devo_refcnt */
 	ns16550info,		/* devo_getinfo */
 	nulldev,		/* devo_identify */
-	ns16550probe,		/* devo_probe */
+	nulldev,		/* devo_probe */
 	ns16550attach,		/* devo_attach */
 	ns16550detach,		/* devo_detach */
 	nodev,			/* devo_reset */
@@ -804,6 +819,7 @@ _init(void)
 			    modldrv.drv_linkinfo, debug);
 		}
 	}
+
 	return (i);
 }
 
@@ -819,6 +835,7 @@ _fini(void)
 		mutex_destroy(&ns16550_glob_lock);
 		ddi_soft_state_fini(&ns16550_soft_state);
 	}
+
 	return (i);
 }
 
@@ -928,36 +945,6 @@ ns16550detach(dev_info_t *devi, ddi_detach_cmd_t cmd)
 	return (DDI_SUCCESS);
 }
 
-/*
- * ns16550probe
- * We don't bother probing for the hardware, as since Solaris 2.6, device
- * nodes are only created for auto-detected hardware or nodes explicitly
- * created by the user, e.g. via the DCA. However, we should check the
- * device node is at least vaguely usable, i.e. we have a block of 8 i/o
- * ports. This prevents attempting to attach to bogus serial ports which
- * some BIOSs still partially report when they are disabled in the BIOS.
- */
-static int
-ns16550probe(dev_info_t *dip)
-{
-	char buf[80];
-	pnode_t node = ddi_get_nodeid(dip);
-	if (node < 0)
-		return (DDI_PROBE_FAILURE);
-
-	int len = prom_getproplen(node, "status");
-	if (len <= 0)
-		return (DDI_PROBE_SUCCESS);
-	if (len >= sizeof(buf))
-		return (DDI_PROBE_FAILURE);
-
-	prom_getprop(node, "status", (caddr_t)buf);
-	if (strcmp(buf, "ok") != 0 && strcmp(buf, "okay") != 0)
-		return (DDI_PROBE_FAILURE);
-
-	return (DDI_PROBE_SUCCESS);
-}
-
 static int
 ns16550attach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 {
@@ -984,12 +971,29 @@ ns16550attach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 		return (DDI_FAILURE);
 	}
 
-	uint_t uart_clock = 48000000;
-	struct prom_hwclock hwclock;
-	if (prom_fdt_get_clock_by_name(ddi_get_nodeid(devi), "uartclk", &hwclock) == 0) {
-		int err = plat_hwclock_get_rate(&hwclock);
-		if (err > 0)
-			uart_clock = err;
+	uint_t uart_clock = 0;
+
+	if (prom_fw_is_fdt()) {
+		int err;
+		uart_clock = 48000000;
+		struct prom_hwclock hwclock;
+		if (prom_fdt_get_clock_by_name(ddi_get_nodeid(devi),
+		    "uartclk", &hwclock) == 0) {
+			int err = plat_hwclock_get_rate(&hwclock);
+			if (err > 0)
+				uart_clock = err;
+		} else {
+			err = ddi_prop_get_int(DDI_DEV_T_ANY, devi,
+			    DDI_PROP_DONTPASS, "clock-frequency", 0);
+			if (err == 0 || err == DDI_PROP_NOT_FOUND)
+				uart_clock = 48000000;
+		}
+	} else {
+		int err;
+		err = ddi_prop_get_int(DDI_DEV_T_ANY, devi,
+		    DDI_PROP_DONTPASS, "clock-frequency", 0);
+		if (err == DDI_PROP_NOT_FOUND)
+			uart_clock = 0;
 	}
 
 	ret = ddi_soft_state_zalloc(ns16550_soft_state, instance);
@@ -3264,7 +3268,10 @@ nsasync_ioctl(struct nsasyncline *nsasync, queue_t *wq, mblk_t *mp)
 				while (ns16550_is_busy(ns16550)) {
 					mutex_exit(&ns16550->ns16550_excl_hi);
 					mutex_exit(&ns16550->ns16550_excl);
-					drv_usecwait(ns16550->ns16550_clock / baudtable[index] * 2);
+					if (ns16550->ns16550_clock == 0)
+						drv_usecwait(10);
+					else
+						drv_usecwait(ns16550->ns16550_clock / baudtable[index] * 2);
 					mutex_enter(&ns16550->ns16550_excl);
 					mutex_enter(&ns16550->ns16550_excl_hi);
 				}
@@ -3301,7 +3308,10 @@ nsasync_ioctl(struct nsasyncline *nsasync, queue_t *wq, mblk_t *mp)
 				while (ns16550_is_busy(ns16550)) {
 					mutex_exit(&ns16550->ns16550_excl_hi);
 					mutex_exit(&ns16550->ns16550_excl);
-					drv_usecwait(ns16550->ns16550_clock / baudtable[index] * 2);
+					if (ns16550->ns16550_clock == 0)
+						drv_usecwait(10);
+					else
+						drv_usecwait(ns16550->ns16550_clock / baudtable[index] * 2);
 					mutex_enter(&ns16550->ns16550_excl);
 					mutex_enter(&ns16550->ns16550_excl_hi);
 				}

@@ -41,6 +41,7 @@
 
 #include "loader_efi.h"
 #include "cache.h"
+#include "libzfs.h"
 
 #include "platform/acfreebsd.h"
 #include "acconfig.h"
@@ -84,6 +85,37 @@ elf64_exec(struct preloaded_file *fp)
 	char buf[24];
 	int err, revision;
 	void (*entry)(vm_offset_t);
+	bool zfs_root = false;
+	struct devdesc *rootdev;
+
+	efi_getdev((void **)(&rootdev), NULL, NULL);
+	if (rootdev == NULL) {
+		printf("can't determine root device\n");
+		return (EFTYPE);	/* XXX: need a better code */
+	}
+	if (rootdev->d_dev->dv_type == DEVT_ZFS)
+		zfs_root = true;
+	/* If we have fstype set in env, reset zfs_root if needed. */
+	const char *fs = getenv("fstype");
+	if (fs != NULL && strcmp(fs, "zfs") != 0)
+		zfs_root = false;
+#if XXXARM
+	/*
+	 * If we have fstype set on the command line,
+	 * reset zfs_root if needed.
+	 */
+	int rv = find_property_value(fp->f_args, "fstype", &fs, &len);
+	if (rv != 0 && rv != ENOENT)
+		return (EFTYPE);	/* XXX: need a better code */
+	if (fs != NULL && strncmp(fs, "zfs", len) != 0)
+		zfs_root = false;
+	/* zfs_bootfs() will set the environment, it must be called. */
+	if (zfs_root == true)
+		fs = zfs_bootfs(rootdev);
+#else
+	if (zfs_root == true)
+		(void) zfs_bootfs(rootdev);
+#endif
 
 	rsdp = efi_get_table(&acpi20_guid);
 	if (rsdp == NULL) {

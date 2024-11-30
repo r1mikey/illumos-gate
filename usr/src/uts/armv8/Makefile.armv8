@@ -119,6 +119,9 @@ CFLAGS_XARCH		= $($(MACH)_CFLAGS)
 
 COPTIMIZE		= $(COPTFLAG)
 
+ACPI_CFLAGS		= -D_AARCH64_ACPI=1
+FDT_CFLAGS		= -D_AARCH64_FDT=1
+
 CFLAGS			= $(CFLAGS_XARCH)
 CFLAGS			+= $(COPTIMIZE)
 CFLAGS			+= $(INLINES) -D_ASM_INLINES
@@ -127,6 +130,7 @@ CFLAGS			+= $(SPACEFLAG)
 CFLAGS			+= $(CCUNBOUND)
 CFLAGS			+= $(CFLAGS_uts)
 CFLAGS			+= $(STACKPROTECT_$(STACKPROTECT))
+CFLAGS			+= $($(AARCH64_FW_IMPL)_CFLAGS)
 
 INC_PATH		+= -I$(UTSBASE)/armv8
 INC_PATH		+= -I$(UTSBASE)/$(MACH)
@@ -197,10 +201,13 @@ GENASSYM_DEFS	 = $(MACHINE_DEFS) $(OPTION_DEFS) \
 #
 #	Machine Specific Driver Modules (/kernel/drv):
 #
+DRV_KMODS += acpidev
+DRV_KMODS += acpinex
 DRV_KMODS += simple-bus
 DRV_KMODS += rootnex
 DRV_KMODS += ns16550a
 DRV_KMODS += gicv2
 DRV_KMODS += gicv3
+DRV_KMODS += brcme88c
 
 DACF_KMODS += consconfig_dacf
