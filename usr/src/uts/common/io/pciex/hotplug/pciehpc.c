@@ -1096,6 +1096,8 @@ pciehpc_set_slot_name(pcie_hp_ctrl_t *ctrl_p)
 	 *	else if valid slot number exists then it is "pcie<slot-num>".
 	 *	else it will be "pcie<sec-bus-number>dev0"
 	 */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 	if (ddi_getlongprop(DDI_DEV_T_ANY, ctrl_p->hc_dip, DDI_PROP_DONTPASS,
 	    "slot-names", (caddr_t)&slotname_data, &len) == DDI_PROP_SUCCESS) {
 		char tmp_name[256];
@@ -1122,6 +1124,7 @@ pciehpc_set_slot_name(pcie_hp_ctrl_t *ctrl_p)
 			    KM_SLEEP);
 		}
 	}
+#pragma GCC diagnostic pop
 }
 
 /*

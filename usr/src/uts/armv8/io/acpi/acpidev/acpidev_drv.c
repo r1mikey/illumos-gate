@@ -73,13 +73,8 @@
 #include <sys/acpidev_impl.h>
 
 /* Patchable through /etc/system */
-#if defined(__aarch64__)
-int acpidev_options = ACPIDEV_OUSER_NO_PCI;	/* XXXARM: should be 0 */
-int acpidev_debug = 1;				/* XXXARM: set this to 0 */
-#else	/* !__aarch64__ */
 int acpidev_options = 0;
 int acpidev_debug = 0;
-#endif	/* !__aarch64__ */
 
 krwlock_t acpidev_class_lock;
 acpidev_class_list_t *acpidev_class_list_root = NULL;

@@ -273,11 +273,11 @@ pcie_bus_power(dev_info_t *dip, void *impl_arg, pm_bus_power_op_t op,
 	pm_bp_has_changed_t *bphc;
 	dev_info_t *cdip;
 	int new_level;
-	int old_level;
+	int old_level = 0;	/* XXXARM: possibly uninitialised, but not true */
 	int rv = DDI_SUCCESS;
 	int level_allowed, comp;
 
-#if defined(__x86)
+#if defined(__x86) || defined(__aarch64__)
 	if (dip)
 		return (DDI_SUCCESS);
 #endif /* defined(__x86) */

@@ -886,6 +886,8 @@ AcpiOsReadPort(ACPI_IO_ADDRESS Address, UINT32 *Value, UINT32 Width)
 	return (AE_OK);
 #endif
 #if defined(__aarch64__)
+	cmn_err(CE_WARN, "!AcpiOsReadPort: %lx %u unavailable",
+	    (long)Address, Width);
 	return (AE_ERROR);
 #endif
 }
@@ -922,6 +924,8 @@ AcpiOsWritePort(ACPI_IO_ADDRESS Address, UINT32 Value, UINT32 Width)
 	return (AE_OK);
 #endif
 #if defined(__aarch64__)
+		cmn_err(CE_WARN, "!AcpiOsWritePort: %lx %u unavailable",
+		    (long)Address, Width);
 	return (AE_ERROR);
 #endif
 }
@@ -989,10 +993,6 @@ ACPI_STATUS
 AcpiOsReadPciConfiguration(ACPI_PCI_ID *PciId, UINT32 Reg,
     UINT64 *Value, UINT32 Width)
 {
-	/* XXXARM: fix this up when the PCI work lands */
-#if defined(__aarch64__)
-	return (AE_BAD_PARAMETER);
-#else
 	switch (Width) {
 	case 8:
 		*Value = (UINT64)(*pci_getb_func)
@@ -1013,7 +1013,6 @@ AcpiOsReadPciConfiguration(ACPI_PCI_ID *PciId, UINT32 Reg,
 		return (AE_BAD_PARAMETER);
 	}
 	return (AE_OK);
-#endif
 }
 
 /*
@@ -1025,11 +1024,6 @@ ACPI_STATUS
 AcpiOsWritePciConfiguration(ACPI_PCI_ID *PciId, UINT32 Reg,
     UINT64 Value, UINT32 Width)
 {
-	/* XXXARM: fix this up when the PCI work lands */
-#if defined(__aarch64__)
-	return (AE_BAD_PARAMETER);
-#else
-
 	if (!acpica_write_pci_config_ok) {
 		cmn_err(CE_NOTE, "!write to PCI cfg %x/%x/%x %x"
 		    " %lx %d not permitted", PciId->Bus, PciId->Device,
@@ -1057,7 +1051,6 @@ AcpiOsWritePciConfiguration(ACPI_PCI_ID *PciId, UINT32 Reg,
 		return (AE_BAD_PARAMETER);
 	}
 	return (AE_OK);
-#endif
 }
 
 /*

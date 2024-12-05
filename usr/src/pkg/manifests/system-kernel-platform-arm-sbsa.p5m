@@ -29,4 +29,9 @@ dir  path=platform/ARM,sbsa/kernel/drv
 dir  path=platform/ARM,sbsa/kernel/drv/aarch64
 file path=platform/ARM,sbsa/kernel/drv/aarch64/rootnex mode=0755
 file path=platform/ARM,sbsa/kernel/drv/rootnex.conf group=sys
+dir  path=platform/ARM,sbsa/kernel/misc
+dir  path=platform/ARM,sbsa/kernel/misc/aarch64
+file path=platform/ARM,sbsa/kernel/misc/aarch64/pci_autoconfig mode=0755
+file path=platform/ARM,sbsa/kernel/misc/aarch64/pci_prd mode=0755
+file path=platform/ARM,sbsa/kernel/misc/aarch64/pcie mode=0755
 license lic_CDDL license=lic_CDDL

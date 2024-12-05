@@ -34,6 +34,7 @@
 #include <sys/sunddi.h>
 #include <sys/sunndi.h>
 #include <sys/avintr.h>
+#include <sys/pci_impl.h>
 
 /*
  * Platform drivers on this platform
@@ -43,6 +44,19 @@ char *platform_module_list[] = {
 	"ppm",
 	(char *)0
 };
+
+/* pci bus resource maps */
+struct pci_bus_resource *pci_bus_res;
+
+/* XXXARM: here temporarily */
+int pci_irq_nroutes = 0;
+
+/* XXXARM: also here temporarily */
+int
+pci_slot_names_prop(int bus __unused, char *buf __unused, int len __unused)
+{
+	return (0);
+}
 
 void
 impl_late_hardware_probe(void)

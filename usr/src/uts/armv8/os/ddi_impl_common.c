@@ -2587,27 +2587,22 @@ static void
 impl_bus_initialprobe(void)
 {
 	struct bus_probe *probe;
-
-#if XXXARM
-	/* load modules to install bus probes */
-	if (modload("misc", "pci_autoconfig") < 0) {
-		panic("failed to load misc/pci_autoconfig");
-	}
-#else
-	/*
-	 * XXXARM: Do we actually want this at all?
-	 *
-	 * In theory we should be able to just attach npe based on the ACPI
-	 * probe and let it get on with things.
-	 *
-	 * Regardless, leave it here for now - if we want it, pull in the
-	 * error checking block above.
-	 */
-	(void) modload("misc", "pci_autoconfig");
-#endif
 #if defined(_AARCH64_ACPI)
+	extern void pci_cfgspace_init(void);
+
+	pci_cfgspace_init();
+
+	/* load modules to install bus probes */
+	if (modload("misc", "pci_autoconfig") < 0)
+		panic("failed to load misc/pci_autoconfig");
+
 	if (modload("misc", "acpidev") < 0)
 		panic("failed to load misc/acpidev");
+#else
+	/*
+	 * This has always been here, but doesn't do anything yet.
+	 */
+	(void) modload("misc", "pci_autoconfig");
 #endif
 
 	probe = bus_probes;

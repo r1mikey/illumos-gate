@@ -65,6 +65,7 @@
 #include <sys/efi.h>
 #include <sys/acpi/acconfig.h>
 #include <sys/acpi/acpi.h>
+#include <sys/pci_cfgspace_impl.h>
 #endif
 #include <sys/ddipropdefs.h>	/* For DDI prop types */
 #include <netinet/inetutil.h>	/* for hexascii_to_octet */
@@ -1125,6 +1126,30 @@ find_fw_table(ACPI_TABLE_RSDP *rsdp, const char *signature)
 }
 
 static void
+process_mcfg(ACPI_TABLE_MCFG *tp)
+{
+	ACPI_MCFG_ALLOCATION *cfg_baap;
+	char *cfg_baa_endp;
+	int64_t ecfginfo[4];
+
+	cfg_baap = (ACPI_MCFG_ALLOCATION *)((uintptr_t)tp + sizeof (*tp));
+	cfg_baa_endp = ((char *)tp) + tp->Header.Length;
+	while ((char *)cfg_baap < cfg_baa_endp) {
+		if (cfg_baap->Address != 0 && cfg_baap->PciSegment == 0) {
+			ecfginfo[0] = cfg_baap->Address;
+			ecfginfo[1] = cfg_baap->PciSegment;
+			ecfginfo[2] = cfg_baap->StartBusNumber;
+			ecfginfo[3] = cfg_baap->EndBusNumber;
+			bsetprop(DDI_PROP_TYPE_INT64,
+			    MCFG_PROPNAME, strlen(MCFG_PROPNAME),
+			    ecfginfo, sizeof (ecfginfo));
+			break;
+		}
+		cfg_baap++;
+	}
+}
+
+static void
 build_firmware_properties_acpi(const struct xboot_info *xbp)
 {
 	EFI_SYSTEM_TABLE64 *st;
@@ -1160,13 +1185,15 @@ build_firmware_properties_acpi(const struct xboot_info *xbp)
 		bop_printf(NULL,
 		    "ACPI RSDP found at physical 0x%lx\n", (uint64_t)rsdp);
 
+	if ((tp = find_fw_table(rsdp, ACPI_SIG_MCFG)) != NULL)
+		process_mcfg((ACPI_TABLE_MCFG *)tp);
+
 	/*
 	 * XXXARM: There's nore we want
 	 * ACPI_SIG_SRAT
 	 * ACPI_SIG_MSCT (only if SRAT exists)
 	 * ACPI_TABLE_SLIT
 	 * ACPI_SIG_MADT
-	 * ACPI_SIG_MCFG
 	 * ACPI_SIG_HPET (actually GTDT)
 	 */
 	acpi_gtdt_low_ptr =

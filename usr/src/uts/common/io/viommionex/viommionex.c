@@ -272,7 +272,7 @@ viommionex_bus_config(dev_info_t *dip, uint_t flags,
 
 	(void) ddi_prop_update_int(DDI_DEV_T_NONE, rdip, DDI_NO_AUTODETACH, 1);
 
-	if (ndi_prop_update_int(DDI_DEV_T_NONE, dip,
+	if (ddi_prop_update_int(DDI_DEV_T_NONE, dip,
 	    VIRTIO_MMIO_PROPERTY_NAME, 1) != DDI_PROP_SUCCESS) {
 		dev_err(dip, CE_WARN, "?failed to set the '%s' property",
 		    VIRTIO_MMIO_PROPERTY_NAME);
@@ -281,7 +281,7 @@ viommionex_bus_config(dev_info_t *dip, uint_t flags,
 
 	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
 	    "interrupts", &irupts, &nirupts) == DDI_PROP_SUCCESS) {
-		if (ndi_prop_update_int_array(DDI_DEV_T_NONE, rdip,
+		if (ddi_prop_update_int_array(DDI_DEV_T_NONE, rdip,
 		    "interrupts", irupts, nirupts) != DDI_PROP_SUCCESS) {
 			ddi_prop_free(irupts);
 			(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
@@ -298,7 +298,7 @@ viommionex_bus_config(dev_info_t *dip, uint_t flags,
 
 	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
 	    "acpi-namespace", &acpins) == DDI_PROP_SUCCESS) {
-		if (ndi_prop_update_string(DDI_DEV_T_NONE, rdip,
+		if (ddi_prop_update_string(DDI_DEV_T_NONE, rdip,
 		    "acpi-namespace", acpins) != DDI_PROP_SUCCESS) {
 			ddi_prop_free(irupts);
 			(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
@@ -338,6 +338,13 @@ viommionex_bus_unconfig(dev_info_t *parent, uint_t flags,
 static int
 viommionex_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 {
+	if (ddi_prop_update_int(DDI_DEV_T_NONE, dip,
+	    VIRTIO_MMIO_PROPERTY_NAME, 1) != DDI_PROP_SUCCESS) {
+		dev_err(dip, CE_WARN, "?failed to set the '%s' property",
+		    VIRTIO_MMIO_PROPERTY_NAME);
+		return (DDI_FAILURE);
+	}
+
 	if (cmd == DDI_ATTACH)
 		ddi_report_dev(dip);
 
