@@ -545,7 +545,7 @@ static int
 enumerate_root_cb(dev_info_t *dip, void *arg)
 {
 	char *devtype;
-	uint_t root_bus_addr = (uint_t)(uintptr_t)arg;
+	uint_t *root_bus_addr = arg;
 
 	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
 	    "device_type", &devtype) == DDI_SUCCESS) {
@@ -578,7 +578,7 @@ enumerate_root_cb(dev_info_t *dip, void *arg)
 			pci_bus_res[bus_def[0]].dip = dip;
 
 			for (int i = bus_def[0]; i <= bus_def[1]; i++) {
-				pci_bus_res[i].root_addr = root_bus_addr++;
+				pci_bus_res[i].root_addr = (*root_bus_addr)++;
 
 				if (create_pcie_root_bus(i, dip) == B_FALSE) {
 					/* Undo (most of) what create_pcie_root_bus did, while failing */
@@ -613,7 +613,8 @@ enumerate_root_cb(dev_info_t *dip, void *arg)
 void
 pci_setup_tree(void)
 {
-	uint_t i, root_bus_addr = 0;
+	uint_t i;
+	uint_t root_bus_addr = 0;
 
 	alloc_res_array();
 	for (i = 0; i <= pci_boot_maxbus; i++) {
@@ -623,7 +624,7 @@ pci_setup_tree(void)
 	}
 
 	ddi_walk_devs(ddi_root_node(),
-	    enumerate_root_cb, (void *)(uintptr_t)root_bus_addr);
+	    enumerate_root_cb, &root_bus_addr);
 }
 
 /*
