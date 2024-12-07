@@ -30,6 +30,13 @@ PCI_PRD_OBJS += pci_prd_sbsa.o pci_memlist.o
 
 PCIE_MISC_OBJS += pcie_acpi.o pciehpc_acpi.o pcie_sbsa.o
 
+PCI_E_NEXUS_OBJS += npe.o npe_misc.o
+PCI_E_NEXUS_OBJS += pci_common.o pci_tools.o
+# pci_kstats.o
+
+PCINEXUS_OBJS += pci.o pci_common.o pci_tools.o
+# pci_kstats.o
+
 #PLATVIRTIO_OBJS += virtio_main.o virtio_dma.o virtio_mmio.o
 #TODPL031_OBJS += todpl031.o
 

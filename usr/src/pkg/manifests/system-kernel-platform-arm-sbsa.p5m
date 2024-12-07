@@ -27,11 +27,17 @@ dir  path=platform/ARM,sbsa/kernel/dacf/aarch64
 file path=platform/ARM,sbsa/kernel/dacf/aarch64/consconfig_dacf mode=0755
 dir  path=platform/ARM,sbsa/kernel/drv
 dir  path=platform/ARM,sbsa/kernel/drv/aarch64
+file path=platform/ARM,sbsa/kernel/drv/aarch64/npe mode=0755
+file path=platform/ARM,sbsa/kernel/drv/aarch64/pci mode=0755
 file path=platform/ARM,sbsa/kernel/drv/aarch64/rootnex mode=0755
 file path=platform/ARM,sbsa/kernel/drv/rootnex.conf group=sys
 dir  path=platform/ARM,sbsa/kernel/misc
 dir  path=platform/ARM,sbsa/kernel/misc/aarch64
+file path=platform/ARM,sbsa/kernel/misc/aarch64/hpcsvc mode=0755
 file path=platform/ARM,sbsa/kernel/misc/aarch64/pci_autoconfig mode=0755
 file path=platform/ARM,sbsa/kernel/misc/aarch64/pci_prd mode=0755
 file path=platform/ARM,sbsa/kernel/misc/aarch64/pcie mode=0755
+file path=platform/ARM,sbsa/kernel/misc/aarch64/pcihp mode=0755
+driver name=npe alias=pciex_root_complex
+driver name=pci class=pci
 license lic_CDDL license=lic_CDDL

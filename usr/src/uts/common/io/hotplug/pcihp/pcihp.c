@@ -1825,6 +1825,8 @@ pcihp_init(dev_info_t *dip)
 	 * This helps us not go for polling operation (default)
 	 * during a ENUM# event.
 	 */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 	if (ddi_getlongprop(DDI_DEV_T_ANY, dip, 0, "enum-impl",
 	    (caddr_t)&enum_data, &enum_size) == DDI_PROP_SUCCESS) {
 		if (strcmp(enum_data, "radial") == 0) {
@@ -1832,6 +1834,7 @@ pcihp_init(dev_info_t *dip)
 		}
 		kmem_free(enum_data, enum_size);
 	}
+#pragma GCC diagnostic pop
 
 	for (i = 0; i < PCI_MAX_DEVS; i++) {
 		/* initialize slot mutex */

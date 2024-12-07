@@ -400,6 +400,13 @@ static boolean_t rootnex_need_bounce_seg(ddi_dma_obj_t *dmar_object,
     rootnex_sglinfo_t *sglinfo);
 static struct as *rootnex_get_as(ddi_dma_obj_t *dmar_object);
 
+#if 1
+extern int (*i_ddi_priv_map_interrupt)(dev_info_t *dip,
+    ddi_intr_handle_impl_t *hdlp);
+static int
+rootnex_priv_map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp);
+#endif
+
 /*
  * _init()
  *
@@ -407,8 +414,8 @@ static struct as *rootnex_get_as(ddi_dma_obj_t *dmar_object);
 int
 _init(void)
 {
-
 	rootnex_state = NULL;
+	i_ddi_priv_map_interrupt = rootnex_priv_map_interrupt;
 	return (mod_install(&rootnex_modlinkage));
 }
 
@@ -431,6 +438,7 @@ _info(struct modinfo *modinfop)
 int
 _fini(void)
 {
+	/* i_ddi_priv_map_interrupt = NULL; */
 	return (EBUSY);
 }
 
@@ -1445,6 +1453,9 @@ rootnex_crs_cb(ACPI_RESOURCE *rp, void *context)
 	return (AE_OK);
 }
 
+/*
+ * XXXARM: this needs to fall back to the older way of doing things?
+ */
 static int
 rootnex_get_interrupt_config(dev_info_t *rdip, crs_cb_data_t *data)
 {
@@ -1461,7 +1472,13 @@ rootnex_get_interrupt_config(dev_info_t *rdip, crs_cb_data_t *data)
 	if (acpica_get_handle(rdip, &rh) != AE_OK) {
 		dev_err(rdip, CE_WARN, "!failed to retrieve ACPI object handle "
 		    "in root nexus interrupt configuration lookup");
+		/* XXXMICHAEL: this is awful and needs to stop */
+#if 0
 		return (DDI_FAILURE);
+#else
+		data->edge = B_TRUE;
+		return (DDI_SUCCESS);
+#endif
 	}
 
 	data->found = B_FALSE;
@@ -1469,9 +1486,48 @@ rootnex_get_interrupt_config(dev_info_t *rdip, crs_cb_data_t *data)
 	if (data->found == B_FALSE) {
 		dev_err(rdip, CE_WARN, "!no resource data found in ACPI while "
 		    "performing root nexus interrupt configuration lookup");
+		/* XXXMICHAEL: this is awful and needs to stop */
+#if 0
+		return (DDI_FAILURE);
+#else
+		data->edge = B_TRUE;
+		return (DDI_SUCCESS);
+#endif
 		return (DDI_FAILURE);
 	}
 
+	/*
+	 * HACK: claim that it's edge for the PCIe case.
+	 */
+	return (DDI_SUCCESS);
+}
+
+static int
+rootnex_priv_map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
+{
+	struct intrspec		*ispec;
+	crs_cb_data_t		data;
+	ihdl_plat_t		*priv;
+
+	VERIFY3P(dip, !=, NULL);
+	VERIFY3P(hdlp, !=, NULL);
+	VERIFY3P(hdlp->ih_private, !=, NULL);
+
+	priv = (ihdl_plat_t *)hdlp->ih_private;
+
+	if ((ispec = rootnex_get_ispec(dip, hdlp->ih_inum)) == NULL)
+		return (DDI_FAILURE);
+
+	data.gsiv = ispec->intrspec_vec;
+	if (rootnex_get_interrupt_config(dip, &data) != DDI_SUCCESS)
+		return (DDI_FAILURE);
+
+	if (data.edge == B_TRUE)
+		priv->ip_gic_sense = 1;
+	else
+		priv->ip_gic_sense = 0x4;
+
+	priv->ip_gic_cfg = 0;	/* meaningless in our case */
 	return (DDI_SUCCESS);
 }
 

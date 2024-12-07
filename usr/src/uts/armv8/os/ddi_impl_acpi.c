@@ -381,3 +381,52 @@ i_ddi_update_dma_attr(dev_info_t *dip, ddi_dma_attr_t *attr)
 {
 	return (DDI_SUCCESS);
 }
+
+/*
+ * XXXPCI: hackery
+ */
+uint32_t
+i_ddi_get_inum(dev_info_t *dip, uint_t inumber)
+{
+	struct ddi_parent_private_data	*pdp;
+
+	if ((pdp = ddi_get_parent_data(dip)) == NULL) {
+		dev_err(dip, CE_PANIC, "missing parent private data");
+		return (0);	/* Unreachable */
+	}
+
+	ASSERT(inumber < pdp->par_nintr);
+	return (pdp->par_intr[inumber].intrspec_vec);
+}
+
+uint32_t
+i_ddi_get_intr_pri(dev_info_t *dip, uint_t inumber)
+{
+	struct ddi_parent_private_data	*pdp;
+
+	if ((pdp = ddi_get_parent_data(dip)) == NULL) {
+		dev_err(dip, CE_PANIC, "missing parent private data");
+		return (0);	/* Unreachable */
+	}
+
+	ASSERT(inumber < pdp->par_nintr);
+	return (pdp->par_intr[inumber].intrspec_pri);
+}
+
+/*
+ * BODGE: rootnex fills these in. We can't do it here, because it relies on
+ * acpica.
+ */
+int (*i_ddi_priv_map_interrupt)(dev_info_t *dip,
+    ddi_intr_handle_impl_t *hdlp) = NULL;
+
+dev_info_t *
+map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
+{
+	VERIFY3P(i_ddi_priv_map_interrupt, !=, NULL);
+
+	if (i_ddi_priv_map_interrupt(dip, hdlp) != DDI_SUCCESS)
+		return (NULL);
+
+	return (dip);	/* nobody looks at this, other than a NULL-check */
+}

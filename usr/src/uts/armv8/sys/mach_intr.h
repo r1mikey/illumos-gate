@@ -50,6 +50,22 @@ typedef struct ihdl_plat {
 	struct intrspec *ip_ispecp;	/* intr spec */
 	kstat_t		*ip_ksp;	/* Kstat pointer */
 	uint64_t	ip_ticks;	/* Interrupt ticks for this device */
+
+	/*
+	 * XXXPCI: I'm unclear in the design if this is where things like this
+	 * should go.  It is not really _platform_ dependent that our
+	 * interrupt-controller works on 3-tuples, it's interrupt-dependent.
+	 * It's at least as true to say our ihdl ih_vector is insufficient,
+	 * and should be uint32_t[].
+	 *
+	 * These are just the other two fields (the 1st and 3rd), stashed here
+	 * until we need them.  We should probably be more general until we
+	 * know we're talking to a GIC.
+	 *
+	 * `void *ihdl_ctlr_private`?
+	 */
+	uint32_t	ip_gic_cfg;	/* The GIC configuration. */
+	uint32_t	ip_gic_sense;	/* The GIC sense information. */
 } ihdl_plat_t;
 
 #endif /* _KERNEL */

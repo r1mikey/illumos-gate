@@ -12,6 +12,7 @@ ROOT_SBSA_TOD_DIR = $(ROOT_SBSA_MOD_DIR)/tod/$(SUBDIR64)
 # this is wrong, but it'll do for now
 ROOT_SBSA_PSM_DACF_DIR	= $(ROOT_SBSA_MOD_DIR)/dacf/$(SUBDIR64)
 ROOT_SBSA_PSM_MISC_DIR	= $(ROOT_SBSA_MOD_DIR)/misc/$(SUBDIR64)
+ROOT_SBSA_PSM_DRV_DIR	= $(ROOT_SBSA_MOD_DIR)/drv/$(SUBDIR64)
 
 ROOT_PLAT_MOD_DIRS	+= $(ROOT_SBSA_MOD_DIR)
 ROOT_PLAT_MISC_DIRS	+= $(ROOT_SBSA_MISC_DIR)
@@ -22,9 +23,13 @@ ROOT_PLAT_DRV_DIRS	+= $(ROOT_SBSA_DRV_DIR)
 #
 SBSA_KMODS	=	\
 	consconfig_dacf	\
+	hpcsvc		\
+	npe		\
+	pci		\
 	pci_autoconfig	\
 	pci_prd		\
 	pcie		\
+	pcihp		\
 	rootnex
 
 include $(UTSBASE)/armv8/sbsa/Makefile.files
