@@ -31,6 +31,7 @@ SUBDIRS =       \
 		definit \
 		execvpe \
 		file-locking \
+		hexdump \
 		ilstr \
 		ksensor \
 		ksid \

@@ -278,6 +278,7 @@ CHKHDRS=			\
 	gld.h			\
 	gldpriv.h		\
 	group.h			\
+	hexdump.h		\
 	hdio.h			\
 	hook.h			\
 	hook_event.h		\
