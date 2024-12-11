@@ -27,7 +27,8 @@
 FDT_CORE_OBJS =			\
 	ddi_impl_fdt.o
 ACPI_CORE_OBJS =		\
-	ddi_impl_acpi.o
+	ddi_impl_acpi.o		\
+	$(SMBIOS_OBJS)
 
 CORE_OBJS_FDT =			\
 	cpuinfo_fdt.o
@@ -86,6 +87,7 @@ CORE_OBJS +=			\
 	earlybsa.o		\
 	cpuid_mach.o		\
 	acpi_stubs.o		\
+	intc_machdep.o		\
 	$(CORE_OBJS_FDT)
 
 CORE_OBJS += $($(AARCH64_FW_IMPL)_CORE_OBJS)
@@ -102,7 +104,13 @@ ROOTNEX_OBJS += rootnex.o
 NS16550A_OBJS += ns16550a.o
 
 GICV2_OBJS += gicv2.o
+GICV2M_OBJS += gicv2m.o
 GICV3_OBJS += gicv3.o
+GICV3ITS_OBJS += gicv3its.o
+
+FDT_PIC_AUTOCONFIG_OBJS =
+ACPI_PIC_AUTOCONFIG_OBJS = gic_autoconfig.o
+PIC_AUTOCONFIG_OBJ += $($(AARCH64_FW_IMPL)_CORE_OBJS)
 
 ACPI_DRV_OBJS +=		\
 	acpi_drv.o		\

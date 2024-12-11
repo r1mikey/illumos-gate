@@ -24,6 +24,8 @@
 # Copyright 2023 Michael van der Westhuizen <r1mikey@gmail.com>
 #
 
+PIC_AUTOCONFIG_OBJS += gic_autoconfig.o
+
 PCI_AUTOCONFIG_OBJS += pci_autoconfig.o pci_boot.o pci_memlist.o pcie_nvidia.o
 
 PCI_PRD_OBJS += pci_prd_sbsa.o pci_memlist.o

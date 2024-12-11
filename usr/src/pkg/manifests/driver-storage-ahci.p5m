@@ -54,10 +54,10 @@ file path=usr/share/man/man4d/ahci.4d
 # datasheets) proven to still support AHCI.
 #
 driver name=ahci perms="* 0644 root sys" class=scsi-self-identifying \
+    alias=mmioclass,010601 \
     alias=pci8086,2822,p \
     alias=pci8086,282a,p \
-    alias=pciclass,010601 \
-    alias=mmioclass,010601
+    alias=pciclass,010601
 legacy pkg=SUNWahci \
     desc="Advanced Host Controller Interface (AHCI) SATA HBA Driver" \
     name="Advanced Host Controller Interface (AHCI) SATA HBA Driver"

@@ -19,16 +19,10 @@
 #include <sys/gic.h>
 #include <sys/gic_reg.h>
 #include <sys/modctl.h>
-#include <sys/promif.h>
 #include <sys/smp_impldefs.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/bootinfo.h>
-#include <sys/acpi/platform/acsolaris.h>
-#include <sys/acpi/actypes.h>
-#include <sys/acpi/actbl.h>
-
-extern struct xboot_info *xboot_info_p;
 
 static void stub_not_config(void);
 static void stub_setlvlx(int ipl);
@@ -46,12 +40,6 @@ static void stub_setlvlx(int ipl);
  */
 kmutex_t gic_intrs_lock;
 avl_tree_t gic_intrs;
-
-/*
- * Used by implementations to ensure that they only fill in gic_ops when
- * appropriate.
- */
-char *gic_module_name = NULL;
 
 gic_ops_t gic_ops = {
 	.go_send_ipi		= (gic_send_ipi_t)stub_not_config,
@@ -72,7 +60,7 @@ gic_ops_t gic_ops = {
 static void
 stub_not_config(void)
 {
-	prom_panic("GIC not configured\n");
+	panic("GIC not configured\n");
 }
 
 static void
@@ -262,150 +250,9 @@ gic_is_spurious(uint32_t intid)
 	return (0);
 }
 
-/*
- * GIC Initialisation
- */
-static int
-get_gic_version_acpi(void)
-{
-	ACPI_TABLE_XSDT *xsdt;
-	ACPI_TABLE_HEADER *tab;
-	ACPI_TABLE_MADT *madt;
-	ACPI_SUBTABLE_HEADER *item;
-	ACPI_SUBTABLE_HEADER *end;
-	ACPI_MADT_GENERIC_DISTRIBUTOR *gicd;
-	uint64_t *entry;
-	uint32_t entries;
-	size_t slen;
-	uint32_t i;
-	int vers = -1;
-
-	xsdt = (ACPI_TABLE_XSDT *)xboot_info_p->bi_acpi_xsdt;
-	entries = (xsdt->Header.Length -
-	    sizeof (xsdt->Header)) / ACPI_XSDT_ENTRY_SIZE;
-	entry = &xsdt->TableOffsetEntry[0];
-	slen = strlen(ACPI_SIG_MADT);
-	tab = NULL;
-
-	for (i = 0; i < entries; ++i) {
-		tab = (ACPI_TABLE_HEADER *)entry[i];
-		if (tab == NULL)
-			continue;
-		if (strncmp(tab->Signature, ACPI_SIG_MADT, slen) == 0)
-			break;
-		tab = NULL;
-	}
-
-	if (tab == NULL)
-		return (vers);
-
-	madt = (ACPI_TABLE_MADT *)tab;
-	end = (ACPI_SUBTABLE_HEADER *)
-	    (madt->Header.Length + (uintptr_t)madt);
-	item = (ACPI_SUBTABLE_HEADER *)
-	    ((uintptr_t)madt + sizeof (*madt));
-
-	while (item < end) {
-		if (item->Type != ACPI_MADT_TYPE_GENERIC_DISTRIBUTOR) {
-			item = (ACPI_SUBTABLE_HEADER *)
-			    ((uintptr_t)item + item->Length);
-			continue;
-		}
-		gicd = (ACPI_MADT_GENERIC_DISTRIBUTOR *)item;
-
-		if (gicd->Version) {
-			vers = gicd->Version;
-			break;
-		}
-
-		/*
-		 * We could probe the version from the distributor here, by
-		 * by reading ICPIDR2 (GICv2) or GICD_PIDR2 (GICv3).  However,
-		 * GICv2 and GICv3 have different register offsets for the
-		 * IDR registers, and different distributor frame sizes.
-		 *
-		 * Since ACPI does not give us the size of the mapping for the
-		 * GIC we can't even derive that a 4k mapping would be ICPIDR2
-		 * and a 64k mapping would be GICD_PIDR2.
-		 *
-		 * So we just don't do anything here, trusting the firmware
-		 * to supply us with a reasonable value.
-		 */
-
-		/*
-		 * §5.2.12.15 GIC Distributor (GICD) Structue
-		 *
-		 * One, and only one, GIC distributor structure must be present
-		 * in the MADT for an ARM based system.
-		 */
-		break;
-	}
-
-	return (vers);
-}
-
-static int
-get_gic_version_fdt(void)
-{
-	if (prom_fdt_has_compatible("arm,gic-400") ||
-	    prom_fdt_has_compatible("arm,cortex-a15-gic")) {
-		return (2);
-	}
-
-	if (prom_fdt_has_compatible("arm,gic-v3")) {
-		return (3);
-	}
-
-	return (-1);
-}
-
-static void
-set_gic_module_name(void)
-{
-	int ver;
-
-	if (gic_module_name)
-		return;
-
-	if (xboot_info_p && xboot_info_p->bi_fdt)
-		ver = get_gic_version_fdt();
-	else if (xboot_info_p && xboot_info_p->bi_acpi_xsdt)
-		ver = get_gic_version_acpi();
-	else
-		prom_panic("Unknown firmware interface\n");
-
-	switch (ver) {
-	case -1:
-		prom_panic("Unrecognised GIC version\n");
-		break;
-	case 2:
-		gic_module_name = "gicv2";
-		break;
-	case 3:	/* fallthrough */
-	case 4:
-		gic_module_name = "gicv3";
-		break;
-	default:
-		prom_panic("Unknown GIC version\n");
-		break;
-	}
-
-	return;
-}
-
 int
 gic_init(void)
 {
-	set_gic_module_name();
-	if (gic_module_name == NULL)
-		return (ENOTSUP);
-
-	if (modload("drv", gic_module_name) == -1)
-		return (ENOENT);
-
-	if (gic_ops.go_init() != 0)
-		return (-1);
-
 	mutex_init(&gic_intrs_lock, NULL, MUTEX_DEFAULT, NULL);
 	avl_create(&gic_intrs, gic_intr_state_cmp, sizeof (gic_intr_state_t),
 	    offsetof(gic_intr_state_t, gi_node));

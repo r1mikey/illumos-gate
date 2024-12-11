@@ -42,6 +42,15 @@
 static char *acpidev_device_well_known_hids[] = {
 	ACPIDEV_HID_ARM_PL011,
 	ACPIDEV_HID_VIRTIO_MMIO
+#if 0
+	"LNRO001E",	/* AHCI */
+	"PNP0D10",	/* XHCI-compliant USB controller with standard debug */
+	"PNP0D40",	/* SDA standard-compliant SD host controller */
+	"PNP0A08",	/* PCI host bridges */
+	"PNP0A03",	/* PCI host bridges */
+	"PNP0C0F",	/* PCI interrupt link */
+	"PNP0C02"	/* General ID for reserving resources */
+#endif
 };
 static int num_acpidev_device_well_known_hids =
     sizeof (acpidev_device_well_known_hids) /
@@ -295,6 +304,12 @@ acpidev_device_trim_devname(acpidev_walk_info_t *infop, char *devname)
 	char *tnp;
 
 	/*
+	 * Always lowercase the devname - the uppercase names are jarring.
+	 */
+	for (np = devname; *np; ++np)
+		*np = tolower(*np);
+
+	/*
 	 * If we don't have a valid UID there's nothing to trim.
 	 */
 	if (!(infop->awi_info->Valid & ACPI_VALID_UID))
@@ -357,6 +372,9 @@ acpidev_device_filter_known_leaves(acpidev_walk_info_t *infop, ACPI_HANDLE hdl,
 {
 	ASSERT(infop->awi_info != NULL);
 
+	/*
+	 * XXXARM: ensure that we're a decendent of /fw/sb
+	 */
 	if (acpidev_match_device_id(infop->awi_info,
 	    acpidev_device_well_known_hids, num_acpidev_device_well_known_hids))
 		infop->awi_scratchpad[AWI_SCRATCH_KNOWN_DEV]
@@ -405,11 +423,75 @@ acpidev_device_init(acpidev_walk_info_t *infop)
 		ACPIDEV_TYPE_VIRTNEX,
 	};
 
-	if (ACPI_FAILURE(acpidev_set_compatible(infop,
-	    ACPIDEV_ARRAY_PARAM(compatible)))) {
-		return (AE_ERROR);
+#if defined(__aarch64__)
+	if (infop->awi_scratchpad[AWI_SCRATCH_KNOWN_DEV] ==
+	    acpidev_device_known_consumer) {
+		ACPI_STATUS rc;
+		UINT32 nstatic;
+		UINT32 ncid;
+		UINT32 ncls;
+		UINT32 entries;
+		UINT32 i;
+		ACPI_PNP_DEVICE_ID_LIST *compats;
+		char **compat;
+		char cls_str[10 + 6 + 1];	/* mmioclass,<cls> */
+
+		compat = NULL;
+		nstatic = sizeof (compatible) / sizeof (compatible[0]);
+		compats = NULL;
+		ncid = 0;
+		ncls = 0;
+
+		if (infop->awi_info->Valid & ACPI_VALID_CID) {
+			compats = &infop->awi_info->CompatibleIdList;
+			ncid = compats->Count;
+		}
+		if (infop->awi_info->Valid & ACPI_VALID_CLS &&
+		    infop->awi_info->ClassCode.Length <= 7 &&
+		    strlen(infop->awi_info->ClassCode.String) <= 6)
+			ncls = 1;
+
+		entries = ncid + ncls + nstatic;
+
+		compat = kmem_zalloc(sizeof (char *) * entries, KM_SLEEP);
+
+		/* Add the _CID entries, if present */
+		for (i = 0; i < ncid; ++i)
+			compat[i] =
+			    ddi_strdup(compats->Ids[i].String, KM_SLEEP);
+
+		/* Add the _CLS entry, if present and well-formed */
+		if (ncls != 0) {
+			(void) snprintf(cls_str, sizeof (cls_str),
+			    "mmioclass,%s", infop->awi_info->ClassCode.String);
+			cls_str[sizeof (cls_str) - 1] = '\0';
+			compat[i] = ddi_strdup(cls_str, KM_SLEEP);
+			++i;
+		}
+
+		/* Add the static entries */
+		for (; i < entries; ++i)
+			compat[i] =
+			    ddi_strdup(compatible[i - (ncid + ncls)], KM_SLEEP);
+
+		/* Set the compatible property */
+		rc = acpidev_set_compatible(infop, compat, entries);
+
+		/* Free allocated memory */
+		for (i = 0; i < entries; ++i)
+			strfree(compat[i]);
+		kmem_free(compat, sizeof (char *) * entries);
+
+		if (ACPI_FAILURE(rc))
+			return (AE_ERROR);
+	} else
+#endif
+	{
+		if (ACPI_FAILURE(acpidev_set_compatible(infop,
+		    ACPIDEV_ARRAY_PARAM(compatible)))) {
+			return (AE_ERROR);
+		}
 	}
-	/* XXXARM: this is wrong, needs to be per-instance */
 	(void) snprintf(unitaddr, sizeof (unitaddr), "%u",
 	    atomic_inc_32_nv(&acpidev_device_unitaddr) - 1);
 	if (ACPI_FAILURE(acpidev_set_unitaddr(infop, NULL, 0, unitaddr))) {

@@ -66,7 +66,6 @@
 #include <sys/avintr.h>
 #include <sys/smp_impldefs.h>
 #include <sys/sunddi.h>
-#include <sys/promif.h>
 #include <sys/smp_impldefs.h>
 #include <sys/archsystm.h>
 #include <sys/bootinfo.h>
@@ -76,49 +75,51 @@
 
 extern void gic_remove_state(int);
 
-extern char *gic_module_name;
 extern struct xboot_info *xboot_info_p;
 
 typedef struct {
-	/* Base address of the CPU interface */
-	void		*gc_gicc;
-	/* Base address of the distributor */
-	void		*gc_gicd;
+	/* Base address and access handle for the CPU interface */
+	caddr_t			gc_gicc;
+	ddi_acc_handle_t	gc_gicc_regh;
+	/* Base address and access handle for the distributor */
+	caddr_t			gc_gicd;
+	ddi_acc_handle_t	gc_gicd_regh;
 	/*
 	 * Desired binary point value to support the priority scheme
 	 */
-	uint32_t	gc_bpr;
+	uint32_t		gc_bpr;
 	/*
 	 * PPI interrupt config for secondary CPUs.
 	 */
-	uint32_t	gc_icfgr1;
+	uint32_t		gc_icfgr1;
 	/*
 	 * Shadow copy of GICD_ISENABLER[0] used in initialization of
 	 * secondary CPUs (PPI-only);
 	 */
-	uint32_t	gc_enabled_local;
+	uint32_t		gc_enabled_local;
 	/*
 	 * Shadow copy of  GICD_IPRIORITYR<0-7> used in initialization of
 	 * secondary CPUs.
 	 */
-	uint32_t	gc_priority[8];
+	uint32_t		gc_priority[8];
 	/*
 	 * Protect access to global GIC state.
 	 * In the current implementation, the distributor.
 	 */
-	lock_t		gc_lock;
+	lock_t			gc_lock;
 	/*
 	 * Mapping from cpuid to GIC target identifier
 	 */
-	uint8_t		gc_target[8];
+	uint8_t			gc_target[8];
 	/*
 	 * CPUs for which we have initialized the GIC.  Used to limit IPIs to
 	 * only those CPUs we can target.
 	 */
-	cpuset_t	gc_cpuset;
+	cpuset_t		gc_cpuset;
 } gicv2_conf_t;
 
-static gicv2_conf_t	conf;
+static gicv2_conf_t	*conf;
+static void *gicv2_soft_state;
 
 static uint32_t standard_priorities[] = {
 	[0]	= 248,
@@ -196,12 +197,12 @@ static uint32_t gicv2_prio_pmr_mask;
 #define	GIC_IPL_TO_PRIO(v)		(gicv2_prio_map[((v) & 0xF)])
 
 #define	GICV2_GICD_LOCK_INIT_HELD()	uint64_t __s = disable_interrupts(); \
-					LOCK_INIT_HELD(&conf.gc_lock)
+					LOCK_INIT_HELD(&conf->gc_lock)
 #define	GICV2_GICD_LOCK()		uint64_t __s = disable_interrupts(); \
-					lock_set(&conf.gc_lock)
-#define	GICV2_GICD_UNLOCK()		lock_clear(&conf.gc_lock); \
+					lock_set(&conf->gc_lock)
+#define	GICV2_GICD_UNLOCK()		lock_clear(&conf->gc_lock); \
 					restore_interrupts(__s)
-#define	GICV2_ASSERT_GICD_LOCK_HELD()	ASSERT(LOCK_HELD(&conf.gc_lock))
+#define	GICV2_ASSERT_GICD_LOCK_HELD()	ASSERT(LOCK_HELD(&conf->gc_lock))
 
 static inline uint32_t
 gicc_read(gicv2_conf_t *gic, uint32_t reg)
@@ -253,7 +254,7 @@ gicv2_enable_irq(int irq)
 {
 	if (GIC_INTID_IS_SPI(irq) || GIC_INTID_IS_PPI(irq)) {
 		GICV2_ASSERT_GICD_LOCK_HELD();
-		gicd_write(&conf, GICD_ISENABLERn(GICD_IENABLER_REGNUM(irq)),
+		gicd_write(conf, GICD_ISENABLERn(GICD_IENABLER_REGNUM(irq)),
 		    GICD_IENABLER_REGBIT(irq));
 	}
 }
@@ -274,7 +275,7 @@ gicv2_disable_irq(int irq)
 {
 	if (GIC_INTID_IS_SPI(irq) || GIC_INTID_IS_PPI(irq)) {
 		GICV2_ASSERT_GICD_LOCK_HELD();
-		gicd_write(&conf, GICD_ICENABLERn(GICD_IENABLER_REGNUM(irq)),
+		gicd_write(conf, GICD_ICENABLERn(GICD_IENABLER_REGNUM(irq)),
 		    GICD_IENABLER_REGBIT(irq));
 	}
 }
@@ -301,7 +302,7 @@ gicv2_config_irq(uint32_t irq, bool is_edge)
 	 * corresponding programmable Int_config field is changed. GIC
 	 * behavior is otherwise UNPREDICTABLE.
 	 */
-	ASSERT(((gicd_read(&conf, GICD_ISENABLERn(GICD_IENABLER_REGNUM(irq))) &
+	ASSERT(((gicd_read(conf, GICD_ISENABLERn(GICD_IENABLER_REGNUM(irq))) &
 	    GICD_IENABLER_REGBIT(irq)) == 0));
 
 	/*
@@ -309,7 +310,7 @@ gicv2_config_irq(uint32_t irq, bool is_edge)
 	 * bit is reserved, the odd bit is 1 for edge-triggered 0 for
 	 * level.
 	 */
-	(void) gicd_rmw(&conf,
+	(void) gicd_rmw(conf,
 	    GICD_ICFGRn(GICD_ICFGR_REGNUM(irq)),
 	    GICD_ICFGR_REGVAL(irq, GICD_ICFGR_INT_CONFIG_MASK),
 	    GICD_ICFGR_REGVAL(irq, v));
@@ -329,7 +330,7 @@ gicv2_setlvl(int irq)
 	new_ipl = autovect[irq].avh_hi_pri;
 
 	if (new_ipl != 0) {
-		gicc_write(&conf, GICC_PMR,
+		gicc_write(conf, GICC_PMR,
 		    GIC_IPL_TO_PRIO(new_ipl) & gicv2_prio_pmr_mask);
 	}
 
@@ -342,7 +343,7 @@ gicv2_setlvl(int irq)
 static void
 gicv2_setlvlx(int ipl)
 {
-	gicc_write(&conf, GICC_PMR, GIC_IPL_TO_PRIO(ipl) & gicv2_prio_pmr_mask);
+	gicc_write(conf, GICC_PMR, GIC_IPL_TO_PRIO(ipl) & gicv2_prio_pmr_mask);
 }
 
 /*
@@ -357,13 +358,13 @@ gicv2_set_ipl(uint32_t irq, uint32_t ipl)
 
 	GICV2_ASSERT_GICD_LOCK_HELD();
 	n = GICD_IPRIORITY_REGNUM(irq);
-	ipriorityr = gicd_rmw(&conf,
+	ipriorityr = gicd_rmw(conf,
 	    GICD_IPRIORITYRn(n),
 	    GICD_IPRIORITY_REGVAL(irq, GICD_IPRIORITY_REGMASK),
 	    GICD_IPRIORITY_REGVAL(irq, GIC_IPL_TO_PRIO(ipl)));
 
 	if (GIC_INTID_IS_PERCPU(irq)) {
-		conf.gc_priority[n] = ipriorityr;
+		conf->gc_priority[n] = ipriorityr;
 	}
 }
 
@@ -386,7 +387,7 @@ gicv2_add_target(uint32_t irq)
 	 */
 	if (!GIC_INTID_IS_PERCPU(irq)) {
 		GICV2_ASSERT_GICD_LOCK_HELD();
-		(void) gicd_rmw(&conf,
+		(void) gicd_rmw(conf,
 		    GICD_ITARGETSRn(GICD_ITARGETSR_REGNUM(irq)),
 		    GICD_ITARGETSR_REGVAL(irq, GICD_ITARGETSR_REGMASK),
 		    GICD_ITARGETSR_REGVAL(irq, coreMask));
@@ -419,7 +420,7 @@ gicv2_addspl(int irq, int ipl, int min_ipl, int max_ipl)
 	gicv2_add_target((uint32_t)irq);
 	gicv2_enable_irq((uint32_t)irq);
 	if (GIC_INTID_IS_PPI(irq) && CPU->cpu_id == 0) {
-		conf.gc_enabled_local |= (1U << irq);
+		conf->gc_enabled_local |= (1U << irq);
 	}
 	GICV2_GICD_UNLOCK();
 	return (0);
@@ -438,7 +439,7 @@ gicv2_delspl(int irq, int ipl, int min_ipl, int max_ipl)
 	gicv2_disable_irq((uint32_t)irq);
 	gicv2_set_ipl((uint32_t)irq, 0);
 	if (GIC_INTID_IS_PPI(irq) && CPU->cpu_id == 0) {
-		conf.gc_enabled_local &= ~(1U << irq);
+		conf->gc_enabled_local &= ~(1U << irq);
 	}
 	GICV2_GICD_UNLOCK();
 
@@ -456,24 +457,24 @@ gicv2_send_ipi(cpuset_t cpuset, int irq)
 	uint32_t target = 0;
 
 	GICV2_GICD_LOCK();
-	CPUSET_AND(cpuset, conf.gc_cpuset);
+	CPUSET_AND(cpuset, conf->gc_cpuset);
 	while (!CPUSET_ISNULL(cpuset)) {
 		uint_t cpu;
 		CPUSET_FIND(cpuset, cpu);
-		target |= conf.gc_target[cpu];
+		target |= conf->gc_target[cpu];
 		CPUSET_DEL(cpuset, cpu);
 	}
 	dsb(ish);
 
 	/* The third argument (NSATTR) is ignored from the non-secure world */
-	gicd_write(&conf, GICD_SGIR, GICD_MAKE_SGIR_REGVAL(0, target, 0, irq));
+	gicd_write(conf, GICD_SGIR, GICD_MAKE_SGIR_REGVAL(0, target, 0, irq));
 	GICV2_GICD_UNLOCK();
 }
 
 static uint64_t
 gicv2_acknowledge(void)
 {
-	return ((uint64_t)gicc_read(&conf, GICC_IAR));
+	return ((uint64_t)gicc_read(conf, GICC_IAR));
 }
 
 static uint32_t
@@ -485,13 +486,13 @@ gicv2_ack_to_vector(uint64_t ack)
 static void
 gicv2_eoi(uint64_t ack)
 {
-	gicc_write(&conf, GICC_EOIR, (uint32_t)(ack & 0xFFFFFFFF));
+	gicc_write(conf, GICC_EOIR, (uint32_t)(ack & 0xFFFFFFFF));
 }
 
 static void
 gicv2_deactivate(uint64_t ack)
 {
-	gicc_write(&conf, GICC_DIR, (uint32_t)(ack & 0xFFFFFFFF));
+	gicc_write(conf, GICC_DIR, (uint32_t)(ack & 0xFFFFFFFF));
 }
 
 /*
@@ -501,236 +502,11 @@ gicv2_deactivate(uint64_t ack)
  * This sets the Nth bit for target N
  */
 static uint_t
-gicv2_get_target(void)
+gicv2_get_target(gicv2_conf_t *gc)
 {
 	GICV2_ASSERT_GICD_LOCK_HELD();
 	return (1U << __builtin_ctz(
-	    gicd_read(&conf, GICD_ITARGETSRn(0)) & 0xFF));
-}
-
-/*
- * Return the ACPI MADT, or NULL if none was found.
- */
-static ACPI_TABLE_MADT *
-find_gic_acpi(void)
-{
-	ACPI_TABLE_XSDT *xsdt;
-	ACPI_TABLE_HEADER *tab;
-	uint64_t *entry;
-	uint32_t entries;
-	size_t slen;
-	uint32_t i;
-
-	xsdt = (ACPI_TABLE_XSDT *)xboot_info_p->bi_acpi_xsdt;
-	entries = (xsdt->Header.Length -
-	    sizeof (xsdt->Header)) / ACPI_XSDT_ENTRY_SIZE;
-	entry = &xsdt->TableOffsetEntry[0];
-	slen = strlen(ACPI_SIG_MADT);
-	tab = NULL;
-
-	for (i = 0; i < entries; ++i) {
-		tab = (ACPI_TABLE_HEADER *)entry[i];
-		if (tab == NULL)
-			continue;
-		if (strncmp(tab->Signature, ACPI_SIG_MADT, slen) == 0)
-			return ((ACPI_TABLE_MADT *)tab);
-	}
-
-	return (NULL);
-}
-
-/*
- * Return the GICv2 PROM node, or OBP_NONODE if none was found.
- */
-static pnode_t
-find_gic_fdt(pnode_t nodeid, int depth)
-{
-	pnode_t	node;
-	pnode_t	child;
-
-	GICV2_ASSERT_GICD_LOCK_HELD();
-
-	if (prom_fdt_is_compatible(nodeid, "arm,cortex-a15-gic") ||
-	    prom_fdt_is_compatible(nodeid, "arm,gic-400")) {
-		return (nodeid);
-	}
-
-	child = prom_childnode(nodeid);
-	while (child > 0) {
-		node = find_gic_fdt(child, depth + 1);
-		if (node > 0)
-			return (node);
-		child = prom_nextnode(child);
-	}
-
-	return (OBP_NONODE);
-}
-
-/*
- * Map the GICv2 distributor and CPU interface MMIO regions into the device
- * arena.
- *
- * Two versions (ACPI and FDT), selected at runtime.
- */
-
-static int
-gicv2_map_acpi(void)
-{
-	ACPI_TABLE_MADT			*madt;
-	ACPI_SUBTABLE_HEADER		*item;
-	ACPI_SUBTABLE_HEADER		*end;
-	ACPI_MADT_GENERIC_DISTRIBUTOR	*gicd;
-	ACPI_MADT_GENERIC_INTERRUPT	*gicc;
-	uint64_t			gicd_size;
-	uint64_t			gicc_size;
-	uint64_t			gicc_addr;
-	caddr_t				addr;
-
-	GICV2_ASSERT_GICD_LOCK_HELD();
-
-	madt = find_gic_acpi();
-	if (madt == NULL)
-		return (-1);
-
-	gicd_size = 4096;	/* always 4k */
-	gicc_size = 8192;	/* always 8k */
-	gicc_addr = 0;
-
-	/*
-	 * First up, find and process the GIC distributor.
-	 */
-
-	end = (ACPI_SUBTABLE_HEADER *)
-	    (madt->Header.Length + (uintptr_t)madt);
-	item = (ACPI_SUBTABLE_HEADER *)
-	    ((uintptr_t)madt + sizeof (*madt));
-
-	while (item < end) {
-		if (item->Type != ACPI_MADT_TYPE_GENERIC_DISTRIBUTOR) {
-			item = (ACPI_SUBTABLE_HEADER *)
-			    ((uintptr_t)item + item->Length);
-			continue;
-		}
-		gicd = (ACPI_MADT_GENERIC_DISTRIBUTOR *)item;
-
-		addr = psm_map_phys((paddr_t)gicd->BaseAddress,
-		    gicd_size, PROT_READ|PROT_WRITE);
-		if (addr == NULL)
-			return (-1);
-		conf.gc_gicd = (void *)addr;
-		break;
-	}
-
-	if (conf.gc_gicd == NULL)
-		return (-1);
-
-	/*
-	 * Now the CPU interface.
-	 *
-	 * This is a little complicated, as FDT exposes a single address for
-	 * the CPU interface (the IP maps CPU-specific frames at the same
-	 * address for each CPU). ACPI, however, can in theory expose a
-	 * different physical address per CPU.
-	 *
-	 * For now we simply insist that the same physical address is exposed
-	 * for all presented CPUs, then map that physical address once.
-	 *
-	 * In the future we could keep a mapping per target (0-7), then select
-	 * the appropriate mapping based on the calls CPU, but that seems
-	 * unnecessary right now.
-	 */
-	end = (ACPI_SUBTABLE_HEADER *)
-	    (madt->Header.Length + (uintptr_t)madt);
-	item = (ACPI_SUBTABLE_HEADER *)
-	    ((uintptr_t)madt + sizeof (*madt));
-
-	while (item < end) {
-		if (item->Type != ACPI_MADT_TYPE_GENERIC_INTERRUPT) {
-			item = (ACPI_SUBTABLE_HEADER *)
-			    ((uintptr_t)item + item->Length);
-			continue;
-		}
-		gicc = (ACPI_MADT_GENERIC_INTERRUPT *)item;
-
-		if (gicc_addr != 0 && (uint64_t)gicc->BaseAddress != gicc_addr)
-			prom_panic("GICv2: homogenous GICC base addresses "
-			    "are required\n");
-
-		gicc_addr = (uint64_t)gicc->BaseAddress;
-		item = (ACPI_SUBTABLE_HEADER *)((uintptr_t)item + item->Length);
-	}
-
-	if (gicc_addr == 0) {
-		psm_unmap_phys((caddr_t)conf.gc_gicd, gicd_size);
-		conf.gc_gicd = NULL;
-		return (-1);
-	}
-
-	addr = psm_map_phys((paddr_t)gicc_addr,
-	    gicc_size, PROT_READ|PROT_WRITE);
-	if (addr == NULL) {
-		psm_unmap_phys((caddr_t)conf.gc_gicd, gicd_size);
-		conf.gc_gicd = NULL;
-		return (-1);
-	}
-
-	conf.gc_gicc = (void *)addr;
-	return (0);
-}
-
-static int
-gicv2_map_fdt(void)
-{
-	pnode_t		node;
-	uint64_t	gicd_base;
-	uint64_t	gicd_size;
-	uint64_t	gicc_base;
-	uint64_t	gicc_size;
-	caddr_t		addr;
-
-	GICV2_ASSERT_GICD_LOCK_HELD();
-
-	node = find_gic_fdt(prom_rootnode(), 0);
-	if (node <= 0)
-		return (-1);
-
-	if (prom_fdt_get_reg_address(node, 0, &gicd_base) != 0)
-		return (-1);
-
-	if (prom_fdt_get_reg_size(node, 0, &gicd_size) != 0)
-		return (-1);
-
-	if (prom_fdt_get_reg_address(node, 1, &gicc_base) != 0)
-		return (-1);
-
-	if (prom_fdt_get_reg_size(node, 1, &gicc_size) != 0)
-		return (-1);
-
-	addr = psm_map_phys(gicd_base, gicd_size, PROT_READ|PROT_WRITE);
-	if (addr == NULL)
-		return (-1);
-	conf.gc_gicd = (void *)addr;
-
-	addr = psm_map_phys(gicc_base, gicc_size, PROT_READ|PROT_WRITE);
-	if (addr == NULL) {
-		psm_unmap_phys((caddr_t)conf.gc_gicd, gicd_size);
-		conf.gc_gicd = NULL;
-		return (-1);
-	}
-	conf.gc_gicc = (void *)addr;
-
-	return (0);
-}
-
-static int
-gicv2_map(void)
-{
-	if (xboot_info_p && xboot_info_p->bi_fdt)
-		return (gicv2_map_fdt());
-	else if (xboot_info_p && xboot_info_p->bi_acpi_xsdt)
-		return (gicv2_map_acpi());
-
-	return (-1);
+	    gicd_read(gc, GICD_ITARGETSRn(0)) & 0xFF));
 }
 
 /*
@@ -743,14 +519,14 @@ gicv2_map(void)
  * distributor lock.
  */
 static void
-gicv2_cpu_init_raw(cpu_t *cp)
+gicv2_cpu_init_raw(gicv2_conf_t *gc, cpu_t *cp)
 {
 	GICV2_ASSERT_GICD_LOCK_HELD();
 
 	/*
 	 * Disable the current CPU interface.
 	 */
-	gicc_write(&conf, GICC_CTLR, 0);
+	gicc_write(gc, GICC_CTLR, 0);
 
 	/*
 	 * Clear enabled/pending/active status of the CPU-specific interrupts.
@@ -760,9 +536,9 @@ gicv2_cpu_init_raw(cpu_t *cp)
 	 * Note that we do not attempt to disable SGIs, as that's an
 	 * implementation-defined operation.
 	 */
-	gicd_write(&conf, GICD_ICENABLERn(0), 0xffff0000);
-	gicd_write(&conf, GICD_ICPENDRn(0), 0xffffffff);
-	gicd_write(&conf, GICD_ICACTIVERn(0), 0xffffffff);
+	gicd_write(gc, GICD_ICENABLERn(0), 0xffff0000);
+	gicd_write(gc, GICD_ICPENDRn(0), 0xffffffff);
+	gicd_write(gc, GICD_ICACTIVERn(0), 0xffffffff);
 
 	/*
 	 * When initialising the boot CPU we do a bit more.
@@ -775,21 +551,21 @@ gicv2_cpu_init_raw(cpu_t *cp)
 		 * this variable. We later use this information when booting
 		 * secondary CPUs.
 		 */
-		conf.gc_enabled_local = 0x0;
+		conf->gc_enabled_local = 0x0;
 
 		/*
 		 * Figure out how to map IPLs to GIC priorities.
 		 */
-		gicc_write(&conf, GICC_PMR, 0xFF);
+		gicc_write(gc, GICC_PMR, 0xFF);
 
-		if ((gicc_read(&conf, GICC_PMR) & 0xf) == 0) {
+		if ((gicc_read(gc, GICC_PMR) & 0xf) == 0) {
 			gicv2_prio_map = bodged_priorities;
 			gicv2_prio_pmr_mask = BODGED_PRIORITY_PMR_MASK;
-			conf.gc_bpr = BODGED_BPR;
+			gc->gc_bpr = BODGED_BPR;
 		} else {
 			gicv2_prio_map = standard_priorities;
 			gicv2_prio_pmr_mask = STANDARD_PRIORITY_PMR_MASK;
-			conf.gc_bpr = STANDARD_BPR;
+			gc->gc_bpr = STANDARD_BPR;
 		}
 
 		/*
@@ -799,9 +575,9 @@ gicv2_cpu_init_raw(cpu_t *cp)
 		 * other processors.
 		 */
 		for (int i = 0; i < 8; ++i) {
-			gicd_write(&conf, GICD_IPRIORITYRn(i), 0xffffffff);
-			conf.gc_priority[i] =
-			    gicd_read(&conf, GICD_IPRIORITYRn(i));
+			gicd_write(gc, GICD_IPRIORITYRn(i), 0xffffffff);
+			gc->gc_priority[i] =
+			    gicd_read(gc, GICD_IPRIORITYRn(i));
 		}
 	} else {
 		/*
@@ -810,15 +586,15 @@ gicv2_cpu_init_raw(cpu_t *cp)
 		 * Configuring PPIs is implementation-defined, so this might
 		 * have no effect.
 		 */
-		gicd_write(&conf, GICD_ICFGRn(1), conf.gc_icfgr1);
+		gicd_write(gc, GICD_ICFGRn(1), gc->gc_icfgr1);
 
 		/*
 		 * Initialize interrupt priorities for per-CPU interrupts from
 		 * the shadow copy of the priority registers.
 		 */
 		for (int i = 0; i < 8; ++i) {
-			gicd_write(&conf, GICD_IPRIORITYRn(i),
-			    conf.gc_priority[i]);
+			gicd_write(gc, GICD_IPRIORITYRn(i),
+			    gc->gc_priority[i]);
 		}
 
 		/*
@@ -828,25 +604,25 @@ gicv2_cpu_init_raw(cpu_t *cp)
 		 * time the secondary CPU comes up. No further attempt at
 		 * synchronization is made.
 		 */
-		gicd_write(&conf, GICD_ISENABLERn(0), conf.gc_enabled_local);
+		gicd_write(gc, GICD_ISENABLERn(0), gc->gc_enabled_local);
 	}
 
 	/*
 	 * Apply our subpriority configuration.
 	 */
-	gicc_write(&conf, GICC_BPR, conf.gc_bpr);
+	gicc_write(gc, GICC_BPR, gc->gc_bpr);
 
 	/*
 	 * Confugure the priority mask register to leave us at LOCK_LEVEL once
 	 * initialized.
 	 */
-	gicc_write(&conf, GICC_PMR,
+	gicc_write(gc, GICC_PMR,
 	    GIC_IPL_TO_PRIO(LOCK_LEVEL) & gicv2_prio_pmr_mask);
 
 	/*
 	 * Record our target for interrupt routing.
 	 */
-	conf.gc_target[cp->cpu_id] = gicv2_get_target();
+	gc->gc_target[cp->cpu_id] = gicv2_get_target(gc);
 
 	/*
 	 * Enable the CPU interface.
@@ -854,13 +630,13 @@ gicv2_cpu_init_raw(cpu_t *cp)
 	 * Note that we enable split priority drop and deactivation so that we
 	 * can properly support threaded intrerrupts.
 	 */
-	gicc_write(&conf, GICC_CTLR,
+	gicc_write(gc, GICC_CTLR,
 	    GICC_CTLR_EnableGrp1 | GICC_CTLR_EOImodeNS);
 
 	/*
 	 * Finally, tell the world we're ready.
 	 */
-	CPUSET_ADD(conf.gc_cpuset, cp->cpu_id);
+	CPUSET_ADD(gc->gc_cpuset, cp->cpu_id);
 }
 
 /*
@@ -871,8 +647,10 @@ gicv2_cpu_init_raw(cpu_t *cp)
 static void
 gicv2_cpu_init(cpu_t *cp)
 {
+	gicv2_conf_t *gc = ddi_get_soft_state(gicv2_soft_state, 0);
+	ASSERT3P(gc, !=, NULL);
 	GICV2_GICD_LOCK();
-	gicv2_cpu_init_raw(cp);
+	gicv2_cpu_init_raw(gc, cp);
 	GICV2_GICD_UNLOCK();
 }
 
@@ -883,35 +661,28 @@ gicv2_cpu_init(cpu_t *cp)
  * Returns non-zero on error.
  */
 static int
-gicv2_init(void)
+gicv2_init(gicv2_conf_t *gc)
 {
-	GICV2_GICD_LOCK_INIT_HELD();
-
-	if (gicv2_map() != 0) {
-		GICV2_GICD_UNLOCK();
-		return (-1);
-	}
-
 	/*
 	 * Mask all interrupts on the current CPU interface, then disable it.
 	 *
 	 * This is the last time we should touch the GIC CPU interface in this
 	 * function.
 	 */
-	gicc_write(&conf, GICC_CTLR, 0);
+	gicc_write(gc, GICC_CTLR, 0);
 
 	/*
 	 * Disable the distributor.
 	 */
-	gicd_write(&conf, GICD_CTLR, 0);
+	gicd_write(gc, GICD_CTLR, 0);
 
 	/*
 	 * Clear enabled/pending/active status of global interrupts.
 	 */
 	for (int i = 1; i < 32; ++i) {
-		gicd_write(&conf, GICD_ICENABLERn(i), 0xffffffff);
-		gicd_write(&conf, GICD_ICPENDRn(i), 0xffffffff);
-		gicd_write(&conf, GICD_ICACTIVERn(i), 0xffffffff);
+		gicd_write(gc, GICD_ICENABLERn(i), 0xffffffff);
+		gicd_write(gc, GICD_ICPENDRn(i), 0xffffffff);
+		gicd_write(gc, GICD_ICACTIVERn(i), 0xffffffff);
 	}
 
 	/*
@@ -921,14 +692,14 @@ gicv2_init(void)
 	 * GICD_ICFGRn(1) is PPI, configuring these is implementation-defined.
 	 */
 	for (int i = 1; i < 64; i++) {
-		gicd_write(&conf, GICD_ICFGRn(i), 0x0);
+		gicd_write(gc, GICD_ICFGRn(i), 0x0);
 	}
 
 	/*
 	 * Save PPI interrupt configuration so we can apply it to secondary
 	 * CPUs. Configuring PPIs is implementation-defined, but we try anyway.
 	 */
-	conf.gc_icfgr1 = gicd_read(&conf, GICD_ICFGRn(1));
+	gc->gc_icfgr1 = gicd_read(gc, GICD_ICFGRn(1));
 
 	/*
 	 * Initialize interrupt priorities for global interrupts, setting them
@@ -936,67 +707,208 @@ gicv2_init(void)
 	 * CPUs. XXXARM: we need to implement interrupt redistribution.
 	 */
 	for (int i = 8; i < 256; ++i) {
-		gicd_write(&conf, GICD_IPRIORITYRn(i), 0xffffffff);
-		gicd_write(&conf, GICD_ITARGETSRn(i), 0xffffffff);
+		gicd_write(gc, GICD_IPRIORITYRn(i), 0xffffffff);
+		gicd_write(gc, GICD_ITARGETSRn(i), 0xffffffff);
 	}
 
 	/*
 	 * No CPUs have been configured yet.
 	 */
-	CPUSET_ZERO(conf.gc_cpuset);
+	CPUSET_ZERO(gc->gc_cpuset);
 
 	/*
 	 * Enable the distributor.
 	 */
-	gicd_write(&conf, GICD_CTLR, GICD_CTLR_EnableGrp1);
+	gicd_write(gc, GICD_CTLR, GICD_CTLR_EnableGrp1);
 
 	/*
 	 * While we still hold the lock we initialize the boot processor.
 	 */
-	gicv2_cpu_init_raw(CPU);
-
-	GICV2_GICD_UNLOCK();
-	return (0);
+	gicv2_cpu_init_raw(gc, CPU);
+	return (DDI_SUCCESS);
 }
 
-static struct modlmisc modlmisc = {
-	&mod_miscops,
-	"Generic Interrupt Controller v2"
+static int
+gicv2_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
+{
+	int ret;
+	int nregs;
+	int instance;
+	off_t gicd_regsize;
+	off_t gicc_regsize;
+	gicv2_conf_t *xconf;
+
+	ddi_device_acc_attr_t gicv2_reg_acc_attr = {
+		.devacc_attr_version		= DDI_DEVICE_ATTR_V0,
+		.devacc_attr_endian_flags	= DDI_STRUCTURE_LE_ACC,
+		.devacc_attr_dataorder		= DDI_STRICTORDER_ACC
+	};
+
+	switch (cmd) {
+	case DDI_ATTACH:
+		break;
+	case DDI_RESUME:	/* fallthrough */
+	case DDI_PM_RESUME:
+		return (DDI_SUCCESS);
+	default:
+		dev_err(dip, CE_NOTE, "Unhandled attach command: %d", (int)cmd);
+		return (DDI_FAILURE);
+	}
+	ASSERT3U(cmd, ==, DDI_ATTACH);
+
+	instance = ddi_get_instance(dip);
+
+	if ((ret = ddi_dev_nregs(dip, &nregs)) != DDI_SUCCESS)
+		return (ret);
+
+	if (nregs < 2)
+		return (DDI_FAILURE);
+
+	if ((ret = ddi_dev_regsize(dip, 0, &gicd_regsize)) != DDI_SUCCESS)
+		return (DDI_FAILURE);
+
+	if ((ret = ddi_dev_regsize(dip, 1, &gicc_regsize)) != DDI_SUCCESS)
+		return (DDI_FAILURE);
+
+	if ((ret = ddi_soft_state_zalloc(gicv2_soft_state,
+	    instance)) != DDI_SUCCESS)
+		return (ret);
+	xconf = ddi_get_soft_state(gicv2_soft_state, instance);
+	VERIFY3P(xconf, !=, NULL);
+
+	if ((ret = ddi_regs_map_setup(dip, 0, &xconf->gc_gicd, 0, gicd_regsize,
+	    &gicv2_reg_acc_attr, &xconf->gc_gicd_regh)) != DDI_SUCCESS) {
+		ddi_soft_state_free(gicv2_soft_state, instance);
+		return (ret);
+	}
+
+	if ((ret = ddi_regs_map_setup(dip, 1, &xconf->gc_gicc, 0, gicc_regsize,
+	    &gicv2_reg_acc_attr, &xconf->gc_gicc_regh)) != DDI_SUCCESS) {
+		ddi_regs_map_free(&xconf->gc_gicd_regh);
+		ddi_soft_state_free(gicv2_soft_state, instance);
+		return (ret);
+	}
+
+	conf = xconf;
+	GICV2_GICD_LOCK_INIT_HELD();
+
+	if ((ret = gicv2_init(xconf)) != DDI_SUCCESS) {
+		GICV2_GICD_UNLOCK();
+		ddi_regs_map_free(&xconf->gc_gicd_regh);
+		conf = NULL;
+		ddi_soft_state_free(gicv2_soft_state, instance);
+		return (ret);
+	}
+
+	GICV2_GICD_UNLOCK();
+
+	gic_ops.go_send_ipi = gicv2_send_ipi;
+	gic_ops.go_init = NULL;	/* obsolete */
+	gic_ops.go_cpu_init = gicv2_cpu_init;
+	gic_ops.go_config_irq = gicv2_config_irq;
+	gic_ops.go_addspl = gicv2_addspl;
+	gic_ops.go_delspl = gicv2_delspl;
+	gic_ops.go_setlvl = gicv2_setlvl;
+	gic_ops.go_setlvlx = gicv2_setlvlx;
+	gic_ops.go_acknowledge = gicv2_acknowledge;
+	gic_ops.go_ack_to_vector = gicv2_ack_to_vector;
+	gic_ops.go_eoi = gicv2_eoi;
+	gic_ops.go_deactivate = gicv2_deactivate;
+	/*
+	 * Explicitly use the default "is special" handler.
+	 */
+	gic_ops.go_is_spurious = (gic_is_spurious_t)NULL;
+
+	// ddi_report_dev(dip);	/* this is fugly */
+	return (DDI_SUCCESS);
+}
+
+static struct bus_ops gicv2_bus_ops = {
+	.busops_rev		= BUSO_REV,
+	.bus_map		= i_ddi_bus_map,
+	.bus_get_intrspec	= NULL, /* obsolete */
+	.bus_add_intrspec	= NULL, /* obsolete */
+	.bus_remove_intrspec	= NULL, /* obsolete */
+	.bus_map_fault		= i_ddi_map_fault,
+	.bus_dma_map		= NULL,
+	.bus_dma_allochdl	= ddi_dma_allochdl,
+	.bus_dma_freehdl	= ddi_dma_freehdl,
+	.bus_dma_bindhdl	= ddi_dma_bindhdl,
+	.bus_dma_unbindhdl	= ddi_dma_unbindhdl,
+	.bus_dma_flush		= ddi_dma_flush,
+	.bus_dma_win		= ddi_dma_win,
+	.bus_dma_ctl		= ddi_dma_mctl,
+	.bus_ctl		= ddi_ctlops,
+	.bus_prop_op		= ddi_bus_prop_op,
+	.bus_get_eventcookie	= NULL,
+	.bus_add_eventcall	= NULL,
+	.bus_remove_eventcall	= NULL,
+	.bus_post_event		= NULL,
+	.bus_intr_ctl		= NULL,
+	.bus_config		= NULL,
+	.bus_unconfig		= NULL,
+	.bus_fm_init		= NULL,
+	.bus_fm_fini		= NULL,
+	.bus_fm_access_enter	= NULL,
+	.bus_fm_access_exit	= NULL,
+	.bus_power		= NULL,
+	.bus_intr_op		= i_ddi_intr_ops,	/* XXXARM !!! */
+	.bus_hp_op		= NULL
+};
+
+static struct dev_ops gicv2_ops = {
+	.devo_rev		= DEVO_REV,
+	.devo_refcnt		= 0,
+	.devo_getinfo		= ddi_no_info,
+	.devo_identify		= nulldev,
+	.devo_probe		= nulldev,
+	.devo_attach		= gicv2_attach,
+	.devo_detach		= nulldev,
+	.devo_reset		= nodev,
+	.devo_cb_ops		= NULL,
+	.devo_bus_ops		= &gicv2_bus_ops,
+	.devo_power		= NULL,
+	.devo_quiesce		= ddi_quiesce_not_needed,
+};
+
+static struct modldrv gicv2_modldrv = {
+	.drv_modops		= &mod_driverops,
+	.drv_linkinfo		= "Generic Interrupt Controller v2",
+	.drv_dev_ops		= &gicv2_ops
 };
 
 static struct modlinkage modlinkage = {
-	MODREV_1, (void *)&modlmisc, NULL
+	.ml_rev			= MODREV_1,
+	.ml_linkage		= { &gicv2_modldrv, NULL }
 };
 
 int
 _init(void)
 {
-	if (strcmp(gic_module_name, "gicv2") == 0) {
-		gic_ops.go_send_ipi = gicv2_send_ipi;
-		gic_ops.go_init = gicv2_init;
-		gic_ops.go_cpu_init = gicv2_cpu_init;
-		gic_ops.go_config_irq = gicv2_config_irq;
-		gic_ops.go_addspl = gicv2_addspl;
-		gic_ops.go_delspl = gicv2_delspl;
-		gic_ops.go_setlvl = gicv2_setlvl;
-		gic_ops.go_setlvlx = gicv2_setlvlx;
-		gic_ops.go_acknowledge = gicv2_acknowledge;
-		gic_ops.go_ack_to_vector = gicv2_ack_to_vector;
-		gic_ops.go_eoi = gicv2_eoi;
-		gic_ops.go_deactivate = gicv2_deactivate;
-		/*
-		 * Explicitly use the default "is special" handler.
-		 */
-		gic_ops.go_is_spurious = (gic_is_spurious_t)NULL;
+	int err;
+
+	if ((err = ddi_soft_state_init(&gicv2_soft_state,
+	    sizeof (gicv2_conf_t), 1)) != 0)
+		return (err);
+
+	if ((err = mod_install(&modlinkage)) != 0) {
+		ddi_soft_state_fini(&gicv2_soft_state);
+		return (err);
 	}
 
-	return (mod_install(&modlinkage));
+	return (err);
 }
 
 int
 _fini(void)
 {
-	return (EBUSY);
+	int err;
+
+	if ((err = mod_remove(&modlinkage)))
+		return (err);
+
+	ddi_soft_state_fini(&gicv2_soft_state);
+	return (err);
 }
 
 int

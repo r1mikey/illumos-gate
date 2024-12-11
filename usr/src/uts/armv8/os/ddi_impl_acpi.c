@@ -36,6 +36,8 @@
 #include <sys/avintr.h>
 #include <sys/pci_impl.h>
 
+#include <sys/promif.h>
+
 /*
  * Platform drivers on this platform
  */
@@ -61,16 +63,7 @@ pci_slot_names_prop(int bus __unused, char *buf __unused, int len __unused)
 void
 impl_late_hardware_probe(void)
 {
-	dev_info_t *dip;
-
-	for (dip = ddi_get_child(ddi_root_node());
-	    dip != NULL;
-	    dip = ddi_get_next_sibling(dip)) {
-		if (strcmp(ddi_node_name(dip), "fw") == 0) {
-			ndi_devi_online(dip, 0);
-			break;
-		}
-	}
+	/* XXXARM: kill this off */
 }
 
 /*
@@ -95,12 +88,7 @@ configure(void)
 	 */
 	i_ddi_init_root();
 
-	/*
-	 * XXXARM: if we're going to do GIC as a proper device, this is a good
-	 * place to do it.
-	 */
-
-	/* reprogram devices not set up by firmware (BIOS) */
+	/* reprogram devices not set up by firmware */
 	impl_bus_reprobe();
 
 #if XXXARM

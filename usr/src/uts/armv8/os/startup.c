@@ -91,6 +91,7 @@
 #include <sys/cpuinfo.h>
 #include <sys/prom_debug.h>
 #include <sys/bitext.h>
+#include <sys/smbios.h>
 
 extern void brand_init(void);
 extern void pcf_init(void);
@@ -1291,17 +1292,69 @@ startup_modules(void)
 	 */
 	setup_ddi();
 
+#if XXXARM
+	{
+		id_t smid;
+		smbios_system_t smsys;
+		smbios_info_t sminfo;
+		/*
+		 * Load the System Management BIOS into the global ksmbios
+		 * handle, if an SMBIOS is present on this system.
+		 * Also set "si-hw-provider" property, if not already set.
+		 */
+		ksmbios = smbios_open(NULL, SMB_VERSION, ksmbios_flags, NULL);
+		if (ksmbios != NULL &&
+		    ((smid = smbios_info_system(ksmbios, &smsys)) != SMB_ERR) &&
+		    (smbios_info_common(ksmbios, smid, &sminfo)) != SMB_ERR) {
+			char *mfg = (char *)sminfo.smbi_manufacturer;
+			if (BOP_GETPROPLEN(bootops, "si-hw-provider") < 0) {
+				extern char hw_provider[];
+				int i;
+				for (i = 0; i < SYS_NMLN; i++) {
+					if (isprint(mfg[i]))
+						hw_provider[i] = mfg[i];
+					else {
+						hw_provider[i] = '\0';
+						break;
+					}
+				}
+				hw_provider[SYS_NMLN - 1] = '\0';
+			}
+		}
+	}
+#endif
+
+#if XXXARM
 	/*
-	 * Set up the CPU module subsystem for the boot cpu in the native
-	 * case, and all physical cpu resource in the xpv dom0 case.
+	 * Initialize a handle for the boot cpu - others will initialize
+	 * as they startup.
+	 *
 	 * Modifies the device tree, so this must be done after
 	 * setup_ddi().
 	 */
+	if ((hdl = cmi_init(CMI_HDL_NATIVE, cmi_ntv_hwchipid(CPU),
+	    cmi_ntv_hwcoreid(CPU), cmi_ntv_hwstrandid(CPU))) != NULL) {
+#if XXXARM
+		/* XXXARM: would this be RAS? */
+		if (is_x86_feature(x86_featureset, X86FSET_MCA))
+			cmi_mca_init(hdl);
+#endif
+		CPU->cpu_m.mcpu_cmi_hdl = hdl;
+	}
+#endif
 	/*
 	 * Fake a prom tree such that /dev/openprom continues to work
 	 */
 	PRM_POINT("startup_modules: calling prom_setup...");
 	prom_setup();
+
+#if XXXARM
+	/*
+	 * Load all platform specific modules
+	 */
+	PRM_POINT("startup_modules: calling psm_modload...");
+	psm_modload();
+#endif
 
 	PRM_POINT("startup_modules() done");
 }

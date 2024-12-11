@@ -743,7 +743,20 @@ rootnex_ctl_reportdev(dev_info_t *dev)
 
 	for (i = 0; i < sparc_pd_getnreg(dev); i++) {
 
-		struct regspec *rp = sparc_pd_getreg(dev, i);
+		struct regspec *orp = sparc_pd_getreg(dev, i);
+		/*
+		 * XXXARM: the top nybble of regspec_bustype carries the type,
+		 * the remaining 28 bits are the high bytes of the regspec_addr.
+		 *
+		 * We really need to fully move to regspec64.
+		 */
+		struct regspec64 rp = {
+			.regspec_bustype = (orp->regspec_bustype >> 28) & 0xf,
+			.regspec_addr = ((
+			    (uint64_t)(orp->regspec_bustype &
+			    0x0fffffff)) << 32) | orp->regspec_addr,
+			.regspec_size = orp->regspec_size
+		};
 
 		if (i == 0)
 			f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
@@ -753,7 +766,7 @@ rootnex_ctl_reportdev(dev_info_t *dev)
 			    " and ");
 		len = strlen(buf);
 
-		switch (rp->regspec_bustype) {
+		switch (rp.regspec_bustype) {
 #if 0
 		case BTEISA:
 			f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
@@ -764,11 +777,10 @@ rootnex_ctl_reportdev(dev_info_t *dev)
 			    "%s 0x%x", DEVI_ISA_NEXNAME, rp->regspec_addr);
 			break;
 #endif
-
 		default:
 			f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
-			    "space %x offset %x",
-			    rp->regspec_bustype, rp->regspec_addr);
+			    "space %lx offset %lx",
+			    rp.regspec_bustype, rp.regspec_addr);
 			break;
 		}
 		len = strlen(buf);
@@ -872,8 +884,17 @@ rootnex_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp, off_t offset,
 	 * regspec64, rp.
 	 */
 	if (orp != NULL) {
-		rp.regspec_bustype = orp->regspec_bustype;
-		rp.regspec_addr = orp->regspec_addr;
+		/*
+		 * XXXARM: The top nybble of the regspec_bustype stores
+		 * the type. The rest is stolen for the high bits of the
+		 * regspec_addr.
+		 *
+		 * This is gross, and we need to move to regspec64.
+		 */
+		rp.regspec_bustype = (orp->regspec_bustype >> 28) & 0xf;
+		rp.regspec_addr =
+		    (((uint64_t)(orp->regspec_addr & 0x0fffffff)) << 32);
+		rp.regspec_addr |= orp->regspec_addr;
 		rp.regspec_size = orp->regspec_size;
 	} else {
 		struct regspec64 *rp64;

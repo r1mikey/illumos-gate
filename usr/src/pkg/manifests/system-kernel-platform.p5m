@@ -53,7 +53,9 @@ $(aarch64_ONLY)file path=platform/armv8/kernel/drv/$(ARCH64)/acpinex group=sys
 $(aarch64_ONLY)dir path=platform/armv8/kernel/drv/aarch64
 $(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/brcme88c
 $(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/gicv2
+$(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/gicv2m
 $(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/gicv3
+$(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/gicv3its
 $(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/ns16550a
 $(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/rootnex
 $(aarch64_ONLY)file path=platform/armv8/kernel/drv/aarch64/simple-bus
@@ -204,6 +206,12 @@ $(aarch64_ONLY)driver name=brcme88c perms="* 0666 root sys" \
 $(i386_ONLY)driver name=cpudrv alias=cpu
 $(i386_ONLY)driver name=domcaps perms="* 0444 root sys"
 $(i386_ONLY)driver name=evtchn perms="* 0666 root sys"
+$(aarch64_ONLY)driver name=gicv2 \
+    alias=arm,cortex-a15-gic \
+    alias=arm,gic-400
+$(aarch64_ONLY)driver name=gicv2m alias=arm,gic-v2m-frame
+$(aarch64_ONLY)driver name=gicv3 alias=arm,gic-v3
+$(aarch64_ONLY)driver name=gicv3its alias=arm,gic-v3-its
 $(i386_ONLY)driver name=isa class=sysbus alias=pciclass,060100
 $(i386_ONLY)driver name=npe alias=pciex_root_complex
 $(aarch64_ONLY)driver name=ns16550a \

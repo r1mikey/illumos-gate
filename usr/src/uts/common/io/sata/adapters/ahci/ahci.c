@@ -686,39 +686,43 @@ ahci_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 
 	attach_state |= AHCI_ATTACH_STATE_FMA;
 
-	/*
-	 * Now map the AHCI base address; which includes global
-	 * registers and port control registers
-	 *
-	 * According to the spec, the AHCI Base Address is BAR5,
-	 * but BAR0-BAR4 are optional, so we need to check which
-	 * rnumber is used for BAR5.
-	 */
+	if (ddi_is_pci_dip(dip)) {
+		/*
+		 * Now map the AHCI base address; which includes global
+		 * registers and port control registers
+		 *
+		 * According to the spec, the AHCI Base Address is BAR5,
+		 * but BAR0-BAR4 are optional, so we need to check which
+		 * rnumber is used for BAR5.
+		 */
 
-	/*
-	 * search through DDI "reg" property for the AHCI register set
-	 */
-	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip,
-	    DDI_PROP_DONTPASS, "reg", (int **)&regs,
-	    (uint_t *)&regs_length) != DDI_PROP_SUCCESS) {
-		cmn_err(CE_WARN, "!ahci%d: Cannot lookup reg property",
-		    instance);
-		goto err_out;
-	}
+		/*
+		 * search through DDI "reg" property for the AHCI register set
+		 */
+		if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip,
+		    DDI_PROP_DONTPASS, "reg", (int **)&regs,
+		    (uint_t *)&regs_length) != DDI_PROP_SUCCESS) {
+			cmn_err(CE_WARN, "!ahci%d: Cannot lookup reg property",
+			    instance);
+			goto err_out;
+		}
 
-	/* AHCI Base Address is located at 0x24 offset */
-	for (rnumber = 0; rnumber < regs_length; ++rnumber) {
-		if ((regs[rnumber].pci_phys_hi & PCI_REG_REG_M)
-		    == AHCI_PCI_RNUM)
-			break;
-	}
+		/* AHCI Base Address is located at 0x24 offset */
+		for (rnumber = 0; rnumber < regs_length; ++rnumber) {
+			if ((regs[rnumber].pci_phys_hi & PCI_REG_REG_M)
+			    == AHCI_PCI_RNUM)
+				break;
+		}
 
-	ddi_prop_free(regs);
+		ddi_prop_free(regs);
 
-	if (rnumber == regs_length) {
-		cmn_err(CE_WARN, "!ahci%d: Cannot find AHCI register set",
-		    instance);
-		goto err_out;
+		if (rnumber == regs_length) {
+			cmn_err(CE_WARN,
+			    "!ahci%d: Cannot find AHCI register set", instance);
+			goto err_out;
+		}
+	} else {
+		rnumber = 0;
 	}
 
 	AHCIDBG(AHCIDBG_INIT, ahci_ctlp, "rnumber = %d", rnumber);
@@ -880,11 +884,14 @@ ahci_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		    "hba supports asynchronous notification.", NULL);
 	}
 
-	if (pci_config_setup(dip, &ahci_ctlp->ahcictl_pci_conf_handle)
-	    != DDI_SUCCESS) {
-		cmn_err(CE_WARN, "!ahci%d: Cannot set up pci configure space",
-		    instance);
-		goto err_out;
+	if (ddi_is_pci_dip(dip)) {
+		if (pci_config_setup(dip, &ahci_ctlp->ahcictl_pci_conf_handle)
+		    != DDI_SUCCESS) {
+			cmn_err(CE_WARN,
+			    "!ahci%d: Cannot set up pci configure space",
+			    instance);
+			goto err_out;
+		}
 	}
 
 	attach_state |= AHCI_ATTACH_STATE_PCICFG_SETUP;
@@ -1107,7 +1114,10 @@ err_out:
 	}
 
 	if (attach_state & AHCI_ATTACH_STATE_PCICFG_SETUP) {
-		pci_config_teardown(&ahci_ctlp->ahcictl_pci_conf_handle);
+		if (ddi_is_pci_dip(dip)) {
+			pci_config_teardown(
+			    &ahci_ctlp->ahcictl_pci_conf_handle);
+		}
 	}
 
 	if (attach_state & AHCI_ATTACH_STATE_REG_MAP) {
@@ -1180,7 +1190,10 @@ ahci_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 		mutex_destroy(&ahci_ctlp->ahcictl_mutex);
 
 		/* teardown the pci config */
-		pci_config_teardown(&ahci_ctlp->ahcictl_pci_conf_handle);
+		if (ddi_is_pci_dip(dip)) {
+			pci_config_teardown(
+			    &ahci_ctlp->ahcictl_pci_conf_handle);
+		}
 
 		/* remove the reg maps. */
 		ddi_regs_map_free(&ahci_ctlp->ahcictl_ahci_acc_handle);
@@ -3483,8 +3496,9 @@ ahci_fm_init(ahci_ctl_t *ahci_ctlp)
 		 * Initialize pci ereport capabilities if ereport
 		 * capable (should always be.)
 		 */
-		if (DDI_FM_EREPORT_CAP(ahci_ctlp->ahcictl_fm_cap) ||
-		    DDI_FM_ERRCB_CAP(ahci_ctlp->ahcictl_fm_cap)) {
+		if ((DDI_FM_EREPORT_CAP(ahci_ctlp->ahcictl_fm_cap) ||
+		    DDI_FM_ERRCB_CAP(ahci_ctlp->ahcictl_fm_cap)) &&
+		    ddi_is_pci_dip(ahci_ctlp->ahcictl_dip)) {
 			pci_ereport_setup(ahci_ctlp->ahcictl_dip);
 		}
 
@@ -3519,8 +3533,9 @@ ahci_fm_fini(ahci_ctl_t *ahci_ctlp)
 		/*
 		 * Release any resources allocated by pci_ereport_setup()
 		 */
-		if (DDI_FM_EREPORT_CAP(ahci_ctlp->ahcictl_fm_cap) ||
-		    DDI_FM_ERRCB_CAP(ahci_ctlp->ahcictl_fm_cap)) {
+		if ((DDI_FM_EREPORT_CAP(ahci_ctlp->ahcictl_fm_cap) ||
+		    DDI_FM_ERRCB_CAP(ahci_ctlp->ahcictl_fm_cap)) &&
+		    ddi_is_pci_dip(ahci_ctlp->ahcictl_dip)) {
 			pci_ereport_teardown(ahci_ctlp->ahcictl_dip);
 		}
 
@@ -3547,7 +3562,8 @@ ahci_fm_error_cb(dev_info_t *dip, ddi_fm_error_t *err, const void *impl_data)
 	 * as the driver can always deal with an error in any dma or
 	 * access handle, we can just return the fme_status value.
 	 */
-	pci_ereport_post(dip, err, NULL);
+	if (ddi_is_pci_dip(dip))
+		pci_ereport_post(dip, err, NULL);
 	return (err->fme_status);
 }
 
@@ -3625,8 +3641,9 @@ ahci_check_all_handle(ahci_ctl_t *ahci_ctlp)
 static int
 ahci_check_ctl_handle(ahci_ctl_t *ahci_ctlp)
 {
-	if ((ahci_check_acc_handle(ahci_ctlp->
-	    ahcictl_pci_conf_handle) != DDI_FM_OK) ||
+	if ((ddi_is_pci_dip(ahci_ctlp->ahcictl_dip) &&
+	    (ahci_check_acc_handle(ahci_ctlp->
+	    ahcictl_pci_conf_handle) != DDI_FM_OK)) ||
 	    (ahci_check_acc_handle(ahci_ctlp->
 	    ahcictl_ahci_acc_handle) != DDI_FM_OK)) {
 		return (DDI_FAILURE);
@@ -4162,6 +4179,12 @@ ahci_config_space_init(ahci_ctl_t *ahci_ctlp)
 	ushort_t msimc;
 #endif
 	uint8_t revision;
+
+	if (!ddi_is_pci_dip(ahci_ctlp->ahcictl_dip)) {
+		ahci_ctlp->ahcictl_venid = 0;
+		ahci_ctlp->ahcictl_devid = 0;
+		return (AHCI_SUCCESS);
+	}
 
 	ahci_ctlp->ahcictl_venid =
 	    pci_config_get16(ahci_ctlp->ahcictl_pci_conf_handle,

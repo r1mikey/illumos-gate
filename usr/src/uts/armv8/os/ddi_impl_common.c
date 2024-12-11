@@ -62,7 +62,7 @@
  * Define IMPL_DDI_DUMP_DEVTREE_REPROBE to dump the device tree immediately
  * after the reprobe completes.
  */
-/* #define IMPL_DDI_DUMP_DEVTREE_REPROBE */
+/* #define	IMPL_DDI_DUMP_DEVTREE_REPROBE */
 
 /*
  * We use an AVL tree to store contiguous address allocations made with the
@@ -2593,6 +2593,9 @@ impl_bus_initialprobe(void)
 	pci_cfgspace_init();
 
 	/* load modules to install bus probes */
+	if (modload("misc", "pic_autoconfig") < 0)
+		panic("failed to load misc/pic_autoconfig");
+
 	if (modload("misc", "pci_autoconfig") < 0)
 		panic("failed to load misc/pci_autoconfig");
 

@@ -38,6 +38,7 @@ file path=platform/ARM,sbsa/kernel/misc/aarch64/pci_autoconfig mode=0755
 file path=platform/ARM,sbsa/kernel/misc/aarch64/pci_prd mode=0755
 file path=platform/ARM,sbsa/kernel/misc/aarch64/pcie mode=0755
 file path=platform/ARM,sbsa/kernel/misc/aarch64/pcihp mode=0755
+file path=platform/ARM,sbsa/kernel/misc/aarch64/pic_autoconfig mode=0755
 driver name=npe alias=pciex_root_complex
 driver name=pci class=pci
 license lic_CDDL license=lic_CDDL

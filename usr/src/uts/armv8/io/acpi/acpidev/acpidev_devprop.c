@@ -29,8 +29,6 @@
 #include <sys/acpidev_impl.h>
 #include <sys/uuid.h>
 
-#include <sys/promif.h>
-
 /*
  * Propagate ACPI Device Specific Data (_DSD) information to properties.
  */
@@ -96,25 +94,18 @@ acpidev_devprop_process_integer(acpidev_walk_info_t *infop,
 	ASSERT(name->Type == ACPI_TYPE_STRING);
 	ASSERT(val->Type == ACPI_TYPE_INTEGER);
 
-	prom_printf("acpidev_devprop_process_integer[%s]: starts\n", infop->awi_name);
-
 	key_name = adcpidev_dsd_key_name(infop, name->String.Pointer);
 	ASSERT(key_name != NULL);
 	dev = makedevice(DDI_MAJOR_T_UNKNOWN, ddi_get_instance(infop->awi_dip));
 
 	if (acpidev_devprop_downgrade_int_width(infop, name->String.Pointer)) {
 		uint32_t v;
-		prom_printf("acpidev_devprop_process_integer[%s]: downgrade int width for '%s'\n", infop->awi_name, name->String.Pointer);
-		prom_printf("acpidev_devprop_process_integer[%s]: adding integer '%s'\n", infop->awi_name, name->String.Pointer);
 		v = (uint32_t)val->Integer.Value;
 		rc = ndi_prop_update_int(dev, infop->awi_dip, key_name, v);
 	} else {
-		prom_printf("acpidev_devprop_process_integer[%s]: adding integer '%s'\n", infop->awi_name, name->String.Pointer);
 		rc = ndi_prop_update_int64(dev, infop->awi_dip, key_name,
 		    val->Integer.Value);
 	}
-
-	prom_printf("acpidev_devprop_process_integer[%s]: done with rc %d\n", infop->awi_name, rc);
 
 	if (rc != DDI_SUCCESS)
 		return (AE_ERROR);
@@ -327,17 +318,14 @@ acpidev_devprop_walker(acpidev_walk_info_t *infop, ACPI_OBJECT *dsd)
 	if (infop == NULL || dsd == NULL || dsd->Type != ACPI_TYPE_PACKAGE)
 		return (AE_BAD_PARAMETER);
 
-	prom_printf("acpidev_devprop_walker: start for %s\n", infop->awi_name);
 	/*
 	 * The _DSD is described as a package consisting of UUID/package pairs,
 	 * where the UUID describes the contents of the associated package.
 	 *
 	 * Therefore there must be an even number of entries.
 	 */
-	if ((dsd->Package.Count & 0x1) == 0x1) {
-		prom_printf("acpidev_devprop_walker[%s]: funky count %u\n", infop->awi_name, dsd->Package.Count);
+	if ((dsd->Package.Count & 0x1) == 0x1)
 		return (AE_BAD_DATA);
-	}
 
 	/*
 	 * Now we iterate through the UUID/package pairs under the _DSD, looking
@@ -347,16 +335,12 @@ acpidev_devprop_walker(acpidev_walk_info_t *infop, ACPI_OBJECT *dsd)
 		guid = &dsd->Package.Elements[i];
 
 		if (guid->Type != ACPI_TYPE_BUFFER ||
-		    guid->Buffer.Length != sizeof (devprops_uuid)) {
-			prom_printf("acpidev_devprop_walker[%s]: GUID is not a buffer\n", infop->awi_name);
+		    guid->Buffer.Length != sizeof (devprops_uuid))
 			continue;
-		}
 
 		if (memcmp(guid->Buffer.Pointer, &devprops_uuid,
-		    sizeof (devprops_uuid)) != 0) {
-			prom_printf("acpidev_devprop_walker[%s]: not our GUID\n", infop->awi_name);
+		    sizeof (devprops_uuid)) != 0)
 			continue;
-		}
 
 		/*
 		 * We have the entry for the device properties GUID, now check
@@ -365,12 +349,8 @@ acpidev_devprop_walker(acpidev_walk_info_t *infop, ACPI_OBJECT *dsd)
 		 */
 		dsd_pkg = &dsd->Package.Elements[i + 1];
 
-		if (dsd_pkg->Type != ACPI_TYPE_PACKAGE) {
-			prom_printf("acpidev_devprop_walker[%s]: _DSD payload is not a package\n", infop->awi_name);
+		if (dsd_pkg->Type != ACPI_TYPE_PACKAGE)
 			continue;
-		}
-
-		prom_printf("acpidev_devprop_walker[%s]: Got DSD device properties\n", infop->awi_name);
 
 		/*
 		 * Seems reasonable so far. Now we iterate through the package
@@ -384,27 +364,21 @@ acpidev_devprop_walker(acpidev_walk_info_t *infop, ACPI_OBJECT *dsd)
 
 			pkg = &dsd_pkg->Package.Elements[i];
 			if (pkg->Type != ACPI_TYPE_PACKAGE ||
-			    pkg->Package.Count != 2) {
-				prom_printf("acpidev_devprop_walker[%s]: element is not a package\n", infop->awi_name);
+			    pkg->Package.Count != 2)
 				continue;	/* XXXARM: warn? */
-			}
-			
+
 			name = &pkg->Package.Elements[0];
 			if (name->Type != ACPI_TYPE_STRING ||
-			    name->String.Length < 1) {
-				prom_printf("acpidev_devprop_walker[%s]: funky name '%s'\n", infop->awi_name, name->String.Pointer);
+			    name->String.Length < 1)
 				continue;	/* XXXARM: warn? */
-			}
 
 			val = &pkg->Package.Elements[1];
 			switch (val->Type) {
 			case ACPI_TYPE_INTEGER:
-				prom_printf("acpidev_devprop_walker[%s]: element is an integer\n", infop->awi_name);
 				acpidev_devprop_process_integer(
 				    infop, name, val);
 				break;
 			case ACPI_TYPE_STRING:
-				prom_printf("acpidev_devprop_walker[%s]: element is a string\n", infop->awi_name);
 				acpidev_devprop_process_string(
 				    infop, name, val);
 				break;
@@ -412,18 +386,15 @@ acpidev_devprop_walker(acpidev_walk_info_t *infop, ACPI_OBJECT *dsd)
 			 * We could handle reference objects here
 			 */
 			case ACPI_TYPE_PACKAGE:
-				prom_printf("acpidev_devprop_walker[%s]: element is a list\n", infop->awi_name);
 				acpidev_devprop_process_list(infop, name, val);
 				break;
 			default:
-				prom_printf("acpidev_devprop_walker[%s]: unhandled element type\n", infop->awi_name);
 				/* XXXARM: warn? */
 				break;
 			}
 		}
 	}
 
-	prom_printf("acpidev_devprop_walker: done for %s, rc is %d\n", infop->awi_name, rc);
 	return (rc);
 }
 
@@ -447,11 +418,9 @@ acpidev_devprop_walk(acpidev_walk_info_t *infop, ACPI_HANDLE hdl)
 		return (AE_BAD_PARAMETER);
 	}
 
-	prom_printf("acpidev_devprop_walk: entry for %s\n", infop->awi_name);
 	/* Check whether method exists under object. */
 	if (ACPI_FAILURE(AcpiGetHandle(hdl, METHOD_NAME__DSD, &mhdl))) {
 		char *objname = acpidev_get_object_name(hdl);
-		prom_printf("acpidev_devprop_walk: %s method doesn't exist under %s\n", METHOD_NAME__DSD, infop->awi_name);
 		ACPIDEV_DEBUG(CE_NOTE,
 		    "!acpidev: method %s doesn't exist under %s",
 		    METHOD_NAME__DSD, objname);
@@ -459,7 +428,6 @@ acpidev_devprop_walk(acpidev_walk_info_t *infop, ACPI_HANDLE hdl)
 		return (AE_NOT_FOUND);
 	}
 
-	prom_printf("acpidev_devprop_walk: call %s method for %s\n", METHOD_NAME__DSD, infop->awi_name);
 	dsd_buf.Length = ACPI_ALLOCATE_BUFFER;
 	dsd_buf.Pointer = NULL;
 	rc = AcpiEvaluateObjectTyped(hdl, METHOD_NAME__DSD, NULL,
@@ -469,13 +437,10 @@ acpidev_devprop_walk(acpidev_walk_info_t *infop, ACPI_HANDLE hdl)
 		AcpiOsFree(dsd_buf.Pointer);
 	} else {
 		char *objname = acpidev_get_object_name(hdl);
-		prom_printf("acpidev_devprop_walk: call %s method FAILED for %s\n", METHOD_NAME__DSD, infop->awi_name);
 		ACPIDEV_DEBUG(CE_WARN, "!acpidev: failed to walk resource from "
 		    "method %s under %s.", METHOD_NAME__DSD, objname);
 		acpidev_free_object_name(objname);
 	}
-
-	prom_printf("acpidev_devprop_walk: done for %s\n", infop->awi_name);
 
 	return (rc);
 }
@@ -487,31 +452,22 @@ acpidev_devprop_process_dsd(acpidev_walk_info_t *infop)
 	ACPI_NAMESPACE_NODE *nnode;
 	ACPI_STATUS st;
 
-	prom_printf("acpidev_devprop_process_dsd: starts...\n");
 	st = AcpiGetHandle(infop->awi_hdl, METHOD_NAME__DSD, &target);
-	if (st != AE_OK) {
-		prom_printf("No _DSD under %s\n", infop->awi_name);
+	if (st != AE_OK)
 		return (AE_OK);	/* no such child object */
-	}
-	prom_printf("acpidev_devprop_process_dsd: got _DSD handle\n");
 
-	if ((nnode = AcpiNsValidateHandle(target)) == NULL) {
-		prom_printf("AcpiNsValidateHandle gave us NULL\n");
+	if ((nnode = AcpiNsValidateHandle(target)) == NULL)
 		return (AE_ERROR);
-	}
-	prom_printf("acpidev_devprop_process_dsd: got namespace name node\n");
 
 	/*
-	 * Nobody else needs to do this, why do we?
+	 * Nobody else needs to do this, why do we? Everybody else just calls
+	 * it.
 	 */
 	if (nnode->Type == ACPI_TYPE_PACKAGE) {
-		/* simple case, it's package data */
-		prom_printf("Got a PACKAGE\n");
 		st = acpidev_devprop_walker(infop, target);
 	} else if (nnode->Type == ACPI_TYPE_METHOD) {
 		/* it's a method, which should return a package */
 		ACPI_BUFFER dsd;
-		prom_printf("Got a METHOD\n");
 
 		dsd.Length = ACPI_ALLOCATE_BUFFER;
 		dsd.Pointer = NULL;
@@ -521,11 +477,9 @@ acpidev_devprop_process_dsd(acpidev_walk_info_t *infop)
 			AcpiOsFree(dsd.Pointer);
 		}
 	} else {
-		prom_printf("AcpiNsValidateHandle neither METHOD nor PACKAGE\n");
 		return (AE_ERROR);
 	}
 
-	prom_printf("acpidev_devprop_process_dsd: done (%d)\n", st);
 	return (st);
 }
 
@@ -548,10 +502,8 @@ acpidev_devprop_process(acpidev_walk_info_t *infop)
 
 	/* Walk all resources. */
 	(void) ddi_pathname(infop->awi_dip, path);
-	prom_printf("acpidev_devprop_process: entered for %s (%s)\n", path, infop->awi_name);
 	rc = acpidev_devprop_process_dsd(infop);
 	if (ACPI_FAILURE(rc)) {
-		prom_printf("acpidev_devprop_process_dsd: failed for %s (%s)\n", path, infop->awi_name);
 		ACPIDEV_DEBUG(CE_WARN,
 		    "!acpidev: failed to walk ACPI device-specific "
 		    "data of %s(%s).", path, infop->awi_name);
