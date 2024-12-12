@@ -200,6 +200,10 @@ DRV_KMODS += simple-bus
 DRV_KMODS += rootnex
 DRV_KMODS += ns16550a
 DRV_KMODS += gicv2
+DRV_KMODS += gicv2m
 DRV_KMODS += gicv3
+DRV_KMODS += gicv3its
+
+MISC_KMODS += gic_autoconfig
 
 DACF_KMODS += consconfig_dacf

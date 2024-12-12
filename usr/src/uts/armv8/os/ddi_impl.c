@@ -3324,7 +3324,10 @@ impl_bus_initialprobe(void)
 {
 	struct bus_probe *probe;
 
-	modload("misc", "pci_autoconfig");
+	if (modload("misc", "gic_autoconfig") < 0)
+		panic("failed to load misc/gic_autoconfig");
+
+	(void) modload("misc", "pci_autoconfig");
 
 	probe = bus_probes;
 	while (probe) {

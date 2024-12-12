@@ -22,9 +22,14 @@
 #
 # Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2017 Hayashi Naoyuki
+# Copyright 2024 Michael van der Westhuizen
 #
 
 $(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/ns16550a/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/gic/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 

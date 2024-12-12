@@ -851,7 +851,9 @@ extern "C" {
 #define	GITS_TYPER_PTA				0x0000000000080000
 #define	GITS_TYPER_SEIS				0x0000000000040000
 #define	GITS_TYPER_Devbits			0x000000000003E000
+#define	GITS_TYPER_Devbits_SHIFT		13
 #define	GITS_TYPER_ID_bits			0x0000000000001F00
+#define	GITS_TYPER_ID_bits_SHIFT		8
 #define	GITS_TYPER_ITT_entry_size		0x00000000000000F0
 #define	GITS_TYPER_CCT				0x0000000000000004
 #define	GITS_TYPER_Virtual			0x0000000000000002
@@ -914,6 +916,21 @@ extern "C" {
 
 #define	GITS_PIDR2				0xffe8
 #define	GITS_PIDR2_ArchRev			0x000000F0
+
+/*
+ * GICv2 MSI Frame
+ *
+ * Not public, derived from NetBSD.
+ */
+#define	GV2M_TYPER				0x0008
+#define	GV2M_SETSPI				0x0040
+#define	GV2M_PIDR				0x0fe8
+#define	GV2M_IIDR				0x0ffc
+
+#define	GV2M_TYPER_BASE_SHIFT			16
+#define	GV2M_TYPER_BASE_MASK			0x3ff
+#define	GV2M_TYPER_NUMBER_SHIFT			0
+#define	GV2M_TYPER_NUMBER_MASK			0x3ff
 
 #ifdef __cplusplus
 }

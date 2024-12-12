@@ -74,7 +74,6 @@ typedef int (*gic_is_spurious_t)(uint32_t intid);
 
 typedef struct gic_ops {
 	gic_send_ipi_t		go_send_ipi;
-	gic_init_t		go_init;
 	gic_cpu_init_t		go_cpu_init;
 	gic_config_irq_t	go_config_irq;
 	gic_addspl_t		go_addspl;
