@@ -23,12 +23,9 @@
  * and compatible string, then creates a child node per that information,
  * allowing the kernel to attach the correct driver.
  *
- * The nexus does not copy resource information (registers and interrupts) to
- * the child node, as the interpretation of this information is
- * firmware-specific. Instead, the nexus implements the `bus_map' and
- * `bus_intr_op' operations by calling the nexus-parent with the nexus device
- * information pointer as the resource dip, allowing DDI to find the correct
- * resources.
+ * The nexus copies resource information (registers and interrupts) to the
+ * child node, allowing standard child initialsation code to configure the
+ * appropriate values.
  *
  * The nexus unconditionally sets the `virtio-is-mmio' property, instructing
  * the virtio library module to use the MMIO transport.
@@ -43,10 +40,6 @@
 #include "virtio.h"
 #include "virtio_impl.h"
 
-static int viommionex_ddi_map(dev_info_t *pdip, dev_info_t *dp,
-    ddi_map_req_t *mp, off_t offset, off_t len, caddr_t *addrp);
-static int viommionex_intr_op(dev_info_t *pdip, dev_info_t *rdip,
-    ddi_intr_op_t intr_op, ddi_intr_handle_impl_t *hdlp, void *result);
 static int viommionex_ctlops(dev_info_t *dip, dev_info_t *rdip,
     ddi_ctl_enum_t ctlop, void *arg, void *result);
 static int viommionex_attach(dev_info_t *dip, ddi_attach_cmd_t cmd);
@@ -57,7 +50,7 @@ static int viommionex_bus_unconfig(dev_info_t *parent, uint_t flags,
 
 static struct bus_ops viommionex_bus_ops = {
 	.busops_rev		= BUSO_REV,
-	.bus_map		= viommionex_ddi_map,
+	.bus_map		= i_ddi_bus_map,
 	.bus_get_intrspec	= NULL, /* obsolete */
 	.bus_add_intrspec	= NULL, /* obsolete */
 	.bus_remove_intrspec	= NULL, /* obsolete */
@@ -84,7 +77,7 @@ static struct bus_ops viommionex_bus_ops = {
 	.bus_fm_access_enter	= NULL,
 	.bus_fm_access_exit	= NULL,
 	.bus_power		= NULL,
-	.bus_intr_op		= viommionex_intr_op,
+	.bus_intr_op		= i_ddi_intr_ops,
 	.bus_hp_op		= NULL
 };
 
@@ -145,20 +138,6 @@ _info(struct modinfo *modinfop)
 /*
  * Nexus implementation
  */
-
-static int
-viommionex_ddi_map(dev_info_t *pdip, dev_info_t *dp __unused,
-    ddi_map_req_t *mp, off_t offset, off_t len, caddr_t *addrp)
-{
-	return (ddi_map(pdip, mp, offset, len, addrp));
-}
-
-static int
-viommionex_intr_op(dev_info_t *pdip, dev_info_t *rdip __unused,
-    ddi_intr_op_t intr_op, ddi_intr_handle_impl_t *hdlp, void *result)
-{
-	return (i_ddi_intr_ops(pdip, pdip, intr_op, hdlp, result));
-}
 
 static int
 viommionex_ctlops(dev_info_t *dip, dev_info_t *rdip, ddi_ctl_enum_t ctlop,
@@ -238,6 +217,17 @@ viommionex_probe_driver(dev_info_t *dip, char **driver, char **compat)
 	return (DDI_SUCCESS);
 }
 
+/*
+ * Probe the virtio node to figure out what type of device is present, then
+ * set up a bus child to attach to that device if we have configuration that
+ * indicates that we can attach a child.
+ *
+ * When we have the right configuration in place we set the `compatible'
+ * property for the child device node, then set the `virtio-is-mmio' property
+ * to configure the virtio framework. We then copy the `reg' and `interrupts'
+ * properties from this node to the child, allowing normal child initialisation
+ * to work as expected.
+ */
 static int
 viommionex_bus_config(dev_info_t *dip, uint_t flags,
     ddi_bus_config_op_t op, void *arg, dev_info_t **childp)
@@ -246,6 +236,8 @@ viommionex_bus_config(dev_info_t *dip, uint_t flags,
 	char		*driver;
 	char		*compat;
 	char		*compatible[1];
+	int		*prop;
+	uint_t		plen;
 
 	rdip = NULL;
 
@@ -261,7 +253,7 @@ viommionex_bus_config(dev_info_t *dip, uint_t flags,
 	ddi_prop_free(driver);
 
 	compatible[0] = (char *)compat;
-	if (ddi_prop_update_string_array(DDI_DEV_T_NONE, rdip,
+	if (ndi_prop_update_string_array(DDI_DEV_T_NONE, rdip,
 	    "compatible", compatible, 1) != DDI_PROP_SUCCESS) {
 		ddi_prop_free(compat);
 		(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
@@ -269,6 +261,46 @@ viommionex_bus_config(dev_info_t *dip, uint_t flags,
 		return (DDI_FAILURE);
 	}
 	ddi_prop_free(compat);
+
+	if (ndi_prop_update_int(DDI_DEV_T_NONE, rdip,
+	    VIRTIO_MMIO_PROPERTY_NAME, 1) != DDI_PROP_SUCCESS) {
+		dev_err(rdip, CE_WARN, "?failed to set the '%s' property",
+		    VIRTIO_MMIO_PROPERTY_NAME);
+		return (DDI_FAILURE);
+	}
+
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    OBP_REG, &prop, &plen) == DDI_PROP_SUCCESS) {
+		if (ndi_prop_update_int_array(DDI_DEV_T_NONE, rdip, OBP_REG,
+		    prop, plen) != DDI_PROP_SUCCESS) {
+			ddi_prop_free(prop);
+			(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
+			ndi_devi_exit(dip);
+			return (DDI_FAILURE);
+		}
+
+		ddi_prop_free(prop);
+	}
+
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    OBP_INTERRUPTS, &prop, &plen) == DDI_PROP_SUCCESS) {
+		if (ndi_prop_update_int_array(DDI_DEV_T_NONE, rdip,
+		    OBP_INTERRUPTS, prop, plen) != DDI_PROP_SUCCESS) {
+			ddi_prop_free(prop);
+			(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
+			ndi_devi_exit(dip);
+			return (DDI_FAILURE);
+		}
+
+		ddi_prop_free(prop);
+	}
+
+	if (e_ddi_prop_update_int(DDI_DEV_T_NONE, rdip, DDI_NO_AUTODETACH, 1)
+	    != DDI_PROP_SUCCESS) {
+		(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
+		ndi_devi_exit(dip);
+		return (DDI_FAILURE);
+	}
 
 	if (ndi_devi_bind_driver(rdip, 0) != NDI_SUCCESS) {
 		(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
@@ -293,15 +325,50 @@ viommionex_bus_unconfig(dev_info_t *parent, uint_t flags,
 	return (ndi_busop_bus_unconfig(parent, flags | NDI_UNCONFIG, op, arg));
 }
 
+/*
+ * At attach-time we set the virtio-is-mmio on this bus, which is needed
+ * because we'll later probe via the virtio framework when discovering the
+ * attached child device.
+ *
+ * We copy the `interrupt-parent', `#address-cells' and `#size-cells`
+ * properties from our parent, then set up an empty `ranges' property to
+ * indicate that this bus has an identity mapping to the parent bus.
+ */
 static int
 viommionex_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 {
-	if (ddi_prop_update_int(DDI_DEV_T_NONE, dip,
+	int pval;
+
+	if (ndi_prop_update_int(DDI_DEV_T_NONE, dip,
 	    VIRTIO_MMIO_PROPERTY_NAME, 1) != DDI_PROP_SUCCESS) {
 		dev_err(dip, CE_WARN, "?failed to set the '%s' property",
 		    VIRTIO_MMIO_PROPERTY_NAME);
 		return (DDI_FAILURE);
 	}
+
+	if ((pval = ddi_prop_get_int(DDI_DEV_T_ANY, ddi_get_parent(dip),
+	    DDI_PROP_DONTPASS, "interrupt-parent", -1)) != -1)
+		if (ndi_prop_update_int(DDI_DEV_T_NONE, dip,
+		    "interrupt-parent", pval) != DDI_SUCCESS)
+			return (DDI_FAILURE);
+
+	if ((pval = ddi_prop_get_int(DDI_DEV_T_ANY, ddi_get_parent(dip),
+	    DDI_PROP_DONTPASS, "#address-cells", -1)) != -1)
+		if (ndi_prop_update_int(DDI_DEV_T_NONE, dip,
+		    "#address-cells", pval) != DDI_SUCCESS)
+			return (DDI_FAILURE);
+
+	if ((pval = ddi_prop_get_int(DDI_DEV_T_ANY, ddi_get_parent(dip),
+	    DDI_PROP_DONTPASS, "#size-cells", -1)) != -1)
+		if (ndi_prop_update_int(DDI_DEV_T_NONE, dip,
+		    "#size-cells", pval) != DDI_SUCCESS)
+			return (DDI_FAILURE);
+
+	if (!ddi_prop_exists(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS, OBP_RANGES))
+		if (ddi_prop_create(DDI_DEV_T_NONE, dip,
+		    DDI_PROP_TYPE_ANY|DDI_PROP_CANSLEEP|DDI_PROP_HW_DEF,
+		    OBP_RANGES, NULL, 0) != DDI_PROP_SUCCESS)
+			return (DDI_FAILURE);
 
 	if (cmd == DDI_ATTACH)
 		ddi_report_dev(dip);

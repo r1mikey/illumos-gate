@@ -65,6 +65,10 @@
 #include <sys/lgrp.h>
 #include <sys/mach_intr.h>
 #include <vm/hat_aarch64.h>
+#include <sys/obpdefs.h>
+#include <sys/esunddi.h>
+#include <sys/gic.h>
+#include <sys/ddi_arch_intr.h>
 
 size_t dma_max_copybuf_size = 0x101000;		/* 1M + 4K */
 uint64_t ramdisk_start, ramdisk_end;
@@ -1227,16 +1231,416 @@ get_prop_int_array(dev_info_t *di, char *pname, int **pval, uint_t *plen)
 	return (ret);
 }
 
+
+/*
+ * §2.3.5 #address-cells and #size-cells
+ * §2.3.6 reg
+ */
+static void
+make_ddi_ppd_reg(dev_info_t *dip, struct ddi_parent_private_data *ppd)
+{
+	dev_info_t	*pdip;	/* parent */
+	uint32_t	*prop;	/* reg */
+	struct regspec	*data;	/* normalised data */
+	uint_t		plen;	/* length of reg in cells */
+	int		ac;	/* #address-cells */
+	int		sc;	/* #size-cells */
+	int		n;
+	int		i;
+	int		dlen;	/* length of normalised data */
+	uint64_t	addr;
+	uint64_t	size;
+
+	VERIFY3P(dip, !=, NULL);
+	pdip = (dip == ddi_root_node()) ? dip : ddi_get_parent(dip);
+	VERIFY3P(pdip, !=, NULL);
+
+	ac = ddi_prop_get_int(DDI_DEV_T_ANY, pdip,
+	    DDI_PROP_DONTPASS, "#address-cells", 2);
+	VERIFY3U(ac, >=, 1);
+	VERIFY3U(ac, <=, 2);	/* arbitrary restriction */
+
+	sc = ddi_prop_get_int(DDI_DEV_T_ANY, pdip,
+	    DDI_PROP_DONTPASS, "#size-cells", 1);
+	VERIFY3U(sc, >=, 0);
+	VERIFY3U(sc, <=, 2);	/* arbitrary restriction */
+
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    OBP_REG, (int **)&prop, &plen) != DDI_PROP_SUCCESS)
+		return;
+	if (plen == 0) {
+		if (prop != NULL)
+			ddi_prop_free(prop);
+		return;
+	}
+	VERIFY(plen % (ac + sc) == 0);
+
+	dlen = plen / (ac + sc);
+	data = kmem_zalloc(sizeof (struct regspec) * dlen, KM_SLEEP);
+
+	for (n = 0; n < dlen; ++n) {
+		addr = 0;
+		size = 0;
+
+		for (i = 0; i < ac; ++i) {
+			addr <<= 32;
+			addr |= prop[((ac + sc) * n) + i];
+		}
+
+		for (i = 0; i < sc; ++i) {
+			size <<= 32;
+			size |= prop[((ac + sc) * n) + ac + i];
+		}
+
+		VERIFY((addr & 0x00fffffffffffffful) == addr);
+		VERIFY((size & 0x00000000fffffffful) == size);
+
+		REGSPEC_SET_BUSTYPE(&data[n], 0);
+		REGSPEC_SET_ADDR(&data[n], addr);
+		REGSPEC_SET_SIZE(&data[n], size);
+	}
+
+	ddi_prop_free(prop);
+
+	ppd->par_reg = data;
+	ppd->par_nreg = dlen;
+}
+
+/*
+ * §2.3.8 ranges
+ *
+ * PCI-like devices do bus mapping that has #address-cells set to 0x3, where
+ * the first cell contains a bitfield of memory attributes, a space identifier,
+ * bus, device and function identifiers and register number.
+ *
+ * The generic code will shift this extra cell off the end of the address,
+ * which is dersirable in the generic case.
+ *
+ * XXXARM: Should we widen out regspec for aarch64, which would make space
+ * for this (useful) extra data?
+ */
+static void
+make_ddi_ppd_rng(dev_info_t *dip, struct ddi_parent_private_data *ppd)
+{
+	dev_info_t		*pdip;
+	uint32_t		*prop;	/* ranges */
+	uint_t			plen;	/* length of ranges in cells */
+	struct rangespec	*data;	/* normalised data */
+	int			cac;	/* child #address-cells */
+	int			pac;	/* parent #address-cells */
+	int			csc;	/* child #size-cells */
+	int			dlen;	/* length of normalised data */
+	int			n;
+	int			i;
+	uint64_t		caddr;
+	uint64_t		paddr;
+	uint64_t		size;
+
+	VERIFY3P(dip, !=, NULL);
+	if (dip == ddi_root_node())
+		return;	/* ranges on the root node make no sense */
+	pdip = ddi_get_parent(dip);
+	VERIFY3P(pdip, !=, NULL);
+
+	pac = ddi_prop_get_int(DDI_DEV_T_ANY, pdip,
+	    DDI_PROP_DONTPASS, "#address-cells", 2);
+	VERIFY3U(pac, >=, 1);
+	VERIFY3U(pac, <=, 3);	/* arbitrary restriction */
+
+	cac = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
+	    DDI_PROP_DONTPASS, "#address-cells", 2);
+	VERIFY3U(cac, >=, 1);
+	VERIFY3U(cac, <=, 3);	/* arbitrary restriction */
+
+	csc = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
+	    DDI_PROP_DONTPASS, "#size-cells", 1);
+	VERIFY3U(csc, >, 0);	/* length is expressed in child-space */
+	VERIFY3U(csc, <=, 2);	/* arbitrary restriction */
+
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    OBP_RANGES, (int **)&prop, &plen) != DDI_PROP_SUCCESS)
+		return;
+	if (plen == 0) {
+		if (prop != NULL)
+			ddi_prop_free(prop);
+		return;
+	}
+	VERIFY(plen % (cac + pac + csc) == 0);
+
+	dlen = plen / (cac + pac + csc);
+	data = kmem_zalloc(sizeof (struct rangespec) * dlen, KM_SLEEP);
+
+	for (n = 0; n < dlen; ++n) {
+		caddr = 0;
+		paddr = 0;
+		size = 0;
+
+		for (i = 0; i < cac; ++i) {
+			caddr <<= 32;
+			caddr |= prop[((cac + pac + csc) * n) + i];
+		}
+
+		for (i = 0; i < pac; ++i) {
+			paddr <<= 32;
+			paddr |= prop[((cac + pac + csc) * n) + cac + i];
+		}
+
+		for (i = 0; i < csc; ++i) {
+			size <<= 32;
+			size |= prop[((cac + pac + csc) * n) + cac + pac + i];
+		}
+
+		VERIFY3U((caddr & 0x00fffffffffffffful), ==, caddr);
+		VERIFY3U((paddr & 0x00fffffffffffffful), ==, paddr);
+		VERIFY3U((size & 0x00000000fffffffful), ==, size);
+
+		RANGESPEC_SET_CHILD_BUSTYPE(&data[n], 0);
+		RANGESPEC_SET_CHILD_OFFSET(&data[n], caddr);
+		RANGESPEC_SET_BUSTYPE(&data[n], 0);
+		RANGESPEC_SET_OFFSET(&data[n], paddr);
+		RANGESPEC_SET_SIZE(&data[n], size);
+	}
+
+	ddi_prop_free(prop);
+
+	ppd->par_rng = data;
+	ppd->par_nrng = dlen;
+}
+
+/*
+ * §2.4 Interrupts and Interrupt Mapping
+ */
+static dev_info_t *
+find_interrupt_parent(dev_info_t *dip)
+{
+	pnode_t pnode;
+
+	/*
+	 * Look for the interrupt-parent property on this node.
+	 *
+	 * The spec states that If none exists then the interrupt parent is
+	 * assumed to be the device tree parent, but the reality seems to be
+	 * that we should search upwards for a node with an interrupt parent
+	 * and use that value.
+	 */
+	if ((pnode = ddi_prop_get_int(DDI_DEV_T_ANY, dip, 0,
+	    "interrupt-parent", OBP_BADNODE)) == OBP_BADNODE) {
+		dev_err(dip, CE_NOTE,
+		    "No interrupt parent found, using root node.");
+		return (ddi_root_node());
+	}
+
+	/*
+	 * We have an interrupt-parent, resolve it and return it.
+	 */
+	return (e_ddi_nodeid_to_dip(pnode));
+}
+
+dev_info_t *
+i_ddi_interrupt_parent(dev_info_t *dip)
+{
+	return (find_interrupt_parent(dip));
+}
+
+/*
+ * Interruots in general, and interrupt mapping in particular, need quite a
+ * lot of work. What we have here has a stab at respecting the devicetree
+ * spec in terms of interrupt-parent, but ignores mapping and related
+ * transformations.
+ */
+static void
+make_ddi_ppd_intr(dev_info_t *dip, struct ddi_parent_private_data *ppd)
+{
+	dev_info_t	*intr_parent;	/* interrupt-parent */
+	int		icells;		/* #interrupt-cells */
+	uint32_t	*prop;		/* interrupts */
+	uint_t		plen;		/* length of interrupts in cells */
+	uint32_t	*prio;		/* interrupt-priorities */
+	uint_t		nprio;		/* cell-length interrupt-priorities */
+	struct intrspec	*data;		/* normalised data */
+	int		*icfg;		/* normalised interrupt configuration */
+	int		dlen;		/* length of normalised data and icfg */
+	int		n;
+	int		flag;
+
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    OBP_INTERRUPTS, (int **)&prop, &plen) != DDI_PROP_SUCCESS)
+		return;
+	if (plen == 0) {
+		if (prop != NULL)
+			ddi_prop_free(prop);
+		return;
+	}
+
+	intr_parent = find_interrupt_parent(dip);
+	VERIFY3P(intr_parent, !=, NULL);
+
+	/*
+	 * Get #interrupt-cells from the interrupt parent and use that to decode
+	 * the interrupt.
+	 *
+	 * In the case of devicetree, given that we only deal with a GIC, we
+	 * can assume that a value of 3 indicates that we're running under
+	 * FDT. A value of 1 (which we default to) indicates no translation,
+	 * so this would just be a vector number.
+	 *
+	 * In the devicetree case we do some light data transformation to turn
+	 * the devicetree data into an INTID (flat interrupt space), which is
+	 * the vector information needed by the GIC (and is the equivalent to
+	 * the GSIV in ACPI - Global System Interrupt Vector).
+	 *
+	 * While we're here, let's pick up the interrupt configuration as well.
+	 * In the devicetree case this just needs to be decoded, but in the
+	 * ACPI case we'll need to look at another, illumos/ACPI-specific
+	 * property which will need to be populated by acpidev. Thio is a
+	 * future-me problem.
+	 */
+
+	icells = ddi_prop_get_int(DDI_DEV_T_ANY, intr_parent,
+	    DDI_PROP_DONTPASS, "#interrupt-cells", 1);
+	VERIFY(icells == 1 || icells >= 3);
+	VERIFY(plen % icells == 0);
+	dlen = plen / icells;
+
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "interrupt-priorities",
+	    (int **)&prio, &nprio) != DDI_PROP_SUCCESS) {
+		prio = NULL;
+		nprio = 0;
+	}
+	if (nprio == 0) {
+		if (prio != NULL)
+			ddi_prop_free(prio);
+		prio = NULL;
+	} else if (nprio != dlen) {
+		dev_err(dip, CE_CONT, "?Incorrect number of interrupt "
+		    "priorities (got %u, expected %u). Will use defaults.\n",
+		    nprio, dlen);
+		if (prio != NULL)
+			ddi_prop_free(prio);
+		prio = NULL;
+		nprio = 0;
+	}
+
+	data = kmem_zalloc(sizeof (struct intrspec) * dlen, KM_SLEEP);
+	icfg = kmem_zalloc(sizeof (int) * dlen, KM_SLEEP);
+
+	for (n = 0; n < dlen; ++n) {
+		flag = 0;
+
+		if (icells == 1) {
+			data[n].intrspec_vec = prop[n];
+			/*
+			 * XXXARM: In the ACPI port we'll populate another
+			 * property, illumos,interrupt-config - this will encode
+			 * the configurations set by the DSDT and allow us to
+			 * look up the configuration here without introducing
+			 * a dependency on ACPICA.
+			 *
+			 * For now, just leave the config unspecified.
+			 */
+			flag = 0;
+		} else {	/* icells is >= 3, GIC config */
+			data[n].intrspec_vec = GIC_VEC_TO_IRQ(
+			    prop[(icells * n) + 0], prop[(icells * n) + 1]);
+
+			/*
+			 * 1: low-to-high edge triggered
+			 * 2: high-to-low edge triggered
+			 */
+			switch (prop[(icells * n) + 2] & 0x3) {
+			case 1:	/* fallthrough */
+			case 2:
+				flag |= DDI_INTR_FLAG_EDGE;
+				break;
+			default:
+				break;
+			}
+
+			/*
+			 * 4: active high level-sensitive
+			 * 8: active low level-sensitive
+			 */
+			switch (prop[(icells * n) + 2] & 0xc) {
+			case 4:	/* fallthrough */
+			case 8:
+				flag |= DDI_INTR_FLAG_LEVEL;
+				break;
+			default:
+				break;
+			}
+
+			/*
+			 * If we have bad flags we clear them so that the root
+			 * nexus will leave the configuration as-is. Hopefully
+			 * this is enough to get us booted far enough to
+			 * diagnose the problem.
+			 */
+			if ((flag & (DDI_INTR_FLAG_EDGE|DDI_INTR_FLAG_LEVEL)) ==
+			    (DDI_INTR_FLAG_EDGE|DDI_INTR_FLAG_LEVEL) ||
+			    (flag & (DDI_INTR_FLAG_EDGE|DDI_INTR_FLAG_LEVEL))
+			    == 0) {
+				dev_err(dip, CE_CONT,
+				    "?Interrupt configuration contains "
+				    "both level and edge.\n");
+				flag &=
+				    ~(DDI_INTR_FLAG_EDGE|DDI_INTR_FLAG_LEVEL);
+			}
+		}
+
+		if (prio != NULL) {
+			if (prio[n] < DDI_INTR_PRI_MIN)
+				data[n].intrspec_pri = DDI_INTR_PRI_MIN;
+			else if (prio[n] > DDI_INTR_PRI_MAX)
+				data[n].intrspec_pri = DDI_INTR_PRI_MAX;
+			else
+				data[n].intrspec_pri = prio[n];
+		} else {
+			data[n].intrspec_pri = 5;
+		}
+
+		icfg[n] = flag;
+	}
+
+	if (prio != NULL)
+		ddi_prop_free(prio);
+	ddi_prop_free(prop);
+
+	ppd->par_intr = data;
+	ppd->par_nintr = dlen;
+
+	((struct ddi_arch_parent_private_data *)ppd)->par_icfg = icfg;
+}
+
+void
+make_ddi_ppd(dev_info_t *child, struct ddi_parent_private_data **ppd)
+{
+	struct ddi_arch_parent_private_data *pdptr;
+	int n, i;
+	int *reg_prop, *rng_prop, *intr_prop, *irupts_prop;
+	uint_t reg_len, rng_len, intr_len, irupts_len;
+
+	pdptr = kmem_zalloc(sizeof (*pdptr), KM_SLEEP);
+	*ppd = (struct ddi_parent_private_data *)pdptr;
+	make_ddi_ppd_reg(child, *ppd);
+	make_ddi_ppd_rng(child, *ppd);
+	make_ddi_ppd_intr(child, *ppd);
+}
+
 static int
 impl_sunbus_name_child(dev_info_t *child, char *name, int namelen)
 {
-	name[0] = '\0';
+	/*
+	 * Fill in parent-private data and this function returns to us
+	 * an indication if it used "registers" to fill in the data.
+	 */
 	if (ddi_get_parent_data(child) == NULL) {
-		struct ddi_parent_private_data *pdptr =
-		    kmem_zalloc(sizeof (*pdptr), KM_SLEEP);
+		struct ddi_parent_private_data *pdptr;
+		make_ddi_ppd(child, &pdptr);
 		ddi_set_parent_data(child, pdptr);
 	}
 
+	name[0] = '\0';
 	pnode_t node = ddi_get_nodeid(child);
 	if (node > 0) {
 		char buf[MAXNAMELEN] = {0};
@@ -1272,21 +1676,26 @@ void
 impl_free_ddi_ppd(dev_info_t *dip)
 {
 	struct ddi_parent_private_data *pdptr;
+	struct ddi_arch_parent_private_data *ppd;
 	size_t n;
 
 	if ((pdptr = ddi_get_parent_data(dip)) == NULL)
 		return;
 
-	if ((n = (size_t)pdptr->par_nintr) != 0)
+	ppd = (struct ddi_arch_parent_private_data *)pdptr;
+
+	if ((n = (size_t)pdptr->par_nintr) != 0) {
 		kmem_free(pdptr->par_intr, n * sizeof (struct intrspec));
+		kmem_free(ppd->par_icfg, n * sizeof (int));
+	}
 
 	if ((n = (size_t)pdptr->par_nrng) != 0)
-		ddi_prop_free((void *)pdptr->par_rng);
+		kmem_free(pdptr->par_rng, n * sizeof (struct rangespec));
 
 	if ((n = pdptr->par_nreg) != 0)
-		ddi_prop_free((void *)pdptr->par_reg);
+		kmem_free(pdptr->par_reg, sizeof (struct regspec) * n);
 
-	kmem_free(pdptr, sizeof (*pdptr));
+	kmem_free(pdptr, sizeof (*ppd));
 	ddi_set_parent_data(dip, NULL);
 }
 
@@ -1455,8 +1864,88 @@ void
 impl_setup_ddi(void)
 {
 	dev_info_t *xdip, *isa_dip;
+	extern dev_info_t *top_devinfo;
 	rd_existing_t rd_mem_prop;
 	int err;
+	pnode_t rpn;
+
+	ASSERT3P(top_devinfo, !=, NULL);
+
+	/*
+	 * The root node misses out on properties set on the FDT root, copy
+	 * those we care about now.
+	 *
+	 * XXXARM: If we attached the FDT at /fw this would not be a problem,
+	 * but that would introduce other complexities, so while this is a bit
+	 * distasteful it's the cleanest path forward.
+	 */
+	if ((rpn = prom_rootnode()) != OBP_NONODE) {
+		if (prom_node_has_property(rpn, "interrupt-parent")) {
+			if ((err = prom_get_prop_int(rpn,
+			    "interrupt-parent", -1)) != -1) {
+				if (ndi_prop_update_int(DDI_DEV_T_NONE,
+				    top_devinfo, "interrupt-parent",
+				    err) != DDI_PROP_SUCCESS) {
+					dev_err(top_devinfo, CE_NOTE,
+					    "Failed to set interrupt-parent.");
+				}
+			}
+		}
+
+		if (prom_node_has_property(rpn, "#interrupt-cells")) {
+			if ((err = prom_get_prop_int(rpn,
+			    "#interrupt-cells", -1)) != -1) {
+				if (ndi_prop_update_int(DDI_DEV_T_NONE,
+				    top_devinfo, "#interrupt-cells",
+				    err) != DDI_PROP_SUCCESS) {
+					dev_err(top_devinfo, CE_NOTE,
+					    "Failed to set #interrupt-cells.");
+				}
+			}
+		}
+
+		if (prom_node_has_property(rpn, "#address-cells")) {
+			if ((err = prom_get_prop_int(rpn,
+			    "#address-cells", -1)) != -1) {
+				if (ndi_prop_update_int(DDI_DEV_T_NONE,
+				    top_devinfo, "#address-cells",
+				    err) != DDI_PROP_SUCCESS) {
+					dev_err(top_devinfo, CE_NOTE,
+					    "Failed to set #address-cells.");
+				}
+			}
+		}
+
+		if (prom_node_has_property(rpn, "#size-cells")) {
+			if ((err = prom_get_prop_int(rpn,
+			    "#size-cells", -1)) != -1) {
+				if (ndi_prop_update_int(DDI_DEV_T_NONE,
+				    top_devinfo, "#size-cells",
+				    err) != DDI_PROP_SUCCESS) {
+					dev_err(top_devinfo, CE_NOTE,
+					    "Failed to set #size-cells.");
+				}
+			}
+		}
+
+		if (prom_node_has_property(rpn, "dma-coherent")) {
+			if (!ddi_prop_exists(DDI_DEV_T_ANY, top_devinfo,
+			    DDI_PROP_DONTPASS, "dma-coherent")) {
+				if (ddi_prop_create(DDI_DEV_T_NONE, top_devinfo,
+				    DDI_PROP_TYPE_ANY|DDI_PROP_CANSLEEP|
+				    DDI_PROP_HW_DEF, "dma-coherent",
+				    NULL, 0) != DDI_PROP_SUCCESS) {
+					dev_err(top_devinfo, CE_NOTE,
+					    "Failed to set dma-coherent.");
+				}
+			}
+		}
+
+		/*
+		 * The ranges property is meaningless on the root node, since
+		 * it pulls in parent information, and there is no parent.
+		 */
+	}
 
 	ndi_devi_alloc_sleep(
 	    ddi_root_node(), "ramdisk", (pnode_t)DEVI_SID_NODEID, &xdip);
