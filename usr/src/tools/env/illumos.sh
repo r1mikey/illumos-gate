@@ -67,8 +67,8 @@ export CODEMGR_WS="${CODEMGR_WS:-`git rev-parse --show-toplevel`}"
 # used by Makefiles to guard options.
 #
 # for example:
-# export PRIMARY_CC=gcc4,/opt/gcc/4.4.4/bin/gcc,gnu
-# export PRIMARY_CCC=gcc4,/opt/gcc/4.4.4/bin/g++,gnu
+# export PRIMARY_CC=gcc10,/opt/gcc-10/bin/gcc,gnu
+# export PRIMARY_CCC=gcc10,/opt/gcc-10/bin/g++,gnu
 # export SHADOW_CCS=studio12,/opt/SUNWspro/bin/cc,sun
 # export SHADOW_CCCS=studio12,/opt/SUNWspro/bin/CC,sun
 #
@@ -80,14 +80,14 @@ export CODEMGR_WS="${CODEMGR_WS:-`git rev-parse --show-toplevel`}"
 export i386_GNUC_ROOT=/usr/gcc/10
 export i386_PRIMARY_CC=gcc10,$i386_GNUC_ROOT/bin/gcc,gnu
 export i386_PRIMARY_CCC=gcc10,$i386_GNUC_ROOT/bin/g++,gnu
-export i386_SHADOW_CCS=gcc7,/usr/gcc/7/bin/gcc,gnu
-export i386_SHADOW_CCCS=gcc7,/usr/gcc/7/bin/g++,gnu
+export i386_SHADOW_CCS=gcc14,/usr/gcc/14/bin/gcc,gnu
+export i386_SHADOW_CCCS=gcc14,/usr/gcc/14/bin/g++,gnu
 
 export aarch64_GNUC_ROOT=/usr/gcc/10
 export aarch64_PRIMARY_CC=gcc10,$aarch64_GNUC_ROOT/bin/gcc,gnu
 export aarch64_PRIMARY_CCC=gcc10,$aarch64_GNUC_ROOT/bin/g++,gnu
-export aarch64_SHADOW_CCS=gcc7,/usr/gcc/7/bin/gcc,gnu
-export aarch64_SHADOW_CCCS=gcc7,/usr/gcc/7/bin/g++,gnu
+export aarch64_SHADOW_CCS=gcc14,/usr/gcc/14/bin/gcc,gnu
+export aarch64_SHADOW_CCCS=gcc14,/usr/gcc/14/bin/g++,gnu
 
 # comment to disable smatch
 export ENABLE_SMATCH=1

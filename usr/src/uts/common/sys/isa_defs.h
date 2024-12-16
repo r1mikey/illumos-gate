@@ -99,6 +99,9 @@
  *	instruction as defined by Intel.  (Intel allows other vendors
  *	to extend the instruction for their own purposes.)
  *
+ * _CACHE_LINE_SHIFT
+ * _CACHE_LINE_SIZE
+ *	Compile time maximum cache line size for an architecture.
  *
  * Implementation Choices:
  *
@@ -269,6 +272,8 @@ extern "C" {
 #define	_MAX_ALIGNMENT			16
 #define	_ALIGNMENT_REQUIRED		1
 #define	_MAX_ALIGNMENT_TYPE		long double
+#define	_CACHE_LINE_SHIFT		6
+#define	_CACHE_LINE_SIZE		(1 << _CACHE_LINE_SHIFT)
 
 /*
  * Different alignment constraints for the i386 ABI in compatibility mode
@@ -336,6 +341,8 @@ extern "C" {
 #define	_MAX_ALIGNMENT			4
 #define	_ALIGNMENT_REQUIRED		0
 #define	_MAX_ALIGNMENT_TYPE		long
+#define	_CACHE_LINE_SHIFT		6
+#define	_CACHE_LINE_SIZE		(1 << _CACHE_LINE_SHIFT)
 
 #define	_LONG_LONG_ALIGNMENT_32		_LONG_LONG_ALIGNMENT
 
@@ -529,6 +536,9 @@ extern "C" {
 #define	_MAX_ALIGNMENT			16
 #define	_ALIGNMENT_REQUIRED		1
 #define	_MAX_ALIGNMENT_TYPE		long double
+
+#define	_CACHE_LINE_SHIFT		7
+#define	_CACHE_LINE_SIZE		(1 << _CACHE_LINE_SHIFT)
 
 #define	_LONG_LONG_ALIGNMENT_32		_LONG_LONG_ALIGNMENT
 
