@@ -30,8 +30,8 @@ Interrupt:: The general concept of a device alerting the CPU that it needs servi
 
 Vector::
   The identifying aspect of an interrupt at the current layer of the
-  device tree.  The first interrupt on device A maybe has vector 8 on the bridge A
-  it is connected to, and vector 73 at the interrupt controller.  The system
+  device tree.  the first interrupt on device A maybe have vector 8 on the bridge A
+  is connected to, and vector 73 at the interrupt controller.  The system
   assumes at times that this is representable as a single 32bit value.
 
 Interrupt Domain::
@@ -56,7 +56,7 @@ Nexus::
 Root Nexus::
   The nexus driver at the root of the device tree, the `rootnex` driver.  The
   tree node is conventionally named for the hardware platform. **i86pc**,
-  **Oxide,Gimlet**, **SUNW,Sun-Fire-T200**, **RaspberryPi,4** etc.  Note that
+  **Oxide,Gimlet**, **SUNW,Sun-Fire-T200**, **RaspberryPi,4** etc.  Note thhat
   the root nexus is only the root of the device tree _it may not be the root
   of the interrupt hierarchy_.
 
@@ -67,7 +67,7 @@ Device Tree::
   <<devicetree-org, Devicetree>> specification , which it superficially
   resembles due to their shared ancestry in <<1275-ofw, 1275 OpenFirmware>>.
 
-== State of the World and its History
+== State Of The World
 
 There are two interrupt frameworks in the DDI, one of them obsolete and based
 on <<struct-intrspec, `struct intrspec`>> which survives, at all levels of the
@@ -81,65 +81,33 @@ evolutions that were at the time thought distinct.  There are also
 evolutionary predecessors of DDI2 that were added to DDI1 and then obsoleted
 by the introduction of DDI2.  These are not described.
 
-NOTE: A lot of this history is reconstructed from what evidence remains.
-We've done our best.
-
 In the beginning there is Motorola 68000, and following that there is SPARC.
 Up until the late 90's interrupt hardware on these platforms was fully in
 Sun's control and it, by design, followed the device tree without a separate
 interrupt hierarchy.  In the late 90's Sun wanted to use off-the-shelf
 hardware for stuff like USB, and with that came interrupt hardware that does
-not follow the device tree.  Sun used the OpenFirmware additions originally
-from IBM/Apple/Motorola for PowerPC hardware to support this.  In the early
-2000's MSI/X become critical, and DDI2 is implemented.  By this time, Intel is
-a first-class platform.
+not follow the device tree.  The OpenFirmware additions originally from
+IBM/Apple/Motorola for PowerPC hardware are taken and implemented to support
+this.  In the early 2000's MSI/X become critical, and DDI2 is implemented.  At
+this time, Intel is a first-class platform.
 
-Along side these platforms appears Intel, in the early 1990s. It presents a
-number of problems.
+Along side these platforms is Intel.  On the Intel side the PSM
+interfaces were defined (in uncertain order), and appear among what appear to
+be a burst of PSARC cases relating to x86 coming to life.  Filesystem support,
+the x86 DDI, the booting system, and the filesystem all appear in a single
+block of cases here.  Nothing survives to tell us why the DDI1 interface was a
+bad match for these systems but we already can guess -- the same reason it was
+a bad match for late-90's and early-2000's SPARC.  "Weird" interrupt
+hierarchies, cascaded controllers, etc.
 
-. The interrupt hierarchy is nothing like the device hierarchy
-. There are a variety of low-level hardware implementations of multi-processor
-  support, which does not officially yet exist from Intel.  These necessarily
-  include different interrupt implementations, CPU interfaces, etc. 
-
-[sidebar]
-.The _Kernel Binary Interface_ (KBI)
---
-At this time (the early 90's) it became apparent that shipping a `unix` binary
-per platform was unwieldy (on SPARC), especially for providing binary software
-patches.  On the Intel platform it is even more unweildy because as mentioned
-before, multi-processor support at this time was machine specific at deeply
-low levels.  Each such machine would require its own `unix` like SPARC, but
-that makes it nearly impossible for 3rd parties to support their own machine.
-
-The solution was several projects under the umbrella of a Kernel Binary
-Interface project, which attempted to restructure the kernel to solve these
-(and other) problems.  It did a lot, but was never fully completed.
---
-
-The implementation for Intel added the concept of a _Platform Support Module_
-(PSM) which appears among what appear to be a burst of PSARC cases relating to
-x86 coming to life.  Filesystem support, the x86 DDI, the booting system, and
-the filesystem all appear in a single block of cases here.  Nothing survives
-to tell us why they thought the DDI1 interrupt interfaces were a bad match for
-these systems but we can guess -- the same reasons it was a bad match for
-late-90's and early-2000's SPARC.  "Weird" interrupt hierarchies, cascaded
-controllers, etc., with the additional problem in the larger platform of the
-entirely different multi-processor implementations.  The PSM is added as a
-temporary solution until KBI solves the problem.  KBI didn't solve the
-problem.  The PSM interface goes from temporary to carefully versioned
-architecture over the next handful of years.
-
-Now, perhaps as something of a surprise is PowerPC.  Sun briefly added support
-for PReP-based PowerPC systems, and by chance some of <<psarc-ppc, this case>>
-is available to us.  They describe wanting to use the PSM-style interfaces for
-simplicity, because the "real" KBI is far away, and because of the hardware
-similarity (this is presumed to be, again, the "weird" interrupt hierarchy and
-cascading, only this time with OpenPIC.  I can't think of what other
-similarity there could possibly be).  They were also waiting -- with the
-benefit of hindsight -- for CHRP, in which 1275 OpenFirmware was finally
-implemented.  PowerPC support didn't last long enough to see any future
-relevant interrupt changes.
+Along side _that_ platform is, by surprise, PowerPC.  Sun briefly added
+support for PReP-based PowerPC systems, and by chance some of <<psarc-ppc,
+this case>> is available to us.  They describe wanting to use the PSM-style
+interfaces for simplicity, because the "real" KBI is far away (this never, in
+fact, entirely happened), and because of the hardware similarity (this is
+presumed to be, again, the "weird" interrupt hierarchy and cascading, only
+this time with OpenPIC).  They were also waiting -- with the benefit of
+hindsight -- for CHRP, in which 1275 OpenFirmware was finally implemented.
 
 == Interrupts as they exist
 
@@ -148,7 +116,7 @@ serviced.
 
 _Fixed interrupts_ are traditional interrupts that were originally wired to
 interrupt pins on the CPU core, but are now wired to one (or more) interrupt
-controllers (which may be part of the CPU), and may at the hardware level in
+controllers (which maybe part of the CPU), and may at the hardware level in
 fact be entirely emulated (such as with PCIe INTx interrupts, which emulate
 the PCI INTA#-INTD# pins via messages at the PCIe level but appear as
 traditional fixed interrupts outside of the PCIe domain, or UltraSPARC Mondos
@@ -158,7 +126,7 @@ Fixed interrupts may require per-device handling at any stage between the device
 generating the interrupt and the CPU core handling it.  This may include
 translating the interrupt vector into the domain of the parent device,
 programming an intervening interrupt controller (as may be the case with
-GPIO), or simple bookkeeping tasks.
+GPIO), or simple bookeeping tasks.
 
 Fixed interrupts may be shared between devices, and in a typical PCI or PCIe
 system could be shared extensively.  x86 systems in particular have a greatly
@@ -299,7 +267,7 @@ availability of resources.  The precise manner of this is system specific and
 described <<platform-implementations, elsewhere>>.
 
 Client drivers were not converted to the DDI2 interfaces (and many remain
-unconverted 20 years later).  Nexus drivers were.
+unconverted 20 year later).  Nexus drivers were.
 
 [#bus-intr-op]
 ==== `.bus_intr_op(dev_info_t *dip, dev_info_t *rdip, ddi_intr_op_t intr_op, ddi_intr_handle_impl_t *hdlp, void *result)`
@@ -369,10 +337,7 @@ lifetime of `rdip`.
 ===== `DDI_INTROP_NINTRS`
 - type of `result`: `int *`
 - initial content of `result`: undefined
-- final content of `result`: the total number of interrupts supported by `rdip`
-
-This is the implementation of **ddi_intr_get_nintrs(9F)** and returns the number
-of interrupts of the given type supported by a given device.
+- final content of `result`: the number of interrupts potentially available to `rdip`
 
 `ih_type` is guaranteed to be supported by `rdip` as claimed by <<ddi-introp-supported-types, `DDI_INTROP_SUPPORTED_TYPES`>>
 
@@ -382,9 +347,8 @@ lifetime of `rdip`.
 NOTE: it is incorrect -- but not asserted -- to return `DDI_SUCCESS` but store
 `0` in `result`.
 
-WARNING: this is different from <<ddi-introp-navail, `DDI_INTROP_NAVAIL`>>
-although only for MSI/X.  Even then we can't find an implementation that acts
-differently. 
+NOTE: this is apparently different from <<ddi-introp-navail,
+`DDI_INTROP_NAVAIL`>> although most implementations return the same value.
 
 [#ddi-introp-alloc]
 ===== `DDI_INTROP_ALLOC`
@@ -581,7 +545,6 @@ interrupts are level-triggered, SPARC PCIe asks the system.
 WARNING: `ih_cap` is not necessarily valid, and should not be used unless this
 implementation has initialized it.
 
-[#ddi-introp-setcap]
 ===== `DDI_INTROP_SETCAP`
 - type of `result`: `int *`
 - initial content of `result`: the desired mask of <<interrupt-capabilities, interrupt capabilities>>
@@ -650,9 +613,9 @@ the implementation of **ddi_intr_get_navail(9F)**.
 `hdlp` may be real of temporary, only the `ih_type` and `ih_dip` can be
 relied on.
 
-WARNING: this is different from <<ddi-introp-navail, `DDI_INTROP_NINTRS`> in
-the MSI/X case, although we can't find an implementation that acts
-differently.
+WARNING: this is apparently different from <<ddi-introp-navail,
+`DDI_INTROP_NINTRS`> although at least _most_ implementations return the same
+value.
 
 [#ddi-introp-getpool]
 ===== `DDI_INTROP_GETPOOL`
@@ -735,7 +698,7 @@ implementation.
 
 `uint16_t ih_ver`::
   Interrupt handle version.  `DDI_INTR_VERSION`.  NOTE: this is the 5th
-  element in the structure.  Its offset must be maintained for the version
+  element in the structure.  It's offset must be maintained for the version
   checking it allows for to remain possible.  This is also used by the
   <<psm-intr-op-apic-type, `PSM_INTR_OP_APIC_TYPE`>> operation in Intel PSMs
   to return the APIC version.
@@ -908,8 +871,8 @@ which is shared by multiple devices.  These are managed by the MSI controllers
 (the interrupt controller hardware in general, on Intel.  The PCIe roots on
 SPARC).
 
-For each device driver that interacts with the IRM, a <<irm-request,
-`ddi_irm_req_t`>> is maintained by the framework to track the number of
+For each device driver that interacts with the IRM, an a <<irm-request,
+`ddi_irm_req_t`>> is maintained by the framework to track to the number of
 vectors it has requested, and received.
 
 When interrupts operations are performed on a device, nexus drivers maybe be
@@ -1270,9 +1233,7 @@ those potentially relevant to interrupts are described here.
 `PSM_INTR_OP_GRP_SET_CPU`::
   Set the cpu to which all vectors on `dip` should be delivered.  `hdlp` is
   specific to this command, and bears a target cpuid as `ih_private`.  Fails
-  in `mach_intr_ops`.  This happens atomicly and apparently was necessary to
-  keep interrupt bookkeeping information correct, as the hardware only
-  supports doing this atomicly.  See <<psarc-2007-302, the ARC case>>
+  in `mach_intr_ops`
 
 [#psm-intr-op-apic-type]
 `PSM_INTR_OP_APIC_TYPE`::
@@ -1484,68 +1445,6 @@ Information about the APIC hardware.
   - Not support by the ISA nexus
   - The PCI code uses <<psm-intr-op-set-cpu, `PSM_INTR_OP_SET_CPU`>>
 
-[#psm-ddi2-comparison]
-===== Comparison between PSM and DDI2 operations
-
-[cols="1,1"]
-|===
-| PSM | DDI2
-
-| <<psm-intr-op-alloc-vectors, `PSM_INTR_OP_ALLOC_VECTORS`>>
-| <<ddi-introp-alloc, `DDI_INTROP_ALLOC`>>
-
-| <<psm-intr-op-free-vectors, `PSM_INTR_OP_FREE_VECTORS`>>
-| <<ddi-introp-free, `DDI_INTROP_FREE`>>
-
-| <<psm-intr-op-navail-vectors, `PSM_INTR_OP_NAVAIL_VECTORS`>>
-| <<ddi-introp-navail, `DDI_INTROP_NAVAIL`>>
-
-| <<psm-intr-op-xlate-vector, `PSM_INTR_OP_XLATE_VECTOR`>>
-| A side-effect of following the interrupt hierarchy through `i_ddi_intr_ops()`
-
-| <<psm-intr-op-get-pending, `PSM_INTR_OP_GET_PENDING`>>
-| <<ddi-introp-getpending, `DDI_INTROP_GETPENDING`>>
-
-| <<psm-intr-op-clear-mask, `PSM_INTR_OP_CLEAR_MASK`>>
-| <<ddi-introp-clrmask, `DDI_INTROP_CLRMASK`>>
-
-| <<psm-intr-op-set-mask, `PSM_INTR_OP_SET_MASK`>>
-| <<ddi-introp-setmask, `DDI_INTROP_SETMASK`>>
-
-| <<psm-intr-op-get-cap, `PSM_INTR_OP_GET_CAP`>>
-| <<ddi-introp-getcap, `DDI_INTROP_GETCAP`>>
-
-| <<psm-intr-op-set-cap, `PSM_INTR_OP_SET_CAP`>>
-| <<ddi-introp-setcap, `DDI_INTROP_SETCAP`>>
-
-| <<psm-intr-op-set-pri, `PSM_INTR_OP_SET_PRI`>>
-| <<ddi-introp-setpri, `DDI_INTROP_SETPRI`>>
-
-|
-| <<ddi-introp-getpri, `DDI_INTROP_GETPRI`>>
-
-| <<psm-intr-op-get-shared, `PSM_INTR_OP_GET_SHARED`>>
-| **???** Only need be known by fixed interrupt controller drivers?
-
-| <<psm-intr-op-check-msi, `PSM_INTR_OP_CHECK_MSI`>>
-| <<ddi-introp-supported-types, `DDI_INTROP_SUPPORTED_TYES`>>
-
-| <<psm-intr-op-set-cpu, `PSM_INTR_OP_SET_CPU`>>
-| <<ddi-introp-settarget, `DDI_INTROP_SETTARGET`>>
-
-| <<psm-intr-op-get-intr, `PSM_INTR_OP_GET_INTR`>>
-| <<ddi-introp-gettarget, `DDI_INTROP_GETTARGET`>> (in effect) 
-
-| <<psm-intr-op-grp-set-cpu, `PSM_INTR_OP_GRP_SET_CPU`>>
-| **???** (requires a new interface to preserve the atomicity of the PSM interface)
-
-| <<psm-intr-op-apic-type, `PSM_INTR_OP_APIC_TYPE`>>
-| implicit in the interrupt hierarchy
-
-|
-| <<ddi-introp-getpool, `DDI_INTROP_GETPOOL`>>
-|===
-
 === SPARC
 
 Interrupt operations follow the interrupt hierarchy expressed in the device
@@ -1694,7 +1593,7 @@ the root-most interrupt parent and handled there.
 `DDI_INTROP_CLRMASK`::
   No interaction with `hdlp`
 
-`DDI_INTROP_GETPENDING`::
+`DDI_INTROP_GETPENDING::
   Usually no interaction with `hdlp`.  In PCIe code it is the canonical source
   of information.
 
@@ -1718,75 +1617,35 @@ WARNING: The implementation described here is not the current implementation,
 and exists only prototypically.
 
 AArch64 systems are broken into two major categories based on their firmware
-device tree implementation.
+implementation.
 
 SBSA::
   <<arm-sbsa, The ARM Server Base System Architecture>> which is <<uefi-acpi,
   ACPI>> based.  An illumos device tree is built from information provided by
-  the platform ACPI implementation, UEFI is mandatory.
+  the platform ACPI implementation.
 
 Flat Device Tree (FDT)::
   The platform provides us with a <<devicetree-org, devicetree>> blob, which is superficially
   similar to and derived from an <<1275-ofw, IEEE 1275 OpenFirmware>> device
-  tree, and the illumos device tree directly reflects this.  This may be
-  provided by a boot-loader or statically in ROM.  The <<arm-ebbr,  ARM
-  Embedded Base Boot Requirements>> describe platforms with UEFI but with FDT
-  rather than ACPI.
+  tree, and the illumos device tree directly reflects this.
 
 Interrupt operations follow the interrupt hierarchy as described to us by the
 firmware.  We assume that aside from the mechanism of discovering this
 hierarchy, our journey through it will be equivalent for both implementations.
 
-For the FDT cases the device tree reflects an exact interrupt hierarchy of
-arbitrary complexity, which we have to understand how to follow.  For the ACPI
-cases the device tree reflects a simpler scheme because of the limits from the
-<<uefi-acpi, ACPI>> and <<arm-sbsa, SBSA>> specifications, but the hierarchy
-must be added to the tree ourselves.  The simplicity then works out in our
-favour (we don't, for instance, have to craft arbitrarily complicated
-**"interrupt-map"** to describe the relationships, because such relationships
-aren't possible).
-
 ==== SBSA
 
-The interrupt hierarchy is described by <<uefi-acpi, ACPI>>.
-
-In the DSDT nodes there may be at least:
-- `_PRT` describing PCI interrupt routing
-- `_CRS` describing the "Current Resource Settings"
-- `_PRS` describing the "Possible Resource Settings"
-
-There are cases where hardware is also described in other tables, and via
-other methods.
-
-The information necessary here will be added into the device tree when it is
-built, assigning **"interrupts"**, **"interrupt-parent"**, as necessary to
-describe the hardware and hierarchy.  This is basically what happens on Intel
-(except as mentioned, Intel has no need for interrupt parent information).
-
-ACPI systems support one root interrupt controller (they can't describe more).
+The ACPI `_PRT` describes interrupt routing information, and the interrupt
+hierarchy.
 
 ==== FDT
 
 The device tree contains the interrupt hierarchy, expressed via a superset of
 the mechanisms used on SPARC.
 
-There is an <<devicetree-interrupts-extended, additional mechanism>> for fixed
-interrupts, and an <<devicetree-msi, entirely different>> method of
-handling MSI.
+There is an additional mechanism for fixed interrupts, and an entirely
+alternative method of handling MSI.
 
-In this case we definitely see cascaded fixed interrupt controllers below the
-root controller.  In cases like the serial on RaspberryPi,4 or the GPIO on
-many bits hardware, we have a single interrupt shared between multiple
-hardware functions behind a piece of hardware we can use to check for whom the
-interrupt was intended, or use to mask/route/control the interrupt.
-
-It is possible -- in theory, the implementation would be a lot -- to demux
-these and give each device its own vector, rather than sharing the vector as
-with otherwise shared (but not truly multiplexed) fixed interrupts.  Without
-strong motivation (one such motivation would be if in practice we see devices
-which storm interrupts on shared vectors, and affect performance).
-
-[#devicetree-interrupts-extended]
 ===== "interrupts-extended"
 
 Rather than an **"interrupts"** property, a list of interrupt vectors, an
@@ -1800,7 +1659,6 @@ controllers, but without requiring the full mapping of **"interrupt-map"**.
 NOTE: illumos does not currently support this mechanism, as we haven't seen it
 in use.
 
-[#devicetree-msi]
 ===== Devicetree MSI
 
 The devicetree.org specification has a mechanism for expressing MSI that is
@@ -1815,49 +1673,6 @@ to MSI specifiers on specific controllers.
 
 NOTE: illumos does not currently support this mechanism, as MSI support on
 AArch64 does not yet exist
-
-==== Message Signalled Interrupts
-
-WARNING: the prototype does not implement MSI/X at all, this is all thoroughly
-pre-implementation thinking
-
-There are several ways MSI/X are implement on AArch64
-
-1. A GIC v2m device alongside GIC version 2, which maps MSI onto a range of
-  vectors shared with fixed interrupts.  The GIC controls affinity.
-
-2. A GIC v3 device directly receives messages and maps MSI onto a range of
-  vectors shared with fixed interrupts. (Message Based SPIs).  For FDT the
-  mapping is expressed in the devicetree or device binding, ACPI cannot
-  express this.
-
-3. ... the above, but level-triggered.  illumos has no concept of a
-  level-triggered MSI, and one would probably need to be added, if we were to
-  implement this.
-
-4. A GIC v3 redistributor device directly receives messages and raises
-  _locality-specific peripheral interrupts_ (LPIs).  This is basically #2 but
-  without mapping onto vectors shared with fixed interrupts, the vector is now
-  in a specific (very broad) range..  affinity is implicit in the choice of
-  redistributor device.  This is mutually exclusive with #5
-
-5. _Interrupt Translation Service_ (ITS) devices receive messages which raises
-  LPIs like #4.  Affinity is handled by the ITS.
-
-6. Devices like RaspberryPi,4 which has a GIC version 2 with no v2m, and
-  handles MSI in the PCIe host (which is basically how SPARC hardware seemed
-  to work).
-
-This appears to fit with the scheme described, whereby we attach drivers that
-field these interrupts as we would any other.  Some drivers need to handle
-both fixed and MSI/X, some only one or the other.
-
-Of the methods above, it seems like we have no reason to implement #3.
-Whether to implement #4 depends on how commonly used it is compared to #5 (and
-vice-versa).
-
-#6 is either very simple and transparent to us, or requires that the
-downstream nexus be an interrupt controller for our purposes.
 
 ==== Implementation
 
@@ -1888,7 +1703,7 @@ This is to avoid an unfortunate chicken-and-egg situation where we need the
 clock interrupt to build the device tree, and the device tree to establish the
 clock interrupt via the DDI interfaces.  The intel platform does this via
 calling into the PSM, which the current AArch64 scheme does not have (or
-probably need).
+probably need)
 
 ===== Structure
 
@@ -1903,24 +1718,21 @@ drivers, which would then establish their interrupts directly.  The actual
 root-most interrupt hardware is part of the basic platform.
 
 On AArch64 we have several possible root-most interrupt controllers, 3
-possible versions of the ARM Generic Interrupt Controller (GIC), and several
-methods of transmitting MSI/X to the root controller, and cannot practically
-follow this scheme as-is, since the actual establishment of the interrupt in
-hardware is interrupt-controller dependent.
+possible versions of the ARM Generic Interrupt Controller (GIC), and two
+methods of translating MSI/X onto the GIC, and cannot practically follow this
+scheme as-is, since the actual establishment of the interrupt in hardware is
+interrupt-controller dependent.
 
 The Intel platform uses the PSM to abstract over this, in a manner not
 entirely dissimilar from the way the DDI2 implementation abstracts over
-interrupt operations.  See <<psm-ddi2-comparison, the comparison>> for how
-they line up.
+interrupt operations (though with different, differently granular,
+operations).
 
 On AArch64 the interrupt controllers available to us are present in the device
 tree directly, and the mapping between hardware and interrupt controllers is
 clearly expressed there (or in the case of ACPI, can be expressed there in a
 well known way) we choose to attach distinct drivers to these controllers, and
-allow those drivers to handle the low-level establishment of interrupts.  In
-spirit, if not entirely in fact, the PSM operation called "on" the interrupt
-controller is replaced with the matching DDI2 operation mapped up the
-interrupt hieararchy.
+allow those drivers to handle the low-level establishment of interrupts.
 
 This means that the system has full device drivers, rather than misc modules
 attaching to any GIC v2 or GIC v3 interrupt controllers, and in the future,
@@ -1931,11 +1743,9 @@ higher levels of the interrupt hierarchy, and to the correct instance of the
 drivers attached to the interrupt controllers.
 
 NOTE: While it may seem surprising, it is a valid topology for the rootnex to
-have an **"interrupt-parent"** that actually fields the interrupts, rather than each
+have an interrupt-parent that actually fields the interrupts, rather than each
 bus pointing to the interrupt controller.  That is, the root nexus is the root
-of the device tree _but not necessarily the interrupt hieararchy_.  This is
-how QEMU,virt works and is also the most convenient way to establish a default
-**"interrupt-parent"** for ACPI systems.
+of the device tree _but not necessarily the interrupt hieararchy_.
 
 ====== Other Interrupt Operations
 
@@ -1948,18 +1758,11 @@ Why do these operations follow a different hierarchy, and get direct answers
 from busses, except for this was how things work on SPARC? (where the
 hierarchies are almost always, we think, isomorphic).
 
-Why do busses answer on their own behalf, does the root system not have any
-say in resource availability, etc?
+Why do busses answer on their own behalf, does the root system not have any say in
+resource availability, etc?
 
 The answer in the current prototype is that this is how SPARC worked, and that
 is directly analogous to how interrupts are structured for us too.
-
-It would be nice if:
-
-. All operations that can follow the interrupt hierarchy, did.  Even if this
-  meant temporary handles have to be more completely allocated.
-. It were clear and documented which operations follow which hieararchy, and
-  whom we expect to be ultimately responsible.
 
 ===== Rationale
 
@@ -1970,8 +1773,8 @@ of interrupt controllers make the approach of having each nexus directly
 establish interrupts via a PSM seem unworkable.  We may have to program
 multiple controllers on the way through the hierarchy, at which we would at
 best be emulating the journey through the interrupt hierarchy of the device
-tree.  Further, the PSM operations interface and the DDI2 interface are
-<<psm-ddi2-comparison, so similar>>, it's not obvious what benefit there would be
+tree.  Further, the PSM operations interface and the DDI2 interface are so
+similar, it's not obvious what benefit there would be
 
 The approach used on SPARC seems to fit our needs, and in fact the prototype
 is very SPARC-y with the exception that interrupt establishing operations pass
@@ -1996,7 +1799,7 @@ The addition of MSI support on ARM will present a departure from the SPARC
 scheme. On SPARC it is assumed that a direct ancestor of our device will be a
 host bridge device which will handle translating MSIs to Mondos (or whatever
 ends up happening), the same assumption as used to exist for fixed
-interrupts, too.  Whereas on ARM we have potentially several such devices
+interrupts too.  Whereas on ARM we have potentially several such devices
 appearing discretely and handling MSI/X for different subsets of devices in
 the system, to which they may (and usually do) have no familial relation in
 the device tree.
@@ -2009,39 +1812,21 @@ position in the device tree.  This means that there is no single global place
 to provide book-keeping at the DDI level.  Much of this bookkeeping is at
 present maintaining the `struct intrspec` compatibility pieces in the parent
 private data, and would go away if and when that does, but I am not convinced
-it is all the global bookkeeping we would ever want.  Counter to my instincts
-is the fact that interrupt support on SPARC makes this work without shared
-bookkeeping.
+it is all bookkeeping we would ever want.  Counter to my instincts is the fact
+that interrupt support on SPARC makes this work without shared bookkeeping.
 
 Another wart is that a full conversion to this scheme is an unfortunate amount
 of work to the extent that a lot of our machine dependent drivers are more
 Intel-derived than SPARC derived, so their interrupt operations must be
 refactored, perhaps substantially, and retested.
 
-This sounds bad, but <<psm-ddi2-comparison, the comparison>> between
-<<psm-operations, PSM operations>> and <<interrupt-operations, DDI2
-operations>> shows a lot of overlap where calls to PSM operations would be
-directly replaced with `i_ddi_intr_ops()` calls.  Other operations are either
-unnecessary in this scheme (vector translation) or not currently implementable
-on AArch64, but with the appearance we could implement these in the same manner.
-
-====== Vastly increased interrupt vector space
-
-The autovectoring interrupt support in illumos currently has a maximum of 256
-vectors.  The vector space on AArch64 is vastly larger than this, although
-sparse.
-
-WARNING: The implementation of autovectoring is also inconsistent about what
-happens to vectors > 256.  `add_avintr()` and `rem_avintr()` will take the
-vector modulo `MAX_VECT` as the index into the table, `av_dispatch_autovect()`
-will not do this, and assert the vector itself is lower than `MAX_VECT`.  All
-other code on all other platforms will just overrun `autovect[MAX_VECT]`.
-
-The apix PSM has a problem not unlike ours, and solves it using the `addintr`
-and `remintr` function pointers, which if non-NULL entirely replace the
-implementation of `add_avintr()` and `rem_avintr()`.  The metadata tracked in
-the GIC implementations just keeps an AVL of active vectors, rather than a
-huge sparse table.  This is problematic in interrupt context though.
+This sounds bad, but the comparison between <<psm-operations, PSM operations>> and
+<<interrupt-operations, DDI2 operations>> shows a lot of overlap where calls
+to PSM operations would be directly replaced with `i_ddi_intr_ops()` calls.
+Other operations are either unnecessary in this scheme (vector translation),
+or currently in the wind due to a lack of platform support on AArch64
+(affinity, etc.), but with the appearance we could implement these in the same
+manner.
 
 [#aarch64-ihdl-plat]
 ==== Interrupt Handle Platform Data (`ihdl_plat_t`)
@@ -2058,23 +1843,17 @@ some additional fields
   The number of ticks spent fielding this device's interrupts.
 
 `uint32_t ihdl_gic_cfg`::
-  Currently used to smuggle the "configuration" part
-  of a 3-tuple interrupt from the GIC Devicetree binding.  WARNING: Being
-  phased out in favour of `ip_unitintr`.
+  Currently used to smuggle the "configuration" part of a GIC 3-tuple
+  interrupt.  WARNING: Being phased out in favour of `ip_unitintr`.
 
 `uint32_t ihdl_gic_sense`::
-  Currently used to smuggle the "sense" part of a 3-tuple interrupt from the
-  GIC Devicetree binding.
+  Currently used to smuggle the "sense" part of a GIC 3-tuple interrupt.
   WARNING:  Being phased out in favour of `ip_unitintr`
 
 `unit_intr_t *ip_unitintr`::
   A device-tree unit interrupt descriptor (the combination of unit address and
   interrupt descriptor).  Used by interrupt mapping internal to the AArch64
-  DDI implementation.  This is actually specific to the FDT implementation,
-  but should exist in a usable manner given a devicetree constructed from
-  ACPI.  This is opaque (actually, impossible to correctly interpret) to
-  anyone not the interrupt-controller currently processing `hdlp` and the DDI
-  implementation.
+  DDI implementation..
 
 == References
 
@@ -2098,7 +1877,6 @@ sense of progression through time of the code we're left with.
 
 - PSARC/2006/037 PCI Express Hotplug Framework Interrupt Interfaces
 
-[#psarc-2007-302]
 - link:https://illumos.org/opensolaris/ARChive/PSARC/2007/302/[PSARC/2007/302 PSM_INTR_OPS extensions for handling groups of interrupt vectors]
 
 - link:https://illumos.org/opensolaris/ARChive/PSARC/2007/453/[PSARC/2007/453 MSI-X interrupt limit override]
@@ -2143,5 +1921,3 @@ sense of progression through time of the code we're left with.
 
 - link:https://github.com/oxidecomputer/illumos-gate/blob/stlouis/usr/src/uts/common/sys/ddi_intr_impl.h[ddi_intr_op_t comments currently specific to the Oxide implementation]
 
-[#arm-ebbr]
-- link:https://github.com/ARM-software/ebbr/releases[ARM Embedded Base Boot Requirements]
