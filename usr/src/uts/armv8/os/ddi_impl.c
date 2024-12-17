@@ -2045,6 +2045,190 @@ make_ddi_ppd(dev_info_t *child, struct ddi_parent_private_data **ppd)
 	}
 }
 
+/*
+ * §2.3.5 #address-cells and #size-cells
+ * §2.3.6 reg
+ */
+static void
+make_ddi_ppd_reg(dev_info_t *dip, struct ddi_parent_private_data *ppd)
+{
+	dev_info_t	*pdip;	/* parent */
+	uint32_t	*prop;	/* reg */
+	struct regspec	*data;	/* normalised data */
+	uint_t		plen;	/* length of reg in cells */
+	int		ac;	/* #address-cells */
+	int		sc;	/* #size-cells */
+	int		n;
+	int		i;
+	int		dlen;	/* length of normalised data */
+	uint64_t	addr;
+	uint64_t	size;
+
+	VERIFY3P(dip, !=, NULL);
+	pdip = (dip == ddi_root_node()) ? dip : ddi_get_parent(dip);
+	VERIFY3P(pdip, !=, NULL);
+
+	ac = ddi_prop_get_int(DDI_DEV_T_ANY, pdip,
+	    DDI_PROP_DONTPASS, "#address-cells", 2);
+	VERIFY3U(ac, >=, 1);
+	VERIFY3U(ac, <=, 2);	/* arbitrary restriction */
+
+	sc = ddi_prop_get_int(DDI_DEV_T_ANY, pdip,
+	    DDI_PROP_DONTPASS, "#size-cells", 1);
+	VERIFY3U(sc, >=, 0);
+	VERIFY3U(sc, <=, 2);	/* arbitrary restriction */
+
+	prop = NULL;
+	plen = 0;
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    OBP_REG, (int **)&prop, &plen) != DDI_PROP_SUCCESS ||
+	    plen == 0 || prop == NULL) {
+		if (prop != NULL)
+			ddi_prop_free(prop);
+		return;
+	}
+	VERIFY(plen % (ac + sc) == 0);
+
+	dlen = plen / (ac + sc);
+	data = kmem_zalloc(sizeof (struct regspec) * dlen, KM_SLEEP);
+
+	for (n = 0; n < dlen; ++n) {
+		addr = 0;
+		size = 0;
+
+		for (i = 0; i < ac; ++i) {
+			addr <<= 32;
+			addr |= prop[((ac + sc) * n) + i];
+		}
+
+		for (i = 0; i < sc; ++i) {
+			size <<= 32;
+			size |= prop[((ac + sc) * n) + ac + i];
+		}
+
+		VERIFY((addr & 0x00fffffffffffffful) == addr);
+		VERIFY((size & 0x00000000fffffffful) == size);
+
+		REGSPEC_SET_BUSTYPE(&data[n], 0);
+		REGSPEC_SET_ADDR(&data[n], addr);
+		REGSPEC_SET_SIZE(&data[n], size);
+	}
+
+	ddi_prop_free(prop);
+
+	ppd->par_reg = data;
+	ppd->par_nreg = dlen;
+}
+
+/*
+ * §2.3.8 ranges
+ *
+ * PCI-like devices do bus mapping that has #address-cells set to 0x3, where
+ * the first cell contains a bitfield of memory attributes, a space identifier,
+ * bus, device and function identifiers and register number.
+ *
+ * The generic code will shift this extra cell off the end of the address,
+ * which is dersirable in the generic case, but perhaps a little surprising.
+ */
+static void
+make_ddi_ppd_rng(dev_info_t *dip, struct ddi_parent_private_data *ppd)
+{
+	dev_info_t		*pdip;
+	uint32_t		*prop;	/* ranges */
+	uint_t			plen;	/* length of ranges in cells */
+	struct rangespec	*data;	/* normalised data */
+	int			cac;	/* child #address-cells */
+	int			pac;	/* parent #address-cells */
+	int			csc;	/* child #size-cells */
+	int			dlen;	/* length of normalised data */
+	int			n;
+	int			i;
+	uint64_t		caddr;
+	uint64_t		paddr;
+	uint64_t		size;
+
+	VERIFY3P(dip, !=, NULL);
+	if (dip == ddi_root_node())
+		return;	/* ranges on the root node make no sense */
+	pdip = ddi_get_parent(dip);
+	VERIFY3P(pdip, !=, NULL);
+
+	pac = ddi_prop_get_int(DDI_DEV_T_ANY, pdip,
+	    DDI_PROP_DONTPASS, "#address-cells", 2);
+	VERIFY3U(pac, >=, 1);
+	VERIFY3U(pac, <=, 3);	/* arbitrary restriction */
+
+	cac = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
+	    DDI_PROP_DONTPASS, "#address-cells", 2);
+	VERIFY3U(cac, >=, 1);
+	VERIFY3U(cac, <=, 3);	/* arbitrary restriction */
+
+	csc = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
+	    DDI_PROP_DONTPASS, "#size-cells", 1);
+	VERIFY3U(csc, >, 0);	/* length is expressed in child-space */
+	VERIFY3U(csc, <=, 2);	/* arbitrary restriction */
+
+	prop = NULL;
+	plen = 0;
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    OBP_RANGES, (int **)&prop, &plen) != DDI_PROP_SUCCESS
+	    || plen == 0 || prop == NULL) {
+		if (prop != NULL)
+			ddi_prop_free(prop);
+		return;
+	}
+	VERIFY(plen % (cac + pac + csc) == 0);
+
+	dlen = plen / (cac + pac + csc);
+	data = kmem_zalloc(sizeof (struct rangespec) * dlen, KM_SLEEP);
+
+	for (n = 0; n < dlen; ++n) {
+		caddr = 0;
+		paddr = 0;
+		size = 0;
+
+		for (i = 0; i < cac; ++i) {
+			caddr <<= 32;
+			caddr |= prop[((cac + pac + csc) * n) + i];
+		}
+
+		for (i = 0; i < pac; ++i) {
+			paddr <<= 32;
+			paddr |= prop[((cac + pac + csc) * n) + cac + i];
+		}
+
+		for (i = 0; i < csc; ++i) {
+			size <<= 32;
+			size |= prop[((cac + pac + csc) * n) + cac + pac + i];
+		}
+
+		VERIFY3U((caddr & 0x00fffffffffffffful), ==, caddr);
+		VERIFY3U((paddr & 0x00fffffffffffffful), ==, paddr);
+		VERIFY3U((size & 0x00000000fffffffful), ==, size);
+
+		RANGESPEC_SET_CHILD_BUSTYPE(&data[n], 0);
+		RANGESPEC_SET_CHILD_OFFSET(&data[n], caddr);
+		RANGESPEC_SET_BUSTYPE(&data[n], 0);
+		RANGESPEC_SET_OFFSET(&data[n], paddr);
+		RANGESPEC_SET_SIZE(&data[n], size);
+	}
+
+	ddi_prop_free(prop);
+
+	ppd->par_rng = data;
+	ppd->par_nrng = dlen;
+}
+
+void
+make_ddi_ppd(dev_info_t *child, struct ddi_parent_private_data **ppd)
+{
+	struct ddi_parent_private_data *pdptr;
+
+	*ppd = pdptr = kmem_zalloc(sizeof (*pdptr), KM_SLEEP);
+	make_ddi_ppd_reg(child, pdptr);
+	make_ddi_ppd_rng(child, pdptr);
+}
+
 static int
 impl_sunbus_name_child(dev_info_t *child, char *name, int namelen)
 {
@@ -2097,7 +2281,7 @@ impl_free_ddi_ppd(dev_info_t *dip)
 		return;
 
 	if ((n = (size_t)pdptr->par_nrng) != 0)
-		ddi_prop_free((void *)pdptr->par_rng);
+		kmem_free(pdptr->par_rng, n * sizeof (struct rangespec));
 
 	if ((n = pdptr->par_nreg) != 0) {
 		kmem_free(pdptr->par_reg, n * sizeof (struct regspec));

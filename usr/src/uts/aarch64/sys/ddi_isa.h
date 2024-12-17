@@ -50,6 +50,87 @@ extern "C" {
  */
 
 /*
+ * Helpers for regspec manipulation and conversion.
+ */
+#define	REGSPEC_BUSTYPE(__rs)	(((__rs)->regspec_bustype >> 24) & 0xff)
+#define	REGSPEC_SET_BUSTYPE(__rs, __bt)	do {				\
+	(__rs)->regspec_bustype &= (0x00ffffff);			\
+	(__rs)->regspec_bustype |= (((uint_t)((__bt) & 0xff)) << 24);	\
+} while (0)
+
+#define	REGSPEC_ADDR(__rs)						\
+	(((((uint64_t)((__rs)->regspec_bustype & 0x00ffffff)) << 32) |	\
+	(__rs)->regspec_addr))
+#define	REGSPEC_SET_ADDR(__rs, __addr)	do {				\
+	(__rs)->regspec_bustype &= (0xff000000);			\
+	(__rs)->regspec_bustype |=					\
+	    ((((uint64_t)(__addr)) >> 32) & 0x00ffffff);		\
+	(__rs)->regspec_addr = ((__addr) & 0xffffffff);			\
+} while (0)
+#define	REGSPEC_INCR_ADDR(__rs, __incr)	do {				\
+	REGSPEC_SET_ADDR((__rs), (REGSPEC_ADDR((__rs)) + (__incr)));	\
+} while (0)
+
+#define	REGSPEC_SIZE(__rs)	((__rs)->regspec_size)
+#define	REGSPEC_SET_SIZE(__rs, __sz)	do {				\
+	(__rs)->regspec_size = (uint_t)(__sz);				\
+} while (0)
+
+#define	REGSPEC_TO_REGSPEC64(__rs, __rs64)	do {			\
+	(__rs64)->regspec_bustype = REGSPEC_BUSTYPE((__rs));		\
+	(__rs64)->regspec_addr = REGSPEC_ADDR((__rs));			\
+	(__rs64)->regspec_size = REGSPEC_SIZE((__rs));			\
+} while (0)
+
+#define	REGSPEC64_TO_REGSPEC(__rs64, __rs)	do {			\
+	REGSPEC_SET_BUSTYPE((__rs), (__rs64)->regspec_bustype);		\
+	VERIFY(((__rs64)->regspec_addr & 0x00fffffffffffffflu) ==	\
+	    (__rs64)->regspec_addr);					\
+	REGSPEC_SET_ADDR((__rs), (__rs64)->regspec_addr);		\
+	VERIFY(((__rs64)->regspec_size & 0xffffffffu) ==		\
+	    (__rs64)->regspec_size);					\
+	REGSPEC_SET_SIZE((__rs), (__rs64)->regspec_size);		\
+} while (0)
+
+/*
+ * Helpers for rangespec manipulation and use
+ */
+#define	RANGESPEC_CHILD_BUSTYPE(__rs)	(((__rs)->rng_cbustype >> 24) & 0xff)
+#define	RANGESPEC_SET_CHILD_BUSTYPE(__rs, __bt)	do {			\
+	(__rs)->rng_cbustype &= (0x00ffffff);				\
+	(__rs)->rng_cbustype |= (((uint_t)((__bt) & 0xff)) << 24);	\
+} while (0)
+
+#define	RANGESPEC_CHILD_OFFSET(__rs)					\
+	((((uint64_t)((__rs)->rng_cbustype & 0x00ffffff)) << 32) |	\
+	(__rs)->rng_coffset)
+#define	RANGESPEC_SET_CHILD_OFFSET(__rs, __off)	do {			\
+	(__rs)->rng_cbustype &= (0xff000000);				\
+	(__rs)->rng_cbustype |= (((__off) >> 32) & 0x00ffffff);		\
+	(__rs)->rng_coffset = ((__off) & 0xffffffff);			\
+} while (0)
+
+#define	RANGESPEC_BUSTYPE(__rs)	(((__rs)->rng_bustype >> 24) & 0xff)
+#define	RANGESPEC_SET_BUSTYPE(__rs, __bt)	do {			\
+	(__rs)->rng_bustype &= (0x00ffffff);				\
+	(__rs)->rng_bustype |= (((uint_t)((__bt) & 0xff)) << 24);	\
+} while (0)
+
+#define	RANGESPEC_OFFSET(__rs)						\
+	((((uint64_t)((__rs)->rng_bustype & 0x00ffffff)) << 32) |	\
+	    (__rs)->rng_offset)
+#define	RANGESPEC_SET_OFFSET(__rs, __off)	do {			\
+	(__rs)->rng_bustype &= (0xff000000);				\
+	(__rs)->rng_bustype |= (((__off) >> 32) & 0x00ffffff);		\
+	(__rs)->rng_offset = ((__off) & 0xffffffff);			\
+} while (0)
+
+#define	RANGESPEC_SIZE(__rs)	((__rs)->rng_size)
+#define	RANGESPEC_SET_SIZE(__rs, __sz)	do {				\
+	(__rs)->rng_size = (uint_t)(__sz);				\
+} while (0)
+
+/*
  * DDI interfaces defined as functions
  */
 
