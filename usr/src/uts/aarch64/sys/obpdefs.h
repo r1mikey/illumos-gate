@@ -78,6 +78,11 @@ typedef	phandle_t pnode_t;
 #define	OBP_CPU			"cpu"
 #define	OBP_ADDRESS		"address"
 
+#define	OBP_INTERRUPT_PARENT	"interrupt-parent"
+#define	OBP_INTERRUPT_CELLS	"#interrupt-cells"
+#define	OBP_ADDRESS_CELLS	"#address-cells"
+#define	OBP_SIZE_CELLS		"#size-cells"
+
 /*
  * OBP status values defines
  */
