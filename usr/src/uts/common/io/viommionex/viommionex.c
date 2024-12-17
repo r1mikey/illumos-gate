@@ -157,6 +157,10 @@ static int
 viommionex_intr_op(dev_info_t *pdip, dev_info_t *rdip __unused,
     ddi_intr_op_t intr_op, ddi_intr_handle_impl_t *hdlp, void *result)
 {
+	/*
+	 * Pass ourselves as the resource dip, since we are the one with
+	 * interrupts
+	 */
 	return (i_ddi_intr_ops(pdip, pdip, intr_op, hdlp, result));
 }
 
@@ -269,6 +273,27 @@ viommionex_bus_config(dev_info_t *dip, uint_t flags,
 		return (DDI_FAILURE);
 	}
 	ddi_prop_free(compat);
+
+	/*
+	 * XXXGIC: Copy the reg property, so we appear as a sufficiently
+	 * normal device for the 1275 interrupt mapping algorithm.
+	 *
+	 * It would be nice to either avoid this, or avoid the choice not to
+	 * copy reg/interrupts/etc onto the child.
+	 */
+	int *reg;
+	uint_t reg_cells;
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "reg", &reg, &reg_cells) == DDI_SUCCESS) {
+		if (ddi_prop_update_int_array(DDI_DEV_T_NONE, rdip, "reg", reg,
+		    reg_cells) != DDI_PROP_SUCCESS) {
+			(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
+			ddi_prop_free(reg);
+			ndi_devi_exit(dip);
+			return (DDI_FAILURE);
+		}
+	}
+	ddi_prop_free(reg);
 
 	if (ndi_devi_bind_driver(rdip, 0) != NDI_SUCCESS) {
 		(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);

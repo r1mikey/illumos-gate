@@ -202,6 +202,9 @@ $(i386_ONLY)driver name=balloon perms="* 0444 root sys"
 $(i386_ONLY)driver name=cpudrv alias=cpu
 $(i386_ONLY)driver name=domcaps perms="* 0444 root sys"
 $(i386_ONLY)driver name=evtchn perms="* 0666 root sys"
+$(aarch64_ONLY)driver name=gicv2 \
+    alias=arm,cortex-a15-gic \
+    alias=arm,gic-400
 $(i386_ONLY)driver name=isa class=sysbus alias=pciclass,060100
 $(aarch64_ONLY)driver name=npe alias=pci-host-ecam-generic
 $(i386_ONLY)driver name=npe alias=pciex_root_complex
