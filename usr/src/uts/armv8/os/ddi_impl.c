@@ -61,11 +61,13 @@
 #include <sys/fm/protocol.h>
 #include <sys/ramdisk.h>
 #include <sys/sunndi.h>
+#include <sys/esunddi.h>
 #include <sys/vmem.h>
 #include <sys/lgrp.h>
 #include <sys/mach_intr.h>
 #include <vm/hat_aarch64.h>
 #include <sys/gic.h>
+#include <sys/obpdefs.h>
 
 size_t dma_max_copybuf_size = 0x101000;		/* 1M + 4K */
 uint64_t ramdisk_start, ramdisk_end;
@@ -2266,10 +2268,84 @@ get_boot_properties(void)
 	kmem_free(bop_staging_area, MMU_PAGESIZE);
 }
 
+static void
+copy_root_node_props(void)
+{
+	pnode_t rpn;
+	int err;
+
+	/* We have nothing to do on ACPI systems */
+	if (ddi_prop_exists(DDI_DEV_T_ANY, ddi_root_node(),
+	    DDI_PROP_DONTPASS, "acpi-root-tab") == 1)
+		return;
+
+	if ((rpn = prom_rootnode()) == OBP_NONODE)
+		return;
+
+	if (prom_node_has_property(rpn, "interrupt-parent")) {
+		if ((err = prom_get_prop_int(rpn,
+		    "interrupt-parent", -1)) != -1) {
+			if (ndi_prop_update_int(DDI_DEV_T_NONE, ddi_root_node(),
+			    "interrupt-parent", err) != DDI_PROP_SUCCESS) {
+				dev_err(ddi_root_node(), CE_NOTE,
+				    "Failed to set interrupt-parent.");
+			}
+		}
+	}
+
+	if (prom_node_has_property(rpn, "#interrupt-cells")) {
+		if ((err = prom_get_prop_int(rpn,
+		    "#interrupt-cells", -1)) != -1) {
+			if (ndi_prop_update_int(DDI_DEV_T_NONE, ddi_root_node(),
+			    "#interrupt-cells", err) != DDI_PROP_SUCCESS) {
+				dev_err(ddi_root_node(), CE_NOTE,
+				    "Failed to set #interrupt-cells.");
+			}
+		}
+	}
+
+	if (prom_node_has_property(rpn, "#address-cells")) {
+		if ((err = prom_get_prop_int(rpn, "#address-cells", -1)) != -1) {
+			if (ndi_prop_update_int(DDI_DEV_T_NONE, ddi_root_node(),
+			    "#address-cells", err) != DDI_PROP_SUCCESS) {
+				dev_err(ddi_root_node(), CE_NOTE,
+				    "Failed to set #address-cells.");
+			}
+		}
+	}
+
+	if (prom_node_has_property(rpn, "#size-cells")) {
+		if ((err = prom_get_prop_int(rpn, "#size-cells", -1)) != -1) {
+			if (ndi_prop_update_int(DDI_DEV_T_NONE, ddi_root_node(),
+			    "#size-cells", err) != DDI_PROP_SUCCESS) {
+				dev_err(ddi_root_node(), CE_NOTE,
+				    "Failed to set #size-cells.");
+			}
+		}
+	}
+
+	if (prom_node_has_property(rpn, "dma-coherent")) {
+		if (!ddi_prop_exists(DDI_DEV_T_ANY, ddi_root_node(),
+		    DDI_PROP_DONTPASS, "dma-coherent")) {
+			if (ddi_prop_create(DDI_DEV_T_NONE, ddi_root_node(),
+			    DDI_PROP_TYPE_ANY|DDI_PROP_CANSLEEP|DDI_PROP_HW_DEF,
+			    "dma-coherent", NULL, 0) != DDI_PROP_SUCCESS) {
+				dev_err(ddi_root_node(), CE_NOTE,
+				    "Failed to set dma-coherent.");
+			}
+		}
+	}
+
+	/*
+	 * The ranges property is meaningless on the root node,
+	 * as it has no parent.
+	 */
+}
+
 void
 impl_setup_ddi(void)
 {
-	dev_info_t *xdip, *isa_dip;
+	dev_info_t *xdip;
 	rd_existing_t rd_mem_prop;
 	int err;
 
@@ -2290,6 +2366,12 @@ impl_setup_ddi(void)
 	 * Read in the properties from the boot.
 	 */
 	get_boot_properties();
+
+	/*
+	 * On FDT systems the root node misses out on properties set on
+	 * the FDT root, copy those we care about now.
+	 */
+	copy_root_node_props();
 
 	/* do bus dependent probes. */
 	impl_bus_initialprobe();
