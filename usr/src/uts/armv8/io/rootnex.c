@@ -52,7 +52,6 @@
 #include <vm/hat.h>
 #include <vm/as.h>
 #include <vm/page.h>
-#include <sys/avintr.h>
 #include <sys/errno.h>
 #include <sys/modctl.h>
 #include <sys/ddi_impldefs.h>
@@ -67,7 +66,6 @@
 #include <sys/ddifm.h>
 #include <sys/ddi_isa.h>
 #include <sys/ddi_subrdefs.h>
-#include <sys/gic.h>
 #include <sys/spl.h>
 #include <sys/controlregs.h>
 
@@ -298,14 +296,12 @@ extern void impl_ddi_sunbus_removechild(dev_info_t *dip);
 extern void *device_arena_alloc(size_t size, int vm_flag);
 extern void device_arena_free(void * vaddr, size_t size);
 
-
 /*
  *  Internal functions
  */
 static int rootnex_dma_init();
 static void rootnex_add_props(dev_info_t *);
 static int rootnex_ctl_reportdev(dev_info_t *dip);
-static struct intrspec *rootnex_get_ispec(dev_info_t *rdip, int inum);
 static int rootnex_map_regspec(ddi_map_req_t *mp, caddr_t *vaddrp);
 static int rootnex_unmap_regspec(ddi_map_req_t *mp, caddr_t *vaddrp);
 static int rootnex_map_handle(ddi_map_req_t *mp, off_t offset);
@@ -649,7 +645,7 @@ rootnex_ctlops(dev_info_t *dip, dev_info_t *rdip, ddi_ctl_enum_t ctlop,
 static int
 rootnex_ctl_reportdev(dev_info_t *dev)
 {
-	int i, n, len, f_len = 0;
+	int i, len, f_len = 0;
 	char *buf;
 
 	buf = kmem_alloc(REPORTDEV_BUFSIZE, KM_SLEEP);
@@ -672,19 +668,6 @@ rootnex_ctl_reportdev(dev_info_t *dev)
 		f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
 		    "space 0x%x offset 0x%x",
 		    rp->regspec_bustype, rp->regspec_addr);
-		len = strlen(buf);
-	}
-	for (i = 0, n = sparc_pd_getnintr(dev); i < n; i++) {
-		int pri;
-
-		if (i != 0) {
-			f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
-			    ",");
-			len = strlen(buf);
-		}
-		pri = INT_IPL(sparc_pd_getintr(dev, i)->intrspec_pri);
-		f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
-		    " processor ipl %d", pri);
 		len = strlen(buf);
 	}
 #ifdef DEBUG
@@ -716,11 +699,6 @@ rootnex_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp, off_t offset,
 	struct regspec *orp = NULL;
 	struct regspec64 rp = { 0 };
 	ddi_map_req_t mr = *mp;
-	int error;
-
-	/* XXXARM: Why? */
-	ddi_acc_hdl_t *hp = NULL;
-	struct regspec reg = {0};
 
 	mp = &mr;
 
@@ -839,9 +817,13 @@ rootnex_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp, off_t offset,
 
 	case DDI_MO_MAP_HANDLE:
 		return (rootnex_map_handle(mp, offset));
+	case DDI_MO_MAP_UNLOCKED:
+	case DDI_MO_UNLOCK:
+		return (DDI_ME_UNIMPLEMENTED);
 	}
 
-	return (DDI_ME_UNIMPLEMENTED);
+	/* Not reached */
+	return (DDI_ME_GENERIC);
 }
 
 
@@ -1153,25 +1135,43 @@ rootnex_map_handle(ddi_map_req_t *mp, off_t offset)
 
 /*
  * rootnex_intr_ops()
- *	bus_intr_op() function for interrupt support
+ *
+ * The function of the root nexus and interrupts is a bit complicated on ARM.
+ * We may reach the root nexus in two cases:
+ *
+ * 1.  Operations which are verbs not of the interrupt controllers but of the
+ *     system, in which we are authoritative and directly answer.
+ *
+ * 2.  Operations that are verbs of interrupt controllers between which we are
+ *     in the path, these must be passed on toward an interrupt controller.
  */
-/* ARGSUSED */
 static int
 rootnex_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
     ddi_intr_handle_impl_t *hdlp, void *result)
 {
-	struct intrspec *ispec = NULL;
-
 	switch (intr_op) {
-	case DDI_INTROP_GETCAP:
-		*(int *)result = DDI_INTR_FLAG_LEVEL;
+	case DDI_INTROP_NAVAIL:
+	case DDI_INTROP_NINTRS:
+		*(int *)result = i_ddi_get_intx_nintrs(rdip);
 		break;
-
+	case DDI_INTROP_SUPPORTED_TYPES:
+		/*
+		 * XXXGIC: We have no MSI support yet, so this always filters
+		 * the types supported by the child down to just FIXED, or
+		 * returns that it itself only supports FIXED however you want
+		 * to look at it.
+		 */
+		*(int *)result = DDI_INTR_TYPE_FIXED;
+		break;
+	case DDI_INTROP_GETCAP:
+		/*
+		 * We support FLAG_LEVEL in addition to whatever the child
+		 * supports.  XXXGIC: I think
+		 */
+		*(int *)result |= DDI_INTR_FLAG_LEVEL;
+		break;
 	case DDI_INTROP_ALLOC:
-		if ((ispec = rootnex_get_ispec(rdip, hdlp->ih_inum)) == NULL)
-			return (DDI_FAILURE);
-		hdlp->ih_pri = ispec->intrspec_pri;
-
+		hdlp->ih_pri = i_ddi_get_intr_pri(rdip, hdlp->ih_inum);
 		*(int *)result = hdlp->ih_scratch1;
 		break;
 
@@ -1179,98 +1179,43 @@ rootnex_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 		break;
 
 	case DDI_INTROP_GETPRI:
-		if ((ispec = rootnex_get_ispec(rdip, hdlp->ih_inum)) == NULL)
-			return (DDI_FAILURE);
+		if (hdlp->ih_pri == 0) {
+			hdlp->ih_pri = i_ddi_get_intr_pri(rdip, hdlp->ih_inum);
+		}
 
-		VERIFY3S(ispec->intrspec_pri, ==, hdlp->ih_pri);
-
-		*(int *)result = ispec->intrspec_pri;
+		*(int *)result = hdlp->ih_pri;
 		break;
 	case DDI_INTROP_SETPRI:
 		if (*(int *)result > LOCK_LEVEL)
 			return (DDI_FAILURE);
 
-		/* update the ispec with the new priority */
-		ispec->intrspec_pri =  *(int *)result;
-		hdlp->ih_pri = ispec->intrspec_pri;
+		hdlp->ih_pri = *(int *)result;
 		break;
 
 	case DDI_INTROP_ADDISR:
-		if ((ispec = rootnex_get_ispec(rdip, hdlp->ih_inum)) == NULL)
-			return (DDI_FAILURE);
-		ispec->intrspec_func = hdlp->ih_cb_func;
-		break;
 	case DDI_INTROP_REMISR:
-		if ((ispec = rootnex_get_ispec(rdip, hdlp->ih_inum)) == NULL)
-			return (DDI_FAILURE);
-		ispec->intrspec_func = (uint_t (*)()) 0;
-		break;
-	case DDI_INTROP_ENABLE: {
-		if ((ispec = rootnex_get_ispec(rdip, hdlp->ih_inum)) == NULL)
-			return (DDI_FAILURE);
-
-		hdlp->ih_vector = ispec->intrspec_vec;
-
-		if (ispec->intrspec_cfg == 1)
-			gic_config_irq(hdlp->ih_vector, true);
-		else
-			gic_config_irq(hdlp->ih_vector, false);
-
-		/* Add the interrupt handler */
-		if (!add_avintr((void *)hdlp, hdlp->ih_pri,
-		    hdlp->ih_cb_func, DEVI(rdip)->devi_name, hdlp->ih_vector,
-		    hdlp->ih_cb_arg1, hdlp->ih_cb_arg2, NULL, rdip))
-			return (DDI_FAILURE);
-		break;
-	}
+	case DDI_INTROP_ENABLE:
 	case DDI_INTROP_DISABLE:
-		/* Remove the interrupt handler */
-		rem_avintr((void *)hdlp, hdlp->ih_pri,
-		    hdlp->ih_cb_func, hdlp->ih_vector);
-		break;
+	case DDI_INTROP_GETTARGET:
+	case DDI_INTROP_SETTARGET:
+	case DDI_INTROP_BLOCKENABLE:
+	case DDI_INTROP_BLOCKDISABLE:
+		return (i_ddi_intr_ops(pdip, rdip, intr_op, hdlp, result));
+
+	/*
+	 * XXXGIC: These seem like they would need to reach an interrupt
+	 * controller to be supported, but they did not (inherently) on SPARC.
+	 */
 	case DDI_INTROP_SETMASK:
 	case DDI_INTROP_CLRMASK:
 	case DDI_INTROP_GETPENDING:
 		return (DDI_FAILURE);
-	case DDI_INTROP_NAVAIL:
-	case DDI_INTROP_NINTRS:
-		*(int *)result = i_ddi_get_intx_nintrs(rdip);
-		break;
-	case DDI_INTROP_SUPPORTED_TYPES:
-		*(int *)result = DDI_INTR_TYPE_FIXED;	/* Always ... */
-		break;
+
 	default:
 		return (DDI_FAILURE);
 	}
 
 	return (DDI_SUCCESS);
-}
-
-/*
- * rootnex_get_ispec()
- *	convert an interrupt number to an interrupt specification.
- *	The interrupt number determines which interrupt spec will be
- *	returned if more than one exists.
- *
- *	Look into the parent private data area of the 'rdip' to find out
- *	the interrupt specification.  First check to make sure there is
- *	one that matchs "inumber" and then return a pointer to it.
- *
- *	Return NULL if one could not be found.
- *
- *	NOTE: This is needed for rootnex_intr_ops()
- */
-static struct intrspec *
-rootnex_get_ispec(dev_info_t *rdip, int inum)
-{
-	struct ddi_parent_private_data *pdp = ddi_get_parent_data(rdip);
-
-	/* Validate the interrupt number */
-	if (inum >= pdp->par_nintr)
-		return (NULL);
-
-	/* Get the interrupt structure pointer and return that */
-	return ((struct intrspec *)&pdp->par_intr[inum]);
 }
 
 /*
@@ -1506,7 +1451,6 @@ rootnex_coredma_bindhdl(dev_info_t *dip, dev_info_t *rdip,
 	rootnex_dma_t *dma;
 	int kmflag;
 	int e;
-	uint_t ncookies;
 
 	hp = (ddi_dma_impl_t *)handle;
 	dma = (rootnex_dma_t *)hp->dmai_private;
@@ -3595,7 +3539,6 @@ rootnex_codedma_cache_sync(ddi_dma_handle_t handle,
 		ncookies = sinfo->si_sgl_size;
 	}
 
-	size_t line_size = CTR_DMINLINE_SIZE(read_ctr_el0());
 	off_t end = off + len;
 	off_t cur = 0;
 	for (int i = 0; i < ncookies; i++) {

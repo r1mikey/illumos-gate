@@ -42,12 +42,17 @@ extern "C" {
 
 #ifdef _KERNEL
 
+/* A 1275/devicetree unit interrupt descriptor */
+typedef struct {
+	size_t ui_nelems;	/* Number of elements in ui_v */
+	uint32_t ui_v[];	/* unit/interrupt descriptor */
+} unit_intr_t;
+
 /*
  * Platform dependent data which hangs off the ih_private field of a
  * ddi_intr_handle_impl_t
  */
 typedef struct ihdl_plat {
-	struct intrspec *ip_ispecp;	/* intr spec */
 	kstat_t		*ip_ksp;	/* Kstat pointer */
 	uint64_t	ip_ticks;	/* Interrupt ticks for this device */
 
@@ -66,6 +71,7 @@ typedef struct ihdl_plat {
 	 */
 	uint32_t	ip_gic_cfg;	/* The GIC configuration.  */
 	uint32_t	ip_gic_sense;	/* The GIC sense information. */
+	unit_intr_t	*ip_unitintr;	/* devicetree unit interrupt spec. */
 } ihdl_plat_t;
 
 #endif /* _KERNEL */

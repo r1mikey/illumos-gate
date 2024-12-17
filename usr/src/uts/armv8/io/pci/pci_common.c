@@ -48,22 +48,12 @@
 #include <sys/pci_impl.h>
 #include <sys/pci_cap.h>
 
-/* XXXPCI: We should not need to know about either of these */
-#include <sys/gic.h>
-#include <sys/avintr.h>
-
 /*
  * Function prototypes
  */
 static int	pci_get_priority(dev_info_t *, ddi_intr_handle_impl_t *, int *);
-static int	pci_enable_intr(dev_info_t *, dev_info_t *,
-		    ddi_intr_handle_impl_t *, uint32_t);
-static void	pci_disable_intr(dev_info_t *, dev_info_t *,
-		    ddi_intr_handle_impl_t *, uint32_t);
-static int	pci_alloc_intr_fixed(dev_info_t *, dev_info_t *,
+static void	pci_alloc_intr_fixed(dev_info_t *, dev_info_t *,
 		    ddi_intr_handle_impl_t *, void *);
-static int	pci_free_intr_fixed(dev_info_t *, dev_info_t *,
-		    ddi_intr_handle_impl_t *);
 
 /*
  * pci_name_child:
@@ -141,10 +131,7 @@ pci_common_set_parent_private_data(dev_info_t *dip)
 	struct ddi_parent_private_data *pdptr;
 
 	pdptr = (struct ddi_parent_private_data *)kmem_zalloc(
-	    (sizeof (struct ddi_parent_private_data) +
-	    sizeof (struct intrspec)), KM_SLEEP);
-	pdptr->par_intr = (struct intrspec *)(pdptr + 1);
-	pdptr->par_nintr = 1;
+	    (sizeof (struct ddi_parent_private_data)), KM_SLEEP);
 	ddi_set_parent_data(dip, pdptr);
 }
 
@@ -155,24 +142,14 @@ pci_common_set_parent_private_data(dev_info_t *dip)
 static int
 pci_get_priority(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp, int *pri)
 {
-	struct intrspec *ispec;
-
 	DDI_INTR_NEXDBG((CE_CONT, "pci_get_priority: dip = 0x%p, hdlp = %p\n",
 	    (void *)dip, (void *)hdlp));
 
-	if ((ispec = (struct intrspec *)pci_intx_get_ispec(dip, dip,
-	    hdlp->ih_inum)) == NULL) {
-		if (DDI_INTR_IS_MSI_OR_MSIX(hdlp->ih_type)) {
-			*pri = pci_class_to_pil(dip);
-			pci_common_set_parent_private_data(hdlp->ih_dip);
-			ispec = (struct intrspec *)pci_intx_get_ispec(dip, dip,
-			    hdlp->ih_inum);
-			return (DDI_SUCCESS);
-		}
-		return (DDI_FAILURE);
+	if (hdlp->ih_pri == 0) {
+		hdlp->ih_pri = pci_class_to_pil(dip);
 	}
 
-	*pri = ispec->intrspec_pri;
+	*pri = hdlp->ih_pri;
 	return (DDI_SUCCESS);
 }
 
@@ -192,9 +169,6 @@ pci_common_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 	int			pci_status = 0;
 	int			pci_rval, psm_rval = -1;
 	int			types = 0;
-	int			i, j, count;
-	ddi_intrspec_t		isp;
-	struct intrspec		*ispec;
 	ddi_intr_handle_impl_t	tmp_hdl;
 #if XXXPCI
 	ihdl_plat_t		*ihdl_plat_datap;
@@ -203,12 +177,10 @@ pci_common_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 	int			cap_ptr;
 	char			*prop;
 	ddi_intr_msix_t		*msix_p;
+#endif
 	uint16_t		msi_cap_base, msix_cap_base, cap_ctrl;
 	ddi_acc_handle_t	handle;
-#endif
-	int			rv __unused; /* XXXPCI */
-
-	ddi_intr_handle_t	*h_array;
+	int			rv = DDI_FAILURE;
 
 	DDI_INTR_NEXDBG((CE_CONT,
 	    "pci_common_intr_ops: pdip 0x%p (%s), rdip 0x%p (%s), op %x handle 0x%p\n",
@@ -219,31 +191,18 @@ pci_common_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 	switch (intr_op) {
 	case DDI_INTROP_SUPPORTED_TYPES:
 		/*
-		 * First we determine the interrupt types supported by the
-		 * device itself, then we filter them through what the OS
-		 * and system supports.  We determine system-level
-		 * interrupt type support for anything other than fixed intrs
-		 * through the psm_intr_ops vector
+		 * Determine the interrupt types supported by the device
+		 * itself.  This list will be filtered based on system support
+		 * at higher levels of the device tree.
 		 */
-		rv = DDI_FAILURE;
 
-		/* Fixed supported by default */
+		/* We always support FIXED, INTx interrupts. */
 		types = DDI_INTR_TYPE_FIXED;
-#ifndef XXXPCI
-		*(int *)result = types;
-		return (DDI_SUCCESS);
-#elif XXXPCI			/* We have no MSI here yet */
-		if (psm_intr_ops == NULL) {
-			*(int *)result = types;
-			return (DDI_SUCCESS);
-		}
-
 
 		if (pci_config_setup(rdip, &handle) != DDI_SUCCESS)
 			return (DDI_FAILURE);
 
 		/* Sanity test cap control values if found */
-
 		if (PCI_CAP_LOCATE(handle, PCI_CAP_ID_MSI, &msi_cap_base) ==
 		    DDI_SUCCESS) {
 			cap_ctrl = PCI_CAP_GET16(handle, 0, msi_cap_base,
@@ -264,21 +223,21 @@ pci_common_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 			types |= DDI_INTR_TYPE_MSIX;
 		}
 
-		/*
-		 * Filter device-level types through system-level support
-		 */
-		tmp_hdl.ih_type = types;
-		if ((*psm_intr_ops)(rdip, &tmp_hdl, PSM_INTR_OP_CHECK_MSI,
-		    &types) != PSM_SUCCESS)
-			goto SUPPORTED_TYPES_OUT;
-
 		DDI_INTR_NEXDBG((CE_CONT, "pci_common_intr_ops: "
 		    "rdip: 0x%p supported types: 0x%x\n", (void *)rdip,
 		    types));
 
 		/*
 		 * Export any MSI/MSI-X cap locations via properties
+		 *
+		 * XXXPCI: We don't want to do this here, because we don't
+		 * know the system is ok with it.  What are these properties
+		 * used for?  They're used to make sure that supported-types
+		 * was called before someone tried to use MSI.
+		 *
+		 * I don't know why.
 		 */
+#if XXXPCI
 		if (types & DDI_INTR_TYPE_MSI) {
 			if (ndi_prop_update_int(DDI_DEV_T_NONE, rdip,
 			    "pci-msi-capid-pointer", (int)msi_cap_base) !=
@@ -291,35 +250,46 @@ pci_common_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 			    DDI_PROP_SUCCESS)
 				goto SUPPORTED_TYPES_OUT;
 		}
-
+#endif
 		rv = DDI_SUCCESS;
 
 SUPPORTED_TYPES_OUT:
 		*(int *)result = types;
 		pci_config_teardown(&handle);
-		return (rv);
-#endif	/* XXXPCI: No MSI here yet */
+		if (rv != DDI_SUCCESS)
+			return (rv);
+		return (i_ddi_intr_ops(pdip, rdip, intr_op, hdlp, result));
+
 	case DDI_INTROP_NAVAIL:
 	case DDI_INTROP_NINTRS:
 		ASSERT(!DDI_INTR_IS_MSI_OR_MSIX(hdlp->ih_type)); /* XXXPCI */
 
+		/*
+		 * XXXGIC: I hope the flow here is to ask up the tree regardless,
+		 * possibly with some prior processing, but absent MSI there's
+		 * no processing to do.
+		 */
 		if (DDI_INTR_IS_MSI_OR_MSIX(hdlp->ih_type)) {
 			if (pci_msi_get_nintrs(hdlp->ih_dip, hdlp->ih_type,
 			    result) != DDI_SUCCESS)
 				return (DDI_FAILURE);
 		} else {
-			*(int *)result = i_ddi_get_intx_nintrs(hdlp->ih_dip);
-			if (*(int *)result == 0)
-				return (DDI_FAILURE);
+			return (i_ddi_intr_ops(pdip, rdip, intr_op,
+			    hdlp, result));
 		}
 		break;
 	case DDI_INTROP_ALLOC:
-
 		/*
 		 * FIXED type
 		 */
-		if (hdlp->ih_type == DDI_INTR_TYPE_FIXED)
-			return (pci_alloc_intr_fixed(pdip, rdip, hdlp, result));
+		if (hdlp->ih_type == DDI_INTR_TYPE_FIXED) {
+			/*
+			 * XXXGIC: longer term, we just just inline hwat this does
+			 */
+			pci_alloc_intr_fixed(pdip, rdip, hdlp, result);
+			return (i_ddi_intr_ops(pdip, rdip, intr_op,
+			    hdlp, result));
+		}
 
 		ASSERT(!DDI_INTR_IS_MSI_OR_MSIX(hdlp->ih_type));
 
@@ -423,12 +393,6 @@ SUPPORTED_TYPES_OUT:
 			}
 
 			if (pciepci) {
-				/* update priority in ispec */
-				isp = pci_intx_get_ispec(pdip, rdip,
-				    (int)hdlp->ih_inum);
-				ispec = (struct intrspec *)isp;
-				if (ispec)
-					ispec->intrspec_pri = hdlp->ih_pri;
 				++pcieb_intr_pri_counter;
 			}
 
@@ -468,12 +432,15 @@ SUPPORTED_TYPES_OUT:
 #else
 		if (hdlp->ih_type == DDI_INTR_TYPE_FIXED) {
 #endif
-			return (pci_free_intr_fixed(pdip, rdip, hdlp));
-		} else
-			return (DDI_FAILURE);
+			return (i_ddi_intr_ops(pdip, rdip, intr_op,
+			    hdlp, result));
+		} else {
+			return (DDI_FAILURE );
+		}
 		break;
 	case DDI_INTROP_GETPRI:
-		/* Get the priority */
+		/* XXXGIC: Pass up the tree? */
+		/* Get the priority.  `pci_get_priority` updates `hdlp` */
 		if (pci_get_priority(rdip, hdlp, &priority) != DDI_SUCCESS)
 			return (DDI_FAILURE);
 		DDI_INTR_NEXDBG((CE_CONT, "pci_common_intr_ops: "
@@ -481,6 +448,8 @@ SUPPORTED_TYPES_OUT:
 		*(int *)result = priority;
 		break;
 	case DDI_INTROP_SETPRI:
+		/* XXXGIC: Pass up the tree */
+
 		/* Validate the interrupt priority passed */
 		if (*(int *)result > LOCK_LEVEL)
 			return (DDI_FAILURE);
@@ -491,16 +460,9 @@ SUPPORTED_TYPES_OUT:
 			return (DDI_FAILURE);
 #endif
 
-		isp = pci_intx_get_ispec(pdip, rdip, (int)hdlp->ih_inum);
-		ispec = (struct intrspec *)isp;
-		if (ispec == NULL)
-			return (DDI_FAILURE);
-
 		/* For fixed interrupts */
 		if (hdlp->ih_type == DDI_INTR_TYPE_FIXED) {
 			/* if interrupt is shared, return failure */
-			((ihdl_plat_t *)hdlp->ih_private)->ip_ispecp = ispec;
-
 
 			ASSERT(0 && "XXXPCI: PSM_INTR_OP_GET_SHARED");
 #if XXXPCI
@@ -530,36 +492,27 @@ SUPPORTED_TYPES_OUT:
 		    PSM_FAILURE)
 			return (DDI_FAILURE);
 #endif
-		/* update ispec */
-		ispec->intrspec_pri = *(int *)result;
+
+		hdlp->ih_pri = *(int *)result;
 		break;
 	case DDI_INTROP_ADDISR:
-		/* update ispec */
-		isp = pci_intx_get_ispec(pdip, rdip, (int)hdlp->ih_inum);
-		ispec = (struct intrspec *)isp;
-		if (ispec) {
-			ispec->intrspec_func = hdlp->ih_cb_func;
-
+		/* XXXGIC: Pass up tree? */
 #ifdef XXXPCI
-			ihdl_plat_datap = (ihdl_plat_t *)hdlp->ih_private;
-			pci_kstat_create(&ihdl_plat_datap->ip_ksp, pdip, hdlp);
+		ihdl_plat_datap = (ihdl_plat_t *)hdlp->ih_private;
+		pci_kstat_create(&ihdl_plat_datap->ip_ksp, pdip, hdlp);
 #endif
-		}
 		break;
 	case DDI_INTROP_REMISR:
+		/* XXXGIC: Pass up the tree? */
 		/* Get the interrupt structure pointer */
-		isp = pci_intx_get_ispec(pdip, rdip, (int)hdlp->ih_inum);
-		ispec = (struct intrspec *)isp;
-		if (ispec) {
-			ispec->intrspec_func = (uint_t (*)()) 0;
 #if XXXPCI
-			ihdl_plat_datap = (ihdl_plat_t *)hdlp->ih_private;
-			if (ihdl_plat_datap->ip_ksp != NULL)
-				pci_kstat_delete(ihdl_plat_datap->ip_ksp);
+		ihdl_plat_datap = (ihdl_plat_t *)hdlp->ih_private;
+		if (ihdl_plat_datap->ip_ksp != NULL)
+			pci_kstat_delete(ihdl_plat_datap->ip_ksp);
 #endif
-		}
 		break;
 	case DDI_INTROP_GETCAP:
+		/* XXXGIC: Pass up the tree? */
 		/*
 		 * First check the config space and/or
 		 * MSI capability register(s)
@@ -573,132 +526,15 @@ SUPPORTED_TYPES_OUT:
 		else if (hdlp->ih_type == DDI_INTR_TYPE_FIXED)
 			pci_rval = pci_intx_get_cap(rdip, &pci_status);
 
+		*(int *)result = pci_rval;
 
-#if XXXPCI
-		if (psm_intr_ops != NULL)
-			psm_rval = (*psm_intr_ops)(rdip, hdlp,
-			    PSM_INTR_OP_GET_CAP, &psm_status);
-#endif
+		/* XXXGIC: parent should add/capabilities as necessary */
+		return (i_ddi_intr_ops(pdip, rdip, intr_op,
+		    hdlp, result));
 
-		DDI_INTR_NEXDBG((CE_CONT, "pci: GETCAP returned psm_rval = %x, "
-		    "psm_status = %x, pci_rval = %x, pci_status = %x\n",
-		    psm_rval, psm_status, pci_rval, pci_status));
-
-#if XXXPCI
-		if (psm_rval == PSM_FAILURE && pci_rval == DDI_FAILURE) {
-			*(int *)result = 0;
-			return (DDI_FAILURE);
-		}
-
-		if (psm_rval == PSM_SUCCESS)
-			*(int *)result = psm_status;
-#endif
-
-		if (pci_rval == DDI_SUCCESS)
-			*(int *)result |= pci_status;
-
-		DDI_INTR_NEXDBG((CE_CONT, "pci: GETCAP returned = %x\n",
-		    *(int *)result));
-		break;
-	case DDI_INTROP_SETCAP:
-		DDI_INTR_NEXDBG((CE_CONT, "pci_common_intr_ops: "
-		    "SETCAP cap=0x%x\n", *(int *)result));
-
-		ASSERT(0 && "XXXPCI: PSM_INTR_OP_SET_CAP");
-#if XXXPCI
-		if (psm_intr_ops == NULL)
-			return (DDI_FAILURE);
-
-		if ((*psm_intr_ops)(rdip, hdlp, PSM_INTR_OP_SET_CAP, result)) {
-			DDI_INTR_NEXDBG((CE_CONT, "GETCAP: psm_intr_ops"
-			    " returned failure\n"));
-			return (DDI_FAILURE);
-		}
-#endif
-		break;
-	case DDI_INTROP_ENABLE:
-		DDI_INTR_NEXDBG((CE_CONT, "pci_common_intr_ops: ENABLE\n"));
-#if XXXPCI			/* Why does this check here? */
-		if (psm_intr_ops == NULL)
-			return (DDI_FAILURE);
-#endif
-		if (pci_enable_intr(pdip, rdip, hdlp, hdlp->ih_inum) !=
-		    DDI_SUCCESS)
-			return (DDI_FAILURE);
-
-		DDI_INTR_NEXDBG((CE_CONT, "pci_common_intr_ops: ENABLE "
-		    "vector=0x%x\n", hdlp->ih_vector));
-		break;
-	case DDI_INTROP_DISABLE:
-		DDI_INTR_NEXDBG((CE_CONT, "pci_common_intr_ops: DISABLE\n"));
-#if XXXPCI			/* XXXPCI: Same as above, why? */
-		if (psm_intr_ops == NULL)
-			return (DDI_FAILURE);
-#endif
-
-		pci_disable_intr(pdip, rdip, hdlp, hdlp->ih_inum);
-		DDI_INTR_NEXDBG((CE_CONT, "pci_common_intr_ops: DISABLE "
-		    "vector = %x\n", hdlp->ih_vector));
-		break;
-	case DDI_INTROP_BLOCKENABLE:
-		DDI_INTR_NEXDBG((CE_CONT, "pci_common_intr_ops: "
-		    "BLOCKENABLE\n"));
-		if (hdlp->ih_type != DDI_INTR_TYPE_MSI) {
-			DDI_INTR_NEXDBG((CE_CONT, "BLOCKENABLE: not MSI\n"));
-			return (DDI_FAILURE);
-		}
-
-		/* Check if psm_intr_ops is NULL? */
-#if XXXPCI	/* XXXPCI: Why? */
-		if (psm_intr_ops == NULL)
-			return (DDI_FAILURE);
-#endif
-
-		count = hdlp->ih_scratch1;
-		h_array = (ddi_intr_handle_t *)hdlp->ih_scratch2;
-		for (i = 0; i < count; i++) {
-			hdlp = (ddi_intr_handle_impl_t *)h_array[i];
-			if (pci_enable_intr(pdip, rdip, hdlp,
-			    hdlp->ih_inum) != DDI_SUCCESS) {
-				DDI_INTR_NEXDBG((CE_CONT, "BLOCKENABLE: "
-				    "pci_enable_intr failed for %d\n", i));
-				for (j = 0; j < i; j++) {
-					hdlp = (ddi_intr_handle_impl_t *)
-					    h_array[j];
-					pci_disable_intr(pdip, rdip, hdlp,
-					    hdlp->ih_inum);
-				}
-				return (DDI_FAILURE);
-			}
-			DDI_INTR_NEXDBG((CE_CONT, "pci_common_intr_ops: "
-			    "BLOCKENABLE inum %x done\n", hdlp->ih_inum));
-		}
-		break;
-	case DDI_INTROP_BLOCKDISABLE:
-		DDI_INTR_NEXDBG((CE_CONT, "pci_common_intr_ops: "
-		    "BLOCKDISABLE\n"));
-		if (hdlp->ih_type != DDI_INTR_TYPE_MSI) {
-			DDI_INTR_NEXDBG((CE_CONT, "BLOCKDISABLE: not MSI\n"));
-			return (DDI_FAILURE);
-		}
-
-		/* Check if psm_intr_ops is present */
-#if XXXPCI	/* XXXPCI: Again, why? */
-		if (psm_intr_ops == NULL)
-			return (DDI_FAILURE);
-#endif
-
-		count = hdlp->ih_scratch1;
-		h_array = (ddi_intr_handle_t *)hdlp->ih_scratch2;
-		for (i = 0; i < count; i++) {
-			hdlp = (ddi_intr_handle_impl_t *)h_array[i];
-			pci_disable_intr(pdip, rdip, hdlp, hdlp->ih_inum);
-			DDI_INTR_NEXDBG((CE_CONT, "pci_common_intr_ops: "
-			    "BLOCKDISABLE inum %x done\n", hdlp->ih_inum));
-		}
-		break;
 	case DDI_INTROP_SETMASK:
 	case DDI_INTROP_CLRMASK:
+		/* XXXGIC: Need to pass up the chain, though unsure how */
 		/*
 		 * First handle in the config space
 		 */
@@ -726,6 +562,7 @@ SUPPORTED_TYPES_OUT:
 			break;
 
 		/* For fixed interrupts only: confer with PSM module next */
+		/* XXXGIC: This would happen hen we passed this request up the tree */
 		ASSERT(0 && "XXXPCI PSM_INTR_OP_GET_SHARED");
 #if XXXPCI
 		if (psm_intr_ops != NULL) {
@@ -749,6 +586,7 @@ SUPPORTED_TYPES_OUT:
 		return (DDI_FAILURE);
 #endif
 	case DDI_INTROP_GETPENDING:
+		/* XXXGIC: Need to pass up */
 		/*
 		 * First check the config space and/or
 		 * MSI capability register(s)
@@ -787,7 +625,9 @@ SUPPORTED_TYPES_OUT:
 		DDI_INTR_NEXDBG((CE_CONT, "pci: GETPENDING returned = %x\n",
 		    *(int *)result));
 		break;
+
 	case DDI_INTROP_GETTARGET:
+		/* XXXGIC: Need to pass up the tree */
 		DDI_INTR_NEXDBG((CE_CONT, "pci_common_intr_ops: GETTARGET\n"));
 
 		bcopy(hdlp, &tmp_hdl, sizeof (ddi_intr_handle_impl_t));
@@ -808,6 +648,7 @@ SUPPORTED_TYPES_OUT:
 #endif
 		break;
 	case DDI_INTROP_SETTARGET:
+		/* XXXGIC: Need to pass up the tree */
 		DDI_INTR_NEXDBG((CE_CONT, "pci_common_intr_ops: SETTARGET\n"));
 		ASSERT(0 && "XXXPCI PSM_INTR_OP_SETCPU");
 #if XXXPCI
@@ -825,7 +666,9 @@ SUPPORTED_TYPES_OUT:
 #endif
 
 		break;
+
 	case DDI_INTROP_GETPOOL:
+		/* XXXGIC: Should be entirely tree-based */
 #if XXXPCI
 		/*
 		 * For MSI/X interrupts use global IRM pool if available.
@@ -846,38 +689,17 @@ SUPPORTED_TYPES_OUT:
 /*
  * Allocate a vector for FIXED type interrupt.
  */
-int
+void
 pci_alloc_intr_fixed(dev_info_t *pdip, dev_info_t *rdip,
     ddi_intr_handle_impl_t *hdlp, void *result)
 {
-	int			ret, pci_rval;
+	int			pci_rval;
 	int			pci_status = 0;
 
 	/* Figure out if this device supports MASKING */
 	pci_rval = pci_intx_get_cap(rdip, &pci_status);
 	if ((pci_rval == DDI_SUCCESS) && (pci_status != 0))
 		hdlp->ih_cap |= pci_status;
-
-	/* XXXPCI: ddi_intr_enable will alloc vectors */
-	/* This is "the old scheme", per i86pc/pci_common.c */
-	*(int *)result = 1;
-	ret = DDI_SUCCESS;
-
-	return (ret);
-}
-
-/*
- * Free up the vector for FIXED (legacy) type interrupt.
- */
-static int
-pci_free_intr_fixed(dev_info_t *pdip, dev_info_t *rdip,
-    ddi_intr_handle_impl_t *hdlp)
-{
-	/*
-	 * XXXPCI: The vector was already freed during ddi_intr_disable(),
-	 * apparently, based on how other platforms work.
-	 */
-	return (DDI_SUCCESS);
 }
 
 #if XXXPCI
@@ -923,88 +745,6 @@ pci_get_cpu_from_vecirq(int vecirq, boolean_t is_irq)
 		return (-1);
 }
 #endif
-
-static int
-pci_enable_intr(dev_info_t *pdip, dev_info_t *rdip,
-    ddi_intr_handle_impl_t *hdlp, uint32_t inum)
-{
-	struct intrspec	*ispec;
-	ihdl_plat_t	*ihdl_plat_datap = (ihdl_plat_t *)hdlp->ih_private;
-
-	DDI_INTR_NEXDBG((CE_CONT, "pci_enable_intr: hdlp %p inum %x\n",
-	    (void *)hdlp, inum));
-
-	/* Translate the interrupt if needed */
-	ispec = (struct intrspec *)pci_intx_get_ispec(pdip, rdip, (int)inum);
-	if (ispec == NULL)
-		return (DDI_FAILURE);
-	if (DDI_INTR_IS_MSI_OR_MSIX(hdlp->ih_type)) {
-		ispec->intrspec_vec = inum;
-		ispec->intrspec_pri = hdlp->ih_pri;
-	}
-	ihdl_plat_datap->ip_ispecp = ispec;
-
-	/* XXXPCI: This is not the interface we want, so isn't in the headers */
-	dev_info_t *map_interrupt(dev_info_t *, ddi_intr_handle_impl_t *);
-	dev_info_t *par = map_interrupt(rdip, hdlp);
-	VERIFY3P(par, !=, NULL);
-
-	hdlp->ih_vector = GIC_VEC_TO_IRQ(((ihdl_plat_t *)hdlp->ih_private)->ip_gic_cfg,
-	    hdlp->ih_vector);
-
-	DDI_INTR_NEXDBG((CE_CONT, "pci_enable_intr: priority=%x irq=%x\n",
-	    hdlp->ih_pri, hdlp->ih_vector));
-
-	switch (((ihdl_plat_t *)hdlp->ih_private)->ip_gic_sense & 0xff) {
-	case 1:
-		gic_config_irq(hdlp->ih_vector, B_TRUE);
-		break;
-	default:
-		gic_config_irq(hdlp->ih_vector, B_FALSE);
-		break;
-	}
-
-	/* Add the interrupt handler */
-	if (!add_avintr((void *)hdlp, hdlp->ih_pri, hdlp->ih_cb_func,
-	    DEVI(rdip)->devi_name, hdlp->ih_vector, hdlp->ih_cb_arg1,
-	    hdlp->ih_cb_arg2, &ihdl_plat_datap->ip_ticks, rdip))
-		return (DDI_FAILURE);
-
-	return (DDI_SUCCESS);
-}
-
-
-static void
-pci_disable_intr(dev_info_t *pdip, dev_info_t *rdip,
-    ddi_intr_handle_impl_t *hdlp, uint32_t inum)
-{
-	struct intrspec	*ispec;
-	ihdl_plat_t	*ihdl_plat_datap = (ihdl_plat_t *)hdlp->ih_private;
-
-	DDI_INTR_NEXDBG((CE_CONT, "pci_disable_intr: hdlp %p inum %d\n",
-	    hdlp, inum));
-	ispec = (struct intrspec *)pci_intx_get_ispec(pdip, rdip, (int)inum);
-	if (ispec == NULL)
-		return;
-	if (DDI_INTR_IS_MSI_OR_MSIX(hdlp->ih_type)) {
-		ispec->intrspec_vec = inum;
-		ispec->intrspec_pri = hdlp->ih_pri;
-	}
-	ihdl_plat_datap->ip_ispecp = ispec;
-
-	/*
-	 * NB: The handle was already translated when the interrupt was
-	 * enabled
-	 *
-	 * XXXPCI: ...but this is the wrong way to do this, pushed upon us by
-	 * the incomplete architecture.
-	 */
-
-	/* Disable the interrupt handler */
-	rem_avintr((void *)hdlp, hdlp->ih_pri, hdlp->ih_cb_func,
-	    hdlp->ih_vector);
-	ihdl_plat_datap->ip_ispecp = NULL;
-}
 
 /*
  * Miscellaneous library function

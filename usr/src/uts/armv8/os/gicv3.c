@@ -1159,6 +1159,13 @@ static struct modlinkage modlinkage = {
 int
 _init(void)
 {
+	/*
+	 * If the early-system has probed GIC v3, configure ourselves for
+	 * early operations.
+	 *
+	 * This is necessary because the clock _must_ tick prior to normal
+	 * autoconfiguration taking place, or even being possible.
+	 */
 	if (strcmp(gic_module_name, "gicv3") == 0) {
 		gic_ops.go_send_ipi = gicv3_send_ipi;
 		gic_ops.go_init = gicv3_init;

@@ -58,6 +58,7 @@ extern "C" {
 #define	DDI_INTR_UNCLAIMED	0	/* returned when driver does not */
 
 /* Hardware interrupt types */
+#define	DDI_INTR_TYPE_UNKNOWN	0x0
 #define	DDI_INTR_TYPE_FIXED	0x1
 #define	DDI_INTR_TYPE_MSI	0x2
 #define	DDI_INTR_TYPE_MSIX	0x4

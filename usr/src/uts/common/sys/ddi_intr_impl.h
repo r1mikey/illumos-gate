@@ -399,14 +399,6 @@ typedef struct devinfo_intr devinfo_intr_t;
 struct intrspec {
 	uint_t intrspec_pri;		/* interrupt priority */
 	uint_t intrspec_vec;		/* vector # (0 if none) */
-/*
- * XXXROOTNEX: This is the same hack we end up repeating in the interrupt hdl
- * platform private data, which _also_ has an intrsec in it, and all left
- * hanging in the hopes of properly architected interrupts.
- */
-#if defined(__aarch64__)
-	uint_t intrspec_cfg;		/* GIC-private  interrupt flags */
-#endif
 	uint_t (*intrspec_func)();	/* function to call for interrupt, */
 					/* If (uint_t (*)()) 0, none. */
 					/* If (uint_t (*)()) 1, then */

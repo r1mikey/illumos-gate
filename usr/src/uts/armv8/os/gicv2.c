@@ -69,6 +69,7 @@
 #include <sys/promif.h>
 #include <sys/smp_impldefs.h>
 #include <sys/archsystm.h>
+#include <sys/mach_intr.h>
 
 extern char *gic_module_name;
 
@@ -805,18 +806,165 @@ gicv2_init(void)
 	return (0);
 }
 
+static int
+gicv2_attach(dev_info_t *devi, ddi_attach_cmd_t cmd)
+{
+	ddi_report_dev(devi);
+	return (DDI_SUCCESS);
+}
+
+static int
+gicv2_detach(dev_info_t *devi, ddi_detach_cmd_t cmd)
+{
+	/*
+	 * It is in theory possible we could evacuate an interrupt controller,
+	 * but there's no reason to try.
+	 */
+	return (DDI_FAILURE);
+}
+
+/*
+ * Field interrupt operation requests to program this interrupt controller.
+ *
+ * We only handle the subset of requests that are routed toward an interrupt
+ * controller by the system.
+ *
+ * Operations not intended for us should have been routed away from us and to
+ * the root nexus by the DDI implementation.
+ *
+ * *HOWEVER* due to the nature of the ARM implementation it is possible for
+ * some interrupts to be routed to us without the root nexus having
+ * intervened, and so as a special case we perform the bookkeeping that is
+ * also in the root nexus, on behalf of the root nexus.
+ *
+ * XXXGIC: I don't like the interrupt controllers having knowledge of this,
+ * but they're the only device reliably in the path
+ */
+static int
+gicv2_intr_ops(dev_info_t *dip, dev_info_t *rdip,
+    ddi_intr_op_t intr_op, ddi_intr_handle_impl_t *hdlp, void *result)
+{
+
+	switch (intr_op) {
+	case DDI_INTROP_ADDISR:
+		break;
+	case DDI_INTROP_REMISR:
+		break;
+	case DDI_INTROP_ENABLE: {
+		ihdl_plat_t *priv = hdlp->ih_private;
+
+		VERIFY3P(priv, !=, NULL);
+		VERIFY3P(priv->ip_unitintr, !=, NULL);
+
+		hdlp->ih_vector = GIC_VEC_TO_IRQ(priv->ip_gic_cfg,
+		    hdlp->ih_vector);
+
+		if ((priv->ip_gic_sense & 0xff) == 1)
+			gic_config_irq(hdlp->ih_vector, true);
+		else
+			gic_config_irq(hdlp->ih_vector, false);
+
+		/* Add the interrupt handler */
+		if (!add_avintr((void *)hdlp, hdlp->ih_pri,
+		    hdlp->ih_cb_func, DEVI(rdip)->devi_name, hdlp->ih_vector,
+		    hdlp->ih_cb_arg1, hdlp->ih_cb_arg2, NULL, rdip))
+			return (DDI_FAILURE);
+		break;
+	}
+	case DDI_INTROP_DISABLE: {
+		ihdl_plat_t *priv = hdlp->ih_private;
+
+		VERIFY3P(priv, !=, NULL);
+		VERIFY3P(priv->ip_unitintr, !=, NULL);
+
+		hdlp->ih_vector = GIC_VEC_TO_IRQ(priv->ip_gic_cfg,
+		    hdlp->ih_vector);
+
+		/* Remove the interrupt handler */
+		rem_avintr((void *)hdlp, hdlp->ih_pri,
+		    hdlp->ih_cb_func, hdlp->ih_vector);
+		break;
+	}
+
+	/* Operations that are valid for us, but unimplemented */
+	case DDI_INTROP_BLOCKDISABLE:
+	case DDI_INTROP_BLOCKENABLE:
+		return (DDI_FAILURE);
+
+	/* Operations which should never have reached us */
+	case DDI_INTROP_ALLOC:
+	case DDI_INTROP_CLRMASK:
+	case DDI_INTROP_DUPVEC:
+	case DDI_INTROP_FREE:
+	case DDI_INTROP_GETCAP:
+	case DDI_INTROP_GETPENDING:
+	case DDI_INTROP_GETPOOL:
+	case DDI_INTROP_GETPRI:
+	case DDI_INTROP_GETTARGET:
+	case DDI_INTROP_NAVAIL:
+	case DDI_INTROP_NINTRS:
+	case DDI_INTROP_SETCAP:
+	case DDI_INTROP_SETMASK:
+	case DDI_INTROP_SETPRI:
+	case DDI_INTROP_SETTARGET:
+	case DDI_INTROP_SUPPORTED_TYPES:
+		dev_err(dip, CE_WARN, "unexpected introp %d for %s%d\n",
+		    intr_op, ddi_node_name(rdip), ddi_get_instance(rdip));
+		return (DDI_FAILURE);
+	}
+
+	return (DDI_SUCCESS);
+}
+
+static struct bus_ops gicv2_bus_ops = {
+	.busops_rev = BUSO_REV,
+	.bus_map = nullbusmap,
+	.bus_map_fault = i_ddi_map_fault,
+	.bus_dma_map = ddi_no_dma_map,
+	.bus_dma_allochdl = ddi_no_dma_allochdl,
+	.bus_intr_op = gicv2_intr_ops,
+};
+
 static struct modlmisc modlmisc = {
 	&mod_miscops,
-	"Generic Interrupt Controller v2"
+	"Generic Interrupt Controller v2 (misc)"
+};
+
+static struct dev_ops gicv2_ops = {
+	.devo_rev = DEVO_REV,
+	.devo_refcnt = 0,
+	.devo_getinfo = NULL,
+	.devo_identify = nulldev,
+	.devo_attach = gicv2_attach,
+	.devo_detach = gicv2_detach,
+	.devo_reset = nulldev,
+	.devo_cb_ops  = NULL,
+	.devo_bus_ops = &gicv2_bus_ops,
+	.devo_power = nulldev,
+	.devo_quiesce = ddi_quiesce_not_needed,
+};
+
+static struct modldrv modldrv = {
+	&mod_driverops,
+	"Generic Interrupt Controller v2 (device)",
+	&gicv2_ops,
 };
 
 static struct modlinkage modlinkage = {
-	MODREV_1, (void *)&modlmisc, NULL
+	.ml_rev = MODREV_1,
+	.ml_linkage = { &modlmisc, &modldrv, NULL }
 };
 
 int
 _init(void)
 {
+	/*
+	 * If the early-system has probed GIC v2, configure ourselves for
+	 * early operations.
+	 *
+	 * This is necessary because the clock _must_ tick prior to normal
+	 * autoconfiguration taking place, or even being possible.
+	 */
 	if (strcmp(gic_module_name, "gicv2") == 0) {
 		gic_ops.go_send_ipi = gicv2_send_ipi;
 		gic_ops.go_init = gicv2_init;
