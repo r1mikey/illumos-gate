@@ -581,6 +581,7 @@ interrupts are level-triggered, SPARC PCIe asks the system.
 WARNING: `ih_cap` is not necessarily valid, and should not be used unless this
 implementation has initialized it.
 
+[#ddi-introp-setcap]
 ===== `DDI_INTROP_SETCAP`
 - type of `result`: `int *`
 - initial content of `result`: the desired mask of <<interrupt-capabilities, interrupt capabilities>>
@@ -1481,6 +1482,68 @@ Information about the APIC hardware.
   - Not support by the ISA nexus
   - The PCI code uses <<psm-intr-op-set-cpu, `PSM_INTR_OP_SET_CPU`>>
 
+[#psm-ddi2-comparison]
+===== Comparison between PSM and DDI2 operations
+
+[cols="1,1"]
+|===
+| PSM | DDI2
+
+| <<psm-intr-op-alloc-vectors, `PSM_INTR_OP_ALLOC_VECTORS`>>
+| <<ddi-introp-alloc, `DDI_INTROP_ALLOC`>>
+
+| <<psm-intr-op-free-vectors, `PSM_INTR_OP_FREE_VECTORS`>>
+| <<ddi-introp-free, `DDI_INTROP_FREE`>>
+
+| <<psm-intr-op-navail-vectors, `PSM_INTR_OP_NAVAIL_VECTORS`>>
+| <<ddi-introp-navail, `DDI_INTROP_NAVAIL`>>
+
+| <<psm-intr-op-xlate-vector, `PSM_INTR_OP_XLATE_VECTOR`>>
+| A side-effect of following the interrupt hierarchy through `i_ddi_intr_ops()`
+
+| <<psm-intr-op-get-pending, `PSM_INTR_OP_GET_PENDING`>>
+| <<ddi-introp-getpending, `DDI_INTROP_GETPENDING`>>
+
+| <<psm-intr-op-clear-mask, `PSM_INTR_OP_CLEAR_MASK`>>
+| <<ddi-introp-clrmask, `DDI_INTROP_CLRMASK`>>
+
+| <<psm-intr-op-set-mask, `PSM_INTR_OP_SET_MASK`>>
+| <<ddi-introp-setmask, `DDI_INTROP_SETMASK`>>
+
+| <<psm-intr-op-get-cap, `PSM_INTR_OP_GET_CAP`>>
+| <<ddi-introp-getcap, `DDI_INTROP_GETCAP`>>
+
+| <<psm-intr-op-set-cap, `PSM_INTR_OP_SET_CAP`>>
+| <<ddi-introp-setcap, `DDI_INTROP_SETCAP`>>
+
+| <<psm-intr-op-set-pri, `PSM_INTR_OP_SET_PRI`>>
+| <<ddi-introp-setpri, `DDI_INTROP_SETPRI`>>
+
+|
+| <<ddi-introp-getpri, `DDI_INTROP_GETPRI`>>
+
+| <<psm-intr-op-get-shared, `PSM_INTR_OP_GET_SHARED`>>
+| **???** Only need be known by fixed interrupt controller drivers?
+
+| <<psm-intr-op-check-msi, `PSM_INTR_OP_CHECK_MSI`>>
+| <<ddi-introp-supported-types, `DDI_INTROP_SUPPORTED_TYES`>>
+
+| <<psm-intr-op-set-cpu, `PSM_INTR_OP_SET_CPU`>>
+| <<ddi-introp-settarget, `DDI_INTROP_SETTARGET`>>
+
+| <<psm-intr-op-get-intr, `PSM_INTR_OP_GET_INTR`>>
+| <<ddi-introp-gettarget, `DDI_INTROP_GETTARGET`>> (in effect) 
+
+| <<psm-intr-op-grp-set-cpu, `PSM_INTR_OP_GRP_SET_CPU`>>
+| **???** (repeated <<ddi-introp-settarget, `DDI_INTROP_SETTARGET`>>?)
+
+| <<psm-intr-op-apic-type, `PSM_INTR_OP_APIC_TYPE`>>
+| implicit in the interrupt hierarchy
+
+|
+| <<ddi-introp-getpool, `DDI_INTROP_GETPOOL`>>
+|===
+
 === SPARC
 
 Interrupt operations follow the interrupt hierarchy expressed in the device
@@ -1823,7 +1886,7 @@ This is to avoid an unfortunate chicken-and-egg situation where we need the
 clock interrupt to build the device tree, and the device tree to establish the
 clock interrupt via the DDI interfaces.  The intel platform does this via
 calling into the PSM, which the current AArch64 scheme does not have (or
-probably need)
+probably need).
 
 ===== Structure
 
@@ -1838,21 +1901,24 @@ drivers, which would then establish their interrupts directly.  The actual
 root-most interrupt hardware is part of the basic platform.
 
 On AArch64 we have several possible root-most interrupt controllers, 3
-possible versions of the ARM Generic Interrupt Controller (GIC), and two
-methods of translating MSI/X onto the GIC, and cannot practically follow this
-scheme as-is, since the actual establishment of the interrupt in hardware is
-interrupt-controller dependent.
+possible versions of the ARM Generic Interrupt Controller (GIC), and several
+methods of transmitting MSI/X to the root controller, and cannot practically
+follow this scheme as-is, since the actual establishment of the interrupt in
+hardware is interrupt-controller dependent.
 
 The Intel platform uses the PSM to abstract over this, in a manner not
 entirely dissimilar from the way the DDI2 implementation abstracts over
-interrupt operations (though with different, differently granular,
-operations).
+interrupt operations.  See <<psm-ddi2-comparison, the comparison>> for how
+they line up.
 
 On AArch64 the interrupt controllers available to us are present in the device
 tree directly, and the mapping between hardware and interrupt controllers is
 clearly expressed there (or in the case of ACPI, can be expressed there in a
 well known way) we choose to attach distinct drivers to these controllers, and
-allow those drivers to handle the low-level establishment of interrupts.
+allow those drivers to handle the low-level establishment of interrupts.  In
+spirit, if not entirely in fact, the PSM operation called "on" the interrupt
+controller is replaced with the matching DDI2 operation mapped up the
+interrupt hieararchy.
 
 This means that the system has full device drivers, rather than misc modules
 attaching to any GIC v2 or GIC v3 interrupt controllers, and in the future,
@@ -1863,9 +1929,11 @@ higher levels of the interrupt hierarchy, and to the correct instance of the
 drivers attached to the interrupt controllers.
 
 NOTE: While it may seem surprising, it is a valid topology for the rootnex to
-have an interrupt-parent that actually fields the interrupts, rather than each
+have an **"interrupt-parent"** that actually fields the interrupts, rather than each
 bus pointing to the interrupt controller.  That is, the root nexus is the root
-of the device tree _but not necessarily the interrupt hieararchy_.
+of the device tree _but not necessarily the interrupt hieararchy_.  This is
+how QEMU,virt works and is also the most convenient way to establish a default
+**"interrupt-parent"** for ACPI systems.
 
 ====== Other Interrupt Operations
 
@@ -1878,11 +1946,18 @@ Why do these operations follow a different hierarchy, and get direct answers
 from busses, except for this was how things work on SPARC? (where the
 hierarchies are almost always, we think, isomorphic).
 
-Why do busses answer on their own behalf, does the root system not have any say in
-resource availability, etc?
+Why do busses answer on their own behalf, does the root system not have any
+say in resource availability, etc?
 
 The answer in the current prototype is that this is how SPARC worked, and that
 is directly analogous to how interrupts are structured for us too.
+
+It would be nice if:
+
+. All operations that can follow the interrupt hierarchy, did.  Even if this
+  meant temporary handles have to be more completely allocated.
+. It were clear and documented which operations follow which hieararchy, and
+  whom we expect to be ultimately responsible.
 
 ===== Rationale
 
@@ -1893,8 +1968,8 @@ of interrupt controllers make the approach of having each nexus directly
 establish interrupts via a PSM seem unworkable.  We may have to program
 multiple controllers on the way through the hierarchy, at which we would at
 best be emulating the journey through the interrupt hierarchy of the device
-tree.  Further, the PSM operations interface and the DDI2 interface are so
-similar, it's not obvious what benefit there would be
+tree.  Further, the PSM operations interface and the DDI2 interface are
+<<psm-ddi2-comparison, so similar>>, it's not obvious what benefit there would be
 
 The approach used on SPARC seems to fit our needs, and in fact the prototype
 is very SPARC-y with the exception that interrupt establishing operations pass
@@ -1932,21 +2007,21 @@ position in the device tree.  This means that there is no single global place
 to provide book-keeping at the DDI level.  Much of this bookkeeping is at
 present maintaining the `struct intrspec` compatibility pieces in the parent
 private data, and would go away if and when that does, but I am not convinced
-it is all bookkeeping we would ever want.  Counter to my instincts is the fact
-that interrupt support on SPARC makes this work without shared bookkeeping.
+it is all the global bookkeeping we would ever want.  Counter to my instincts
+is the fact that interrupt support on SPARC makes this work without shared
+bookkeeping.
 
 Another wart is that a full conversion to this scheme is an unfortunate amount
 of work to the extent that a lot of our machine dependent drivers are more
 Intel-derived than SPARC derived, so their interrupt operations must be
 refactored, perhaps substantially, and retested.
 
-This sounds bad, but the comparison between <<psm-operations, PSM operations>> and
-<<interrupt-operations, DDI2 operations>> shows a lot of overlap where calls
-to PSM operations would be directly replaced with `i_ddi_intr_ops()` calls.
-Other operations are either unnecessary in this scheme (vector translation),
-or currently in the wind due to a lack of platform support on AArch64
-(affinity, etc.), but with the appearance we could implement these in the same
-manner.
+This sounds bad, but <<psm-ddi2-comparison, the comparison>> between
+<<psm-operations, PSM operations>> and <<interrupt-operations, DDI2
+operations>> shows a lot of overlap where calls to PSM operations would be
+directly replaced with `i_ddi_intr_ops()` calls.  Other operations are either
+unnecessary in this scheme (vector translation) or not currently implementable
+on AArch64, but with the appearance we could implement these in the same manner.
 
 [#aarch64-ihdl-plat]
 ==== Interrupt Handle Platform Data (`ihdl_plat_t`)
