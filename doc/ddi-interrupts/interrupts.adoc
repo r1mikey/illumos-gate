@@ -1622,35 +1622,75 @@ WARNING: The implementation described here is not the current implementation,
 and exists only prototypically.
 
 AArch64 systems are broken into two major categories based on their firmware
-implementation.
+device tree implementation.
 
 SBSA::
   <<arm-sbsa, The ARM Server Base System Architecture>> which is <<uefi-acpi,
   ACPI>> based.  An illumos device tree is built from information provided by
-  the platform ACPI implementation.
+  the platform ACPI implementation, UEFI is mandatory.
 
 Flat Device Tree (FDT)::
   The platform provides us with a <<devicetree-org, devicetree>> blob, which is superficially
   similar to and derived from an <<1275-ofw, IEEE 1275 OpenFirmware>> device
-  tree, and the illumos device tree directly reflects this.
+  tree, and the illumos device tree directly reflects this.  This may be
+  provided by a boot-loader or statically in ROM.  The <<arm-ebbr,  ARM
+  Embedded Base Boot Requirements>> describe platforms with UEFI but with FDT
+  rather than ACPI.
 
 Interrupt operations follow the interrupt hierarchy as described to us by the
 firmware.  We assume that aside from the mechanism of discovering this
 hierarchy, our journey through it will be equivalent for both implementations.
 
+For the FDT cases the device tree reflects an exactly interrupt hierarchy of
+arbitrary complexity, which we have to understand how to follow.  For the ACPI
+cases the device tree reflects a simpler scheme because of the limits from the
+<<uefi-acpi, ACPI>> and <<arm-sbsa, SBSA>> specifications, but the hierarchy
+must be added to the tree ourselves.  The simplicity then works out in our
+favour (we don't, for instance, have to craft arbitrarily complicated
+**"interrupt-map"** to describe the relationships, because such relationships
+aren't possible).
+
 ==== SBSA
 
-The ACPI `_PRT` describes interrupt routing information, and the interrupt
-hierarchy.
+The interrupt hierarchy is described by <<uefi-acpi, ACPI>>.
+
+In the DSDT nodes there may be at least:
+- `_PRT` describing PCI interrupt routing
+- `_CRS` describing the "Current Resource Settings"
+- `_PRS` describing the "Possible Resource Settings"
+
+There are cases where hardware is also described in other tables, and via
+other methods.
+
+The information necessary here will be added into the device tree when it is
+built, assigning **"interrupts"**, **"interrupt-parent"**, as necessary to
+describe the hardware and hierarchy.  This is basically what happens on Intel
+(except as mentioned, Intel has no need for interrupt parent information).
+
+ACPI systems support one root interrupt controller (they can't describe more).
 
 ==== FDT
 
 The device tree contains the interrupt hierarchy, expressed via a superset of
 the mechanisms used on SPARC.
 
-There is an additional mechanism for fixed interrupts, and an entirely
-alternative method of handling MSI.
+There is an <<devicetree-interrupts-extended, additional mechanism>> for fixed
+interrupts, and an <<devicetree-msi, entirely different>> method of
+handling MSI.
 
+In this case we definitely see cascaded fixed interrupt controllers below the
+root controller.  In cases like the serial on RaspberryPi,4 or the GPIO on
+many bits hardware, we have a single interrupt shared between multiple
+hardware functions behind a piece of hardware we can use to check for whom the
+interrupt was intended, or use to mask/route/control the interrupt.
+
+It is possibly -- in theory, the implementation would be a lot -- to demux
+these and give each device its own vector, rather than sharing the vector as
+with otherwise shared (but not truly multiplexed) fixed interrupts.  Without
+strong motivation (one such motivation would be if in practice we see devices
+which storm interrupts on shared vectors, and affect performance).
+
+[#devicetree-interrupts-extended]
 ===== "interrupts-extended"
 
 Rather than an **"interrupts"** property, a list of interrupt vectors, an
@@ -1664,6 +1704,7 @@ controllers, but without requiring the full mapping of **"interrupt-map"**.
 NOTE: illumos does not currently support this mechanism, as we haven't seen it
 in use.
 
+[#devicetree-msi]
 ===== Devicetree MSI
 
 The devicetree.org specification has a mechanism for expressing MSI that is
@@ -1678,6 +1719,49 @@ to MSI specifiers on specific controllers.
 
 NOTE: illumos does not currently support this mechanism, as MSI support on
 AArch64 does not yet exist
+
+==== Message Signalled Interrupts
+
+WARNING: the prototype does not implement MSI/X at all, this is all thoroughly
+pre-implementation thinking
+
+There are several ways MSI/X are implement on AArch64
+
+1. A GIC v2m device alongside GIC version 2, which maps MSI onto a range of
+  vectors shared with fixed interrupts.  The GIC controls affinity.
+
+2. A GIC v3 device directly receives messages and maps MSI onto a range of
+  vectors shared with fixed interrupts. (Message Based SPIs).  For FDT the
+  mapping is expressed in the devicetree or device binding, ACPI cannot
+  express this.
+
+3. ... the above, but level-triggered.  illumos has no concept of a
+  level-triggered MSI, and one would probably need to be added, if we were to
+  implement this.
+
+4. A GIC v3 redistributor device directly receives messages and raises
+  _locality-specific peripheral interrupts_ (LPIs).  This is basically #2 but
+  without mapping onto vectors shared with fixed interrupts, the vector is now
+  in a specific (very broad) range..  affinity is implicit in the choice of
+  redistributor device.  This is mutually exclusive with #5
+
+5. _Interrupt Translation Service_ (ITS) devices receive messages which raises
+  LPIs like #4.  Affinity is handled by the ITS.
+
+6. Devices like RaspberryPi,4 which has a GIC version 2 with no v2m, and
+  handles MSI in the PCIe host (which is basically how SPARC hardware seemed
+  to work).
+
+This appears to fit with the scheme described, whereby we attach drivers that
+field these interrupts as we would any other.  Some drivers need to handle
+both fixed and MSI/X, some only one or the other.
+
+Of the methods above, it seems like we have no reason to implement #3.
+Whether to implement #4 depends on how commonly used it is compared to #5 (and
+vice-versa).
+
+#6 is either very simple and transparent to us, or requires that the
+downstream nexus be an interrupt controller for our purposes.
 
 ==== Implementation
 
@@ -1848,17 +1932,23 @@ some additional fields
   The number of ticks spent fielding this device's interrupts.
 
 `uint32_t ihdl_gic_cfg`::
-  Currently used to smuggle the "configuration" part of a GIC 3-tuple
-  interrupt.  WARNING: Being phased out in favour of `ip_unitintr`.
+  Currently used to smuggle the "configuration" part
+  of a 3-tuple interrupt from the GIC Devicetree binding.  WARNING: Being
+  phased out in favour of `ip_unitintr`.
 
 `uint32_t ihdl_gic_sense`::
-  Currently used to smuggle the "sense" part of a GIC 3-tuple interrupt.
+  Currently used to smuggle the "sense" part of a 3-tuple interrupt fro the
+  GIC Devicetree binding.
   WARNING:  Being phased out in favour of `ip_unitintr`
 
 `unit_intr_t *ip_unitintr`::
   A device-tree unit interrupt descriptor (the combination of unit address and
   interrupt descriptor).  Used by interrupt mapping internal to the AArch64
-  DDI implementation..
+  DDI implementation.  This is actually specific to the FDT implementation,
+  but should exist in a usable manner given a devicetree constructed from
+  ACPI.  This is opaque (actually, impossible to correctly interpret) to
+  anyone not the interrupt-controller currently processing `hdlp` and the DDI
+  implementation.
 
 == References
 
@@ -1926,3 +2016,5 @@ sense of progression through time of the code we're left with.
 
 - link:https://github.com/oxidecomputer/illumos-gate/blob/stlouis/usr/src/uts/common/sys/ddi_intr_impl.h[ddi_intr_op_t comments currently specific to the Oxide implementation]
 
+[#arm-ebbr]
+- link:https://github.com/ARM-software/ebbr/releases[ARM Embedded Base Boot Requirements]
