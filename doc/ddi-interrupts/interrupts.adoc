@@ -369,7 +369,10 @@ lifetime of `rdip`.
 ===== `DDI_INTROP_NINTRS`
 - type of `result`: `int *`
 - initial content of `result`: undefined
-- final content of `result`: the number of interrupts potentially available to `rdip`
+- final content of `result`: the total number of interrupts supported by `rdip`
+
+This is the implementation of **ddi_intr_get_nintrs(9F)** and returns the number
+of interrupts of the given type supported by a given device.
 
 `ih_type` is guaranteed to be supported by `rdip` as claimed by <<ddi-introp-supported-types, `DDI_INTROP_SUPPORTED_TYPES`>>
 
@@ -379,8 +382,9 @@ lifetime of `rdip`.
 NOTE: it is incorrect -- but not asserted -- to return `DDI_SUCCESS` but store
 `0` in `result`.
 
-NOTE: this is apparently different from <<ddi-introp-navail,
-`DDI_INTROP_NAVAIL`>> although most implementations return the same value.
+WARNING: this is different from <<ddi-introp-navail, `DDI_INTROP_NAVAIL`>>
+although only for MSI/X.  Even then we can't find an implementation that acts
+differently. 
 
 [#ddi-introp-alloc]
 ===== `DDI_INTROP_ALLOC`
@@ -645,9 +649,9 @@ the implementation of **ddi_intr_get_navail(9F)**.
 `hdlp` may be real of temporary, only the `ih_type` and `ih_dip` can be
 relied on.
 
-WARNING: this is apparently different from <<ddi-introp-navail,
-`DDI_INTROP_NINTRS`> although at least _most_ implementations return the same
-value.
+WARNING: this is different from <<ddi-introp-navail, `DDI_INTROP_NINTRS`> in
+the MSI/X case, although we can't find an implementation that acts
+differently.
 
 [#ddi-introp-getpool]
 ===== `DDI_INTROP_GETPOOL`
