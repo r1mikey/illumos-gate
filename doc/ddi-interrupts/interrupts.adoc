@@ -67,7 +67,7 @@ Device Tree::
   <<devicetree-org, Devicetree>> specification , which it superficially
   resembles due to their shared ancestry in <<1275-ofw, 1275 OpenFirmware>>.
 
-== State Of The World
+== State of the World and its History
 
 There are two interrupt frameworks in the DDI, one of them obsolete and based
 on <<struct-intrspec, `struct intrspec`>> which survives, at all levels of the
@@ -81,38 +81,65 @@ evolutions that were at the time thought distinct.  There are also
 evolutionary predecessors of DDI2 that were added to DDI1 and then obsoleted
 by the introduction of DDI2.  These are not described.
 
+NOTE: A lot of this history is reconstructed from what evidence remains.
+We've done our best.
+
 In the beginning there is Motorola 68000, and following that there is SPARC.
 Up until the late 90's interrupt hardware on these platforms was fully in
 Sun's control and it, by design, followed the device tree without a separate
 interrupt hierarchy.  In the late 90's Sun wanted to use off-the-shelf
 hardware for stuff like USB, and with that came interrupt hardware that does
-not follow the device tree.  The OpenFirmware additions originally from
-IBM/Apple/Motorola for PowerPC hardware are taken and implemented to support
-this.  In the early 2000's MSI/X become critical, and DDI2 is implemented.  At
-this time, Intel is a first-class platform.
+not follow the device tree.  Sun used the OpenFirmware additions originally
+from IBM/Apple/Motorola for PowerPC hardware to support this.  In the early
+2000's MSI/X become critical, and DDI2 is implemented.  By this time, Intel is
+a first-class platform.
 
-Along side these platforms is Intel.  On the Intel side the PSM interfaces
-were defined (in uncertain order), and appear among what appear to be a burst
-of PSARC cases relating to x86 coming to life.  Filesystem support, the x86
-DDI, the booting system, and the filesystem all appear in a single block of
-cases here.  Nothing survives to tell us why the DDI1 interface was a bad
-match for these systems but we already can guess -- the same reason it was a
-bad match for late-90's and early-2000's SPARC.  "Weird" interrupt
-hierarchies, cascaded controllers, etc.  There was also on Intel at the time a
-number of competing multi-processor schemes which require their own
-implementation of other, non-interrupt related, machine-specifics.  The PSM
-interfaces were added as a "temporary" measure (in 1993) awaiting the KBI
-(Kernel Binary Interface) projects which proposed abstracting over differences
-such as these (and never fully happened).
+Along side these platforms appears Intel, in the early 1990s. It presents a
+number of problems.
 
-Along side _that_ platform is, by surprise, PowerPC.  Sun briefly added
-support for PReP-based PowerPC systems, and by chance some of <<psarc-ppc,
-this case>> is available to us.  They describe wanting to use the PSM-style
-interfaces for simplicity, because the "real" KBI is far away, and because of
-the hardware similarity (this is presumed to be, again, the "weird" interrupt
-hierarchy and cascading, only this time with OpenPIC).  They were also waiting
--- with the benefit of hindsight -- for CHRP, in which 1275 OpenFirmware was
-finally implemented.
+. The interrupt hierarchy is nothing like the device hierarchy
+. There are a variety of low-level hardware implementations of multi-processor
+  support, which does not officially yet exist from Intel.  These necessarily
+  include different interrupt implementations, CPU interfaces, etc. 
+
+[sidebar]
+.The _Kernel Binary Interface_ (KBI)
+--
+At this time (the early 90's) it became apparent that shipping a `unix` binary
+per platform was unwieldy (on SPARC), especially for providing binary software
+patches.  On the Intel platform it is even more unweildy because as mentioned
+before, multi-processor support at this time was machine specific at deeply
+low levels.  Each such machine would require its own `unix` like SPARC, but
+that makes it nearly impossible for 3rd parties to support their own machine.
+
+The solution was several projects under the umbrella of a Kernel Binary
+Interface project, which attempted to restructure the kernel to solve these
+(and other) problems.  It did a lot, but was never fully completed.
+--
+
+The implementation for Intel added the concept of a _Platform Support Module_
+(PSM) which appears among what appear to be a burst of PSARC cases relating to
+x86 coming to life.  Filesystem support, the x86 DDI, the booting system, and
+the filesystem all appear in a single block of cases here.  Nothing survives
+to tell us why they thought the DDI1 interrupt interfaces a bad match for
+these systems but we can guess -- the same reasons it was a bad match for
+late-90's and early-2000's SPARC.  "Weird" interrupt hierarchies, cascaded
+controllers, etc, with the additional problem in the larger platform of the
+entirely different multi-processor implementations.  The PSM is added as a
+temporary solution until KBI solves the problem.  KBI didn't solve the
+problem.  The PSM interface goes from temporary to carefully versioned
+architecture over the next handful of years.
+
+Now, perhaps as something of a surprise is PowerPC.  Sun briefly added support
+for PReP-based PowerPC systems, and by chance some of <<psarc-ppc, this case>>
+is available to us.  They describe wanting to use the PSM-style interfaces for
+simplicity, because the "real" KBI is far away, and because of the hardware
+similarity (this is presumed to be, again, the "weird" interrupt hierarchy and
+cascading, only this time with OpenPIC.  I can't think of what other
+similarity there could possibly be).  They were also waiting -- with the
+benefit of hindsight -- for CHRP, in which 1275 OpenFirmware was finally
+implemented.  PowerPC support didn't last long enough to see any future
+relevant interrupt changes.
 
 == Interrupts as they exist
 
