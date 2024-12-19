@@ -1270,7 +1270,9 @@ those potentially relevant to interrupts are described here.
 `PSM_INTR_OP_GRP_SET_CPU`::
   Set the cpu to which all vectors on `dip` should be delivered.  `hdlp` is
   specific to this command, and bears a target cpuid as `ih_private`.  Fails
-  in `mach_intr_ops`
+  in `mach_intr_ops`.  This happens atomicly and apparently was necessary to
+  keep interrupt bookkeeping information correct, as the hardware only
+  supports doing this atomicly.  See <<psarc-2007-302, the ARC case>>
 
 [#psm-intr-op-apic-type]
 `PSM_INTR_OP_APIC_TYPE`::
@@ -1535,7 +1537,7 @@ Information about the APIC hardware.
 | <<ddi-introp-gettarget, `DDI_INTROP_GETTARGET`>> (in effect) 
 
 | <<psm-intr-op-grp-set-cpu, `PSM_INTR_OP_GRP_SET_CPU`>>
-| **???** (repeated <<ddi-introp-settarget, `DDI_INTROP_SETTARGET`>>?)
+| **???** (requires a new interface to preserve the atomicity of the PSM interface)
 
 | <<psm-intr-op-apic-type, `PSM_INTR_OP_APIC_TYPE`>>
 | implicit in the interrupt hierarchy
@@ -2096,6 +2098,7 @@ sense of progression through time of the code we're left with.
 
 - PSARC/2006/037 PCI Express Hotplug Framework Interrupt Interfaces
 
+[#psarc-2007-302]
 - link:https://illumos.org/opensolaris/ARChive/PSARC/2007/302/[PSARC/2007/302 PSM_INTR_OPS extensions for handling groups of interrupt vectors]
 
 - link:https://illumos.org/opensolaris/ARChive/PSARC/2007/453/[PSARC/2007/453 MSI-X interrupt limit override]
