@@ -2023,6 +2023,24 @@ directly replaced with `i_ddi_intr_ops()` calls.  Other operations are either
 unnecessary in this scheme (vector translation) or not currently implementable
 on AArch64, but with the appearance we could implement these in the same manner.
 
+====== Vastly increased interrupt vector space
+
+The autovectoring interrupt support in illumos currently has a maximum of 256
+vectors.  The vector space on AArch64 is vastly larger than this, although
+sparse.
+
+WARNING: The implementation of autovectoring is also inconsistent about what
+happens to vectors > 256.  `add_avintr()` and `rem_avintr()` will take the
+vector modulo `MAX_VECT` as the index into the table, `av_dispatch_autovect()`
+will not do this, and assert the vector itself is lower than `MAX_VECT`.  All
+other code on all other platforms will just overrun `autovect[MAX_VECT]`.
+
+The apix PSM has a problem not unlike ours, and solves it using the `addintr`
+and `remintr` function pointers, which if non-NULL entirely replace the
+implementation of `add_avintr()` and `rem_avintr()`.  The metadata tracked in
+the GIC implementations just keeps an AVL of active vectors, rather than a
+huge sparse table.  This is problematic in interrupt context though.
+
 [#aarch64-ihdl-plat]
 ==== Interrupt Handle Platform Data (`ihdl_plat_t`)
 
