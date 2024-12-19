@@ -43,6 +43,7 @@
 #include <sys/note.h>
 #include <sys/promif.h>
 #include <sys/sysmacros.h>
+#include <sys/obpdefs.h>
 
 static int smpl_bus_map(dev_info_t *, dev_info_t *, ddi_map_req_t *, off_t,
     off_t, caddr_t *);
@@ -219,13 +220,13 @@ smpl_bus_apply_range(dev_info_t *dip, struct regspec64 *out)
 	ASSERT3P(parent, !=, NULL);
 
 	child_addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
-	    DDI_PROP_DONTPASS, "#address-cells", 0);
+	    DDI_PROP_DONTPASS, OBP_ADDRESS_CELLS, 0);
 	child_size_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
-	    DDI_PROP_DONTPASS, "#size-cells", 0);
+	    DDI_PROP_DONTPASS, OBP_SIZE_CELLS, 0);
 	parent_addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, parent,
-	    DDI_PROP_DONTPASS, "#address-cells", 0);
+	    DDI_PROP_DONTPASS, OBP_ADDRESS_CELLS, 0);
 	parent_size_cells = ddi_prop_get_int(DDI_DEV_T_ANY, parent,
-	    DDI_PROP_DONTPASS, "#size-cells", 0);
+	    DDI_PROP_DONTPASS, OBP_SIZE_CELLS, 0);
 
 	VERIFY3S(parent_addr_cells, !=, 0);
 	VERIFY3S(parent_size_cells, !=, 0);
@@ -299,13 +300,13 @@ smpl_bus_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp, off_t offset,
 	uint32_t *cregs = NULL;
 
 	if ((addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
-	    DDI_PROP_DONTPASS, "#address-cells", 0)) == 0) {
+	    DDI_PROP_DONTPASS, OBP_ADDRESS_CELLS, 0)) == 0) {
 		dev_err(rdip, CE_WARN, "couldn't read #address-cells");
 		return (DDI_ME_INVAL);
 	}
 
 	if ((size_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
-	    DDI_PROP_DONTPASS, "#size-cells", 0)) == 0) {
+	    DDI_PROP_DONTPASS, OBP_SIZE_CELLS, 0)) == 0) {
 		dev_err(rdip, CE_WARN, "couldn't read #size-cells");
 		return (DDI_ME_INVAL);
 	}

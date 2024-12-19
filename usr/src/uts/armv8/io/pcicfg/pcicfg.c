@@ -44,6 +44,7 @@
 #include <sys/ndi_impldefs.h>
 #include <sys/pci_cfgacc.h>
 #include <sys/pci_props.h>
+#include <sys/obpdefs.h>
 
 /*
  * ************************************************************************
@@ -3251,10 +3252,10 @@ pcicfg_set_busnode_props(dev_info_t *dip, uint8_t pcie_device_type)
 		return (ret);
 	}
 	if ((ret = ndi_prop_update_int(DDI_DEV_T_NONE, dip,
-	    "#address-cells", 3)) != DDI_SUCCESS) {
+	    OBP_ADDRESS_CELLS, 3)) != DDI_SUCCESS) {
 		return (ret);
 	}
-	if ((ret = ndi_prop_update_int(DDI_DEV_T_NONE, dip, "#size-cells", 2))
+	if ((ret = ndi_prop_update_int(DDI_DEV_T_NONE, dip, OBP_SIZE_CELLS, 2))
 	    != DDI_SUCCESS) {
 		return (ret);
 	}

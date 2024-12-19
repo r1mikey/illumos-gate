@@ -180,6 +180,7 @@
 #include <io/pciex/pcie_nvidia.h>
 #include <sys/devcache.h>
 #include <sys/plat/pci_prd.h>
+#include <sys/obpdefs.h>
 
 /* pci bus resource maps */
 struct pci_bus_resource *pci_bus_res;
@@ -2223,9 +2224,9 @@ process_devfunc(uchar_t bus, uchar_t dev, uchar_t func, int config_op)
 		(void) ndi_prop_update_string(DDI_DEV_T_NONE, dip,
 		    "device_type", "pci-ide");
 		(void) ndi_prop_update_int(DDI_DEV_T_NONE, dip,
-		    "#address-cells", 1);
+		    OBP_ADDRESS_CELLS, 1);
 		(void) ndi_prop_update_int(DDI_DEV_T_NONE, dip,
-		    "#size-cells", 0);
+		    OBP_SIZE_CELLS, 0);
 
 		/* allocate two child nodes */
 		ndi_devi_alloc_sleep(dip, "ide",
@@ -2956,9 +2957,9 @@ add_ppb_props(dev_info_t *dip, uchar_t bus, uchar_t dev, uchar_t func,
 	(void) ndi_prop_update_string(DDI_DEV_T_NONE, dip,
 	    "device_type", dev_type);
 	(void) ndi_prop_update_int(DDI_DEV_T_NONE, dip,
-	    "#address-cells", 3);
+	    OBP_ADDRESS_CELLS, 3);
 	(void) ndi_prop_update_int(DDI_DEV_T_NONE, dip,
-	    "#size-cells", 2);
+	    OBP_SIZE_CELLS, 2);
 
 	/*
 	 * Collect bridge window specifications, and use them to populate

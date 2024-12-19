@@ -1129,14 +1129,14 @@ i_ddi_interrupt_domain(dev_info_t *pdip)
 
 		/* If we have "#interrupt-cells", we're what we want */
 		if (ddi_prop_exists(DDI_DEV_T_ANY, p, DDI_PROP_DONTPASS,
-		    "#interrupt-cells") != 0) {
+		    OBP_INTERRUPT_CELLS) != 0) {
 			ret = p;
 			break;
 		}
 
 		/* If not, if there's an interrupt-parent follow it */
 		if ((phandle = ddi_prop_get_int(DDI_DEV_T_ANY, p,
-		    DDI_PROP_DONTPASS, "interrupt-parent", -1)) != -1) {
+		    DDI_PROP_DONTPASS, OBP_INTERRUPT_PARENT, -1)) != -1) {
 			p = e_ddi_nodeid_to_dip(phandle);
 			VERIFY3P(p, !=, NULL);
 			continue;
@@ -1176,7 +1176,7 @@ i_ddi_get_interrupt(dev_info_t *dip, uint_t inumber, int **ret)
 		VERIFY3P(id, !=, NULL);
 
 		int intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, id,
-		    DDI_PROP_DONTPASS, "#interrupt-cells", 1);
+		    DDI_PROP_DONTPASS, OBP_INTERRUPT_CELLS, 1);
 
 		if (inumber >= ip_sz / intr_cells) {
 			return (0); /* failure */
@@ -1346,7 +1346,7 @@ i_ddi_unitaddr(dev_info_t *dip, uint_t *out, size_t out_cells)
 	uint_t reg_cells;
 
 	int addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip, 0,
-	    "#address-cells", 2);
+	    OBP_ADDRESS_CELLS, 2);
 
 	if (addr_cells == 0)
 		return (0);
@@ -1403,7 +1403,7 @@ i_ddi_unitintr(dev_info_t *dip, uint_t inum)
 {
 	unit_intr_t *ui;
 	int addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip, 0,
-	    "#address-cells", 2);
+	    OBP_ADDRESS_CELLS, 2);
 
 	int *intrs = NULL;
 	int intr_cells = i_ddi_get_interrupt(dip, inum, &intrs);
@@ -1442,7 +1442,7 @@ map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
 	if (ddi_prop_exists(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
 	    "interrupt-controller") != 0) {
 		phandle_t ip = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
-		    DDI_PROP_DONTPASS, "interrupt-parent", -1);
+		    DDI_PROP_DONTPASS, OBP_INTERRUPT_PARENT, -1);
 
 		/*
 		 * In the algorithm presented in the spec we would
@@ -1489,7 +1489,7 @@ map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
 			ASSERT3P(i_ddi_interrupt_domain(dip), ==, dip);
 
 			int intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
-			    DDI_PROP_DONTPASS, "#interrupt-cells", 1);
+			    DDI_PROP_DONTPASS, OBP_INTERRUPT_CELLS, 1);
 
 			VERIFY((intr_mask_sz == ui->ui_nelems) ||
 			    (intr_mask_sz == 0));
@@ -1524,10 +1524,10 @@ map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
 				VERIFY3P(i_ddi_interrupt_domain(parent), ==, parent);
 
 				int par_addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY,
-				    parent, 0, "#address-cells", 2);
+				    parent, 0, OBP_ADDRESS_CELLS, 2);
 				int par_intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY,
-				    parent, DDI_PROP_DONTPASS, "#interrupt-cells",
-				    1);
+				    parent, DDI_PROP_DONTPASS,
+				    OBP_INTERRUPT_CELLS, 1);
 
 				if (memcmp(ui->ui_v, scan,
 				    CELLS_1275_TO_BYTES(ui->ui_nelems)) == 0) {
@@ -1572,7 +1572,7 @@ map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
 		 * that need to process interrupt operations.
 		 */
 		int ip = ddi_prop_get_int(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-		    "interrupt-parent", -1);
+		    OBP_INTERRUPT_PARENT, -1);
 
 		if (ip != -1) {
 			ipar = e_ddi_nodeid_to_dip(ip);
@@ -1596,10 +1596,10 @@ map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
 		dev_info_t *idom = i_ddi_interrupt_domain(ipar);
 
 		int intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, idom,
-		    DDI_PROP_DONTPASS, "#interrupt-cells", 1);
+		    DDI_PROP_DONTPASS, OBP_INTERRUPT_CELLS, 1);
 
 		int addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, ipar, 0,
-		    "#address-cells", 2);
+		    OBP_ADDRESS_CELLS, 2);
 
 		if ((intr_cells + addr_cells) == ui->ui_nelems) {
 			/* Same size, just overwrite the unit address */
@@ -1752,7 +1752,7 @@ i_ddi_get_intx_nintrs(dev_info_t *dip)
 		VERIFY3P(intrd, !=, NULL);
 
 		intr_sz = ddi_prop_get_int(DDI_DEV_T_ANY, intrd,
-		    DDI_PROP_DONTPASS, "#interrupt-cells", -1);
+		    DDI_PROP_DONTPASS, OBP_INTERRUPT_CELLS, -1);
 
 		VERIFY3S(intr_sz, !=, -1);
 
@@ -1807,11 +1807,11 @@ get_address_cells(pnode_t node)
 	int address_cells = 0;
 
 	while (node > 0) {
-		int len = prom_getproplen(node, "#address-cells");
+		int len = prom_getproplen(node, OBP_ADDRESS_CELLS);
 		if (len > 0) {
 			ASSERT(len == sizeof (int));
 			int prop;
-			prom_getprop(node, "#address-cells", (caddr_t)&prop);
+			prom_getprop(node, OBP_ADDRESS_CELLS, (caddr_t)&prop);
 			address_cells = ntohl(prop);
 			break;
 		}
@@ -1826,11 +1826,11 @@ get_size_cells(pnode_t node)
 	int size_cells = 0;
 
 	while (node > 0) {
-		int len = prom_getproplen(node, "#size-cells");
+		int len = prom_getproplen(node, OBP_SIZE_CELLS);
 		if (len > 0) {
 			ASSERT(len == sizeof (int));
 			int prop;
-			prom_getprop(node, "#size-cells", (caddr_t)&prop);
+			prom_getprop(node, OBP_SIZE_CELLS, (caddr_t)&prop);
 			size_cells = ntohl(prop);
 			break;
 		}
@@ -1856,9 +1856,9 @@ impl_xlate_regs(dev_info_t *child, uint32_t *in, size_t in_len,
 	}
 
 	int parent_addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, parent,
-	    0, "#address-cells", 0);
+	    0, OBP_ADDRESS_CELLS, 0);
 	int parent_size_cells = ddi_prop_get_int(DDI_DEV_T_ANY, parent,
-	    0, "#size-cells", 0);
+	    0, OBP_SIZE_CELLS, 0);
 
 	if (parent_size_cells < 1 || parent_size_cells > 2) {
 		dev_err(child, CE_WARN, "unsupported size cells %d",
@@ -1958,13 +1958,13 @@ make_ddi_ppd(dev_info_t *child, struct ddi_parent_private_data **ppd)
 	}
 
 	child_addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, child,
-	    0, "#address-cells", 0);
+	    0, OBP_ADDRESS_CELLS, 0);
 	child_size_cells = ddi_prop_get_int(DDI_DEV_T_ANY, child,
-	    0, "#size-cells", 0);
+	    0, OBP_SIZE_CELLS, 0);
 	parent_addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, parent,
-	    0, "#address-cells", 0);
+	    0, OBP_ADDRESS_CELLS, 0);
 	parent_size_cells = ddi_prop_get_int(DDI_DEV_T_ANY, parent,
-	    0, "#size-cells", 0);
+	    0, OBP_SIZE_CELLS, 0);
 
 	ASSERT3U(child_addr_cells, !=, 0);
 	ASSERT3U(child_size_cells, !=, 0);
