@@ -30,8 +30,8 @@ Interrupt:: The general concept of a device alerting the CPU that it needs servi
 
 Vector::
   The identifying aspect of an interrupt at the current layer of the
-  device tree.  the first interrupt on device A maybe have vector 8 on the bridge A
-  is connected to, and vector 73 at the interrupt controller.  The system
+  device tree.  The first interrupt on device A maybe has vector 8 on the bridge A
+  it is connected to, and vector 73 at the interrupt controller.  The system
   assumes at times that this is representable as a single 32bit value.
 
 Interrupt Domain::
@@ -56,7 +56,7 @@ Nexus::
 Root Nexus::
   The nexus driver at the root of the device tree, the `rootnex` driver.  The
   tree node is conventionally named for the hardware platform. **i86pc**,
-  **Oxide,Gimlet**, **SUNW,Sun-Fire-T200**, **RaspberryPi,4** etc.  Note thhat
+  **Oxide,Gimlet**, **SUNW,Sun-Fire-T200**, **RaspberryPi,4** etc.  Note that
   the root nexus is only the root of the device tree _it may not be the root
   of the interrupt hierarchy_.
 
@@ -121,10 +121,10 @@ The implementation for Intel added the concept of a _Platform Support Module_
 (PSM) which appears among what appear to be a burst of PSARC cases relating to
 x86 coming to life.  Filesystem support, the x86 DDI, the booting system, and
 the filesystem all appear in a single block of cases here.  Nothing survives
-to tell us why they thought the DDI1 interrupt interfaces a bad match for
+to tell us why they thought the DDI1 interrupt interfaces were a bad match for
 these systems but we can guess -- the same reasons it was a bad match for
 late-90's and early-2000's SPARC.  "Weird" interrupt hierarchies, cascaded
-controllers, etc, with the additional problem in the larger platform of the
+controllers, etc., with the additional problem in the larger platform of the
 entirely different multi-processor implementations.  The PSM is added as a
 temporary solution until KBI solves the problem.  KBI didn't solve the
 problem.  The PSM interface goes from temporary to carefully versioned
@@ -148,7 +148,7 @@ serviced.
 
 _Fixed interrupts_ are traditional interrupts that were originally wired to
 interrupt pins on the CPU core, but are now wired to one (or more) interrupt
-controllers (which maybe part of the CPU), and may at the hardware level in
+controllers (which may be part of the CPU), and may at the hardware level in
 fact be entirely emulated (such as with PCIe INTx interrupts, which emulate
 the PCI INTA#-INTD# pins via messages at the PCIe level but appear as
 traditional fixed interrupts outside of the PCIe domain, or UltraSPARC Mondos
@@ -158,7 +158,7 @@ Fixed interrupts may require per-device handling at any stage between the device
 generating the interrupt and the CPU core handling it.  This may include
 translating the interrupt vector into the domain of the parent device,
 programming an intervening interrupt controller (as may be the case with
-GPIO), or simple bookeeping tasks.
+GPIO), or simple bookkeeping tasks.
 
 Fixed interrupts may be shared between devices, and in a typical PCI or PCIe
 system could be shared extensively.  x86 systems in particular have a greatly
@@ -299,7 +299,7 @@ availability of resources.  The precise manner of this is system specific and
 described <<platform-implementations, elsewhere>>.
 
 Client drivers were not converted to the DDI2 interfaces (and many remain
-unconverted 20 year later).  Nexus drivers were.
+unconverted 20 years later).  Nexus drivers were.
 
 [#bus-intr-op]
 ==== `.bus_intr_op(dev_info_t *dip, dev_info_t *rdip, ddi_intr_op_t intr_op, ddi_intr_handle_impl_t *hdlp, void *result)`
@@ -735,7 +735,7 @@ implementation.
 
 `uint16_t ih_ver`::
   Interrupt handle version.  `DDI_INTR_VERSION`.  NOTE: this is the 5th
-  element in the structure.  It's offset must be maintained for the version
+  element in the structure.  Its offset must be maintained for the version
   checking it allows for to remain possible.  This is also used by the
   <<psm-intr-op-apic-type, `PSM_INTR_OP_APIC_TYPE`>> operation in Intel PSMs
   to return the APIC version.
@@ -908,8 +908,8 @@ which is shared by multiple devices.  These are managed by the MSI controllers
 (the interrupt controller hardware in general, on Intel.  The PCIe roots on
 SPARC).
 
-For each device driver that interacts with the IRM, an a <<irm-request,
-`ddi_irm_req_t`>> is maintained by the framework to track to the number of
+For each device driver that interacts with the IRM, a <<irm-request,
+`ddi_irm_req_t`>> is maintained by the framework to track the number of
 vectors it has requested, and received.
 
 When interrupts operations are performed on a device, nexus drivers maybe be
@@ -1692,7 +1692,7 @@ the root-most interrupt parent and handled there.
 `DDI_INTROP_CLRMASK`::
   No interaction with `hdlp`
 
-`DDI_INTROP_GETPENDING::
+`DDI_INTROP_GETPENDING`::
   Usually no interaction with `hdlp`.  In PCIe code it is the canonical source
   of information.
 
@@ -1735,7 +1735,7 @@ Interrupt operations follow the interrupt hierarchy as described to us by the
 firmware.  We assume that aside from the mechanism of discovering this
 hierarchy, our journey through it will be equivalent for both implementations.
 
-For the FDT cases the device tree reflects an exactly interrupt hierarchy of
+For the FDT cases the device tree reflects an exact interrupt hierarchy of
 arbitrary complexity, which we have to understand how to follow.  For the ACPI
 cases the device tree reflects a simpler scheme because of the limits from the
 <<uefi-acpi, ACPI>> and <<arm-sbsa, SBSA>> specifications, but the hierarchy
@@ -1778,7 +1778,7 @@ many bits hardware, we have a single interrupt shared between multiple
 hardware functions behind a piece of hardware we can use to check for whom the
 interrupt was intended, or use to mask/route/control the interrupt.
 
-It is possibly -- in theory, the implementation would be a lot -- to demux
+It is possible -- in theory, the implementation would be a lot -- to demux
 these and give each device its own vector, rather than sharing the vector as
 with otherwise shared (but not truly multiplexed) fixed interrupts.  Without
 strong motivation (one such motivation would be if in practice we see devices
@@ -1994,7 +1994,7 @@ The addition of MSI support on ARM will present a departure from the SPARC
 scheme. On SPARC it is assumed that a direct ancestor of our device will be a
 host bridge device which will handle translating MSIs to Mondos (or whatever
 ends up happening), the same assumption as used to exist for fixed
-interrupts too.  Whereas on ARM we have potentially several such devices
+interrupts, too.  Whereas on ARM we have potentially several such devices
 appearing discretely and handling MSI/X for different subsets of devices in
 the system, to which they may (and usually do) have no familial relation in
 the device tree.
@@ -2061,7 +2061,7 @@ some additional fields
   phased out in favour of `ip_unitintr`.
 
 `uint32_t ihdl_gic_sense`::
-  Currently used to smuggle the "sense" part of a 3-tuple interrupt fro the
+  Currently used to smuggle the "sense" part of a 3-tuple interrupt from the
   GIC Devicetree binding.
   WARNING:  Being phased out in favour of `ip_unitintr`
 
