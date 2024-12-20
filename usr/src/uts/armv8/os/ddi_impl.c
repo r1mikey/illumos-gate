@@ -1089,6 +1089,8 @@ i_ddi_add_softint(ddi_softint_hdl_impl_t *hdlp)
 {
 	int ret;
 
+	ASSERT(RW_LOCK_HELD(&hdlp->ih_rwlock));
+
 	ret = add_avsoftintr((void *)hdlp, hdlp->ih_pri, hdlp->ih_cb_func,
 	    DEVI(hdlp->ih_dip)->devi_name, hdlp->ih_cb_arg1, hdlp->ih_cb_arg2);
 	return (ret ? DDI_SUCCESS : DDI_FAILURE);
@@ -1097,6 +1099,7 @@ i_ddi_add_softint(ddi_softint_hdl_impl_t *hdlp)
 void
 i_ddi_remove_softint(ddi_softint_hdl_impl_t *hdlp)
 {
+	ASSERT(RW_LOCK_HELD(&hdlp->ih_rwlock));
 	(void) rem_avsoftintr((void *)hdlp, hdlp->ih_pri, hdlp->ih_cb_func);
 }
 
@@ -1280,6 +1283,8 @@ extern boolean_t av_check_softint_pending(struct av_softinfo *, boolean_t);
 int
 i_ddi_trigger_softint(ddi_softint_hdl_impl_t *hdlp, void *arg2)
 {
+	ASSERT(RW_LOCK_HELD(&hdlp->ih_rwlock));
+
 	if (av_check_softint_pending(hdlp->ih_pending, B_FALSE))
 		return (DDI_EPENDING);
 
@@ -1294,6 +1299,8 @@ i_ddi_set_softint_pri(ddi_softint_hdl_impl_t *hdlp, uint_t old_pri)
 {
 	int ret;
 
+	ASSERT(RW_LOCK_HELD(&hdlp->ih_rwlock));
+
 	if (av_check_softint_pending(hdlp->ih_pending, B_TRUE))
 		return (DDI_FAILURE);
 
@@ -1304,15 +1311,17 @@ i_ddi_set_softint_pri(ddi_softint_hdl_impl_t *hdlp, uint_t old_pri)
 void
 i_ddi_alloc_intr_phdl(ddi_intr_handle_impl_t *hdlp)
 {
+	ASSERT(RW_WRITE_HELD(&hdlp->ih_rwlock));
 	hdlp->ih_private = kmem_zalloc(sizeof (ihdl_plat_t), KM_SLEEP);
 }
 
 void
 i_ddi_free_intr_phdl(ddi_intr_handle_impl_t *hdlp)
 {
+	ASSERT(RW_WRITE_HELD(&hdlp->ih_rwlock));
+
 	ihdl_plat_t *priv = hdlp->ih_private;
 
-	/* XXXGIC: Is here the right spot? */
 	if (priv != NULL) {
 		i_ddi_free_unitintr(priv->ip_unitintr);
 	}
@@ -1407,6 +1416,8 @@ static dev_info_t *
 map_interrupt_core(dev_info_t *dip,
     ddi_intr_handle_impl_t *hdlp)
 {
+	ASSERT(RW_WRITE_HELD(&hdlp->ih_rwlock));
+
 	if (ddi_prop_exists(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
 	    "interrupt-controller") != 0) {
 		phandle_t ip = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
@@ -1660,10 +1671,8 @@ map_interrupt_core(dev_info_t *dip,
 dev_info_t *
 map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
 {
-	/*
-	 * XXXPCI: Doing this via the private data in the hdl, v. just
-	 * returning it, is bullshit.
-	 */
+	ASSERT(RW_WRITE_HELD(&hdlp->ih_rwlock));
+
 	ihdl_plat_t *priv = (ihdl_plat_t *)hdlp->ih_private;
 	VERIFY3P(priv, !=, NULL);
 
@@ -1684,6 +1693,8 @@ i_ddi_intr_ops(dev_info_t *dip, dev_info_t *rdip, ddi_intr_op_t op,
 {
 	dev_info_t	*pdip = ddi_get_parent(dip);
 	int		ret = DDI_FAILURE;
+
+	ASSERT(RW_WRITE_HELD(&hdlp->ih_rwlock));
 
 	/*
 	 * If we don't know the interrupt type yet, we can't tell which path

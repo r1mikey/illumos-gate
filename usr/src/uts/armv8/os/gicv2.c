@@ -844,6 +844,7 @@ static int
 gicv2_intr_ops(dev_info_t *dip, dev_info_t *rdip,
     ddi_intr_op_t intr_op, ddi_intr_handle_impl_t *hdlp, void *result)
 {
+	ASSERT(RW_WRITE_HELD(&hdlp->ih_rwlock));
 
 	switch (intr_op) {
 	case DDI_INTROP_ADDISR:

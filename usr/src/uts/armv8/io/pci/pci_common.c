@@ -145,6 +145,8 @@ pci_get_priority(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp, int *pri)
 	DDI_INTR_NEXDBG((CE_CONT, "pci_get_priority: dip = 0x%p, hdlp = %p\n",
 	    (void *)dip, (void *)hdlp));
 
+	ASSERT(RW_WRITE_HELD(&hdlp->ih_rwlock));
+
 	if (hdlp->ih_pri == 0) {
 		hdlp->ih_pri = pci_class_to_pil(dip);
 	}
@@ -186,6 +188,8 @@ pci_common_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 	    "pci_common_intr_ops: pdip 0x%p (%s), rdip 0x%p (%s), op %x handle 0x%p\n",
 	    (void *)pdip, ddi_node_name(pdip), (void *)rdip, ddi_node_name(rdip),
 	    intr_op, (void *)hdlp));
+
+	ASSERT(RW_WRITE_HELD(&hdlp->ih_rwlock));
 
 	/* Process the request */
 	switch (intr_op) {
@@ -695,6 +699,8 @@ pci_alloc_intr_fixed(dev_info_t *pdip, dev_info_t *rdip,
 {
 	int			pci_rval;
 	int			pci_status = 0;
+
+	ASSERT(RW_WRITE_HELD(&hdlp->ih_rwlock));
 
 	/* Figure out if this device supports MASKING */
 	pci_rval = pci_intx_get_cap(rdip, &pci_status);
