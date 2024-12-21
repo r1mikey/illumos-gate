@@ -831,14 +831,6 @@ gicv2_detach(dev_info_t *devi, ddi_detach_cmd_t cmd)
  *
  * Operations not intended for us should have been routed away from us and to
  * the root nexus by the DDI implementation.
- *
- * *HOWEVER* due to the nature of the ARM implementation it is possible for
- * some interrupts to be routed to us without the root nexus having
- * intervened, and so as a special case we perform the bookkeeping that is
- * also in the root nexus, on behalf of the root nexus.
- *
- * XXXGIC: I don't like the interrupt controllers having knowledge of this,
- * but they're the only device reliably in the path
  */
 static int
 gicv2_intr_ops(dev_info_t *dip, dev_info_t *rdip,

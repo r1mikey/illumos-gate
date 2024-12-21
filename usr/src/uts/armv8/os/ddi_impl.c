@@ -2025,7 +2025,7 @@ make_ddi_ppd(dev_info_t *child, struct ddi_parent_private_data **ppd)
 	/*
 	 * Ranges, of of which we only handle certain shapes.
 	 *
-	 * XXXROOTNEX: Genericize, like we do regs and interrupts?
+	 * XXXROOTNEX: Genericize, like we do regs?
 	 *
 	 * This is only used in relation to `i_ddi_apply_range` so we easily
 	 * _could_, though we'd then run into the same 32bit assumptions as
