@@ -42,9 +42,16 @@ extern "C" {
 
 #ifdef _KERNEL
 
-/* A 1275/devicetree unit interrupt descriptor */
+/*
+ * A 1275/devicetree unit interrupt descriptor.
+ *
+ * The meaning of elements in the vector is only interpretable based on the
+ * device it describes.
+ */
 typedef struct {
 	size_t ui_nelems;	/* Number of elements in ui_v */
+	size_t ui_addrcells;	/* # address cells */
+	size_t ui_intrcells;	/* # interrupt cells */
 	uint32_t ui_v[];	/* unit/interrupt descriptor */
 } unit_intr_t;
 
@@ -56,21 +63,7 @@ typedef struct ihdl_plat {
 	kstat_t		*ip_ksp;	/* Kstat pointer */
 	uint64_t	ip_ticks;	/* Interrupt ticks for this device */
 
-	/*
-	 * XXXPCI: I'm unclear in the design if this is where things like this
-	 * should go.  It is not really _platform_ dependent that our
-	 * interrupt-controller works on 3-tuples, it's interrupt-dependent.
-	 * It's at least as true to say our ihdl ih_vector is insufficient,
-	 * and should be uint32_t[].
-	 *
-	 * These are just the other two fields (the 1st and 3rd), stashed here
-	 * until we need them.	We should probably be more general until we
-	 * know we're talking to a GIC.
-	 *
-	 * `void *ihdl_ctlr_private`?
-	 */
-	uint32_t	ip_gic_cfg;	/* The GIC configuration.  */
-	uint32_t	ip_gic_sense;	/* The GIC sense information. */
+	/* XXXGIC: `void *ihdl_ctlr_private`? */
 	unit_intr_t	*ip_unitintr;	/* devicetree unit interrupt spec. */
 } ihdl_plat_t;
 

@@ -1155,8 +1155,11 @@ i_ddi_interrupt_domain(dev_info_t *pdip)
  * NB: i_ddi_get_inum returns a single uint32_t, which is insufficient to
  * fully describe an interrupt.  We are returning the full interrupt
  * descriptor, plus the length of the vector (for the purpose of freeing it).
+ *
+ * This _is_ enough to fully specify an interrupt, but is only intelligible by
+ * the controller to which it is destined.
  */
-size_t
+static size_t
 i_ddi_get_interrupt(dev_info_t *dip, uint_t inumber, int **ret)
 {
 	int32_t			max_intrs;
@@ -1170,8 +1173,8 @@ i_ddi_get_interrupt(dev_info_t *dip, uint_t inumber, int **ret)
 
 		VERIFY3P(id, !=, NULL);
 
-		int intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, id, 0,
-		    "#interrupt-cells", 1);
+		int intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, id,
+		    DDI_PROP_DONTPASS, "#interrupt-cells", 1);
 
 		if (inumber >= ip_sz / intr_cells) {
 			return (0); /* failure */
@@ -1368,11 +1371,17 @@ i_ddi_unitaddr(dev_info_t *dip, uint_t *out, size_t out_cells)
 }
 
 static unit_intr_t *
-i_ddi_alloc_unitintr(uint_t elems)
+i_ddi_alloc_unitintr(size_t addrcells, size_t intrcells)
 {
+	size_t nelems = addrcells + intrcells;
+
+	ASSERT3U(nelems, >=, intrcells);
+
 	unit_intr_t *ui = kmem_zalloc(sizeof (*ui) +
-	    CELLS_1275_TO_BYTES(elems), KM_SLEEP);
-	ui->ui_nelems = elems;
+	    CELLS_1275_TO_BYTES(nelems), KM_SLEEP);
+	ui->ui_nelems = nelems;
+	ui->ui_addrcells = addrcells;
+	ui->ui_intrcells = intrcells;
 
 	return (ui);
 }
@@ -1397,7 +1406,7 @@ i_ddi_unitintr(dev_info_t *dip, uint_t inum)
 	int *intrs = NULL;
 	int intr_cells = i_ddi_get_interrupt(dip, inum, &intrs);
 
-	ui = i_ddi_alloc_unitintr(addr_cells + intr_cells);
+	ui = i_ddi_alloc_unitintr(addr_cells, intr_cells);
 	if (i_ddi_unitaddr(dip, ui->ui_v, addr_cells) != addr_cells) {
 		dev_err(dip, CE_PANIC, "couldn't interpret unit address");
 		return (NULL);	/* Unreachable */
@@ -1412,11 +1421,21 @@ i_ddi_unitintr(dev_info_t *dip, uint_t inum)
 	return (ui);
 }
 
-static dev_info_t *
-map_interrupt_core(dev_info_t *dip,
-    ddi_intr_handle_impl_t *hdlp)
+dev_info_t *
+map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
 {
 	ASSERT(RW_WRITE_HELD(&hdlp->ih_rwlock));
+
+	ihdl_plat_t *priv = (ihdl_plat_t *)hdlp->ih_private;
+	VERIFY3P(priv, !=, NULL);
+
+	/*
+	 * Our first pass only, initialize the unitintr for the rest
+	 * of the work.  If we already have one stashed in the handle, keep
+	 * using it, we're recursing up the interrupt tree.
+	 */
+	if (priv->ip_unitintr == NULL)
+		priv->ip_unitintr = i_ddi_unitintr(dip, hdlp->ih_inum);
 
 	if (ddi_prop_exists(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
 	    "interrupt-controller") != 0) {
@@ -1453,11 +1472,8 @@ map_interrupt_core(dev_info_t *dip,
 		int *intr_map, *intr_mask;
 		uint_t intr_map_sz, intr_mask_sz;
 
-		ihdl_plat_t *priv = (ihdl_plat_t *)hdlp->ih_private;
-		VERIFY3P(priv, !=, NULL);
-		VERIFY3P(priv->ip_unitintr, !=, NULL);
-
 		unit_intr_t *ui = priv->ip_unitintr;
+		unit_intr_t *nu = NULL;
 
 		/* Not an interrupt controller, check the interrupt-map */
 		if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
@@ -1503,85 +1519,31 @@ map_interrupt_core(dev_info_t *dip,
 				parent = e_ddi_nodeid_to_dip(scan[effective_stride - 1]);
 
 				VERIFY3P(parent, !=, NULL);
+				VERIFY3P(i_ddi_interrupt_domain(parent), ==, parent);
 
 				int par_addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY,
 				    parent, 0, "#address-cells", 2);
 				int par_intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY,
-				    parent, 0, "#interrupt-cells", 1);
+				    parent, DDI_PROP_DONTPASS, "#interrupt-cells",
+				    1);
 
 				if (memcmp(ui->ui_v, scan,
 				    CELLS_1275_TO_BYTES(ui->ui_nelems)) == 0) {
-					int nelems = par_addr_cells + par_intr_cells;
 
+					/*
+					 * Re-create `ui` in terms of the
+					 * parent information in the table
+					 */
 					i_ddi_free_unitintr(ui);
-
-					ui = i_ddi_alloc_unitintr(nelems);
-
+					ui = i_ddi_alloc_unitintr(par_addr_cells,
+					    par_intr_cells);
 					memcpy(ui->ui_v, scan + effective_stride,
 					    CELLS_1275_TO_BYTES(ui->ui_nelems));
-
 					priv->ip_unitintr = ui;
-
-					/* XXXPCI: More gic bullshit */
-					/* XXXPCI: Store the important parts
-					 * of the intr specifier in the hdlp
-					 * even though we have to update the
-					 * ui too... */
-					if (par_intr_cells == 3) {
-						priv->ip_gic_cfg = ui->ui_v[par_addr_cells];
-						hdlp->ih_vector = ui->ui_v[par_addr_cells + 1];
-						priv->ip_gic_sense = ui->ui_v[par_addr_cells + 2];
-					} else if (par_intr_cells == 1) {
-						hdlp->ih_vector = ui->ui_v[par_addr_cells];
-					} else {
-						dev_err(dip, CE_PANIC, "unknown interrupt shape");
-					}
 
 					ddi_prop_free(intr_map);
 					if (intr_mask != NULL)
 						ddi_prop_free(intr_mask);
-
-					/*
-					 * It may feel like the size here could not possibly change,
-					 * because if it did then this would require an
-					 * "interrupt-map", but that's not true, it's entirely
-					 * possible for "#address-cells" to change.
-					 */
-					int child_intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip, 0,
-					    "#interrupt-cells", 1);
-					int child_addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip, 0,
-					    "#address-cells", 2);
-
-					/* XXXGIC: This is going to fail though, because no regs? */
-					if ((child_intr_cells + child_addr_cells) == ui->ui_nelems) {
-						/* Same size, just overwrite the unit address */
-						if (i_ddi_unitaddr(dip, ui->ui_v, child_addr_cells) != child_addr_cells) {
-							dev_err(dip, CE_PANIC, "couldn't interpret unit address");
-							return (NULL);	/* Unreachable */
-						}
-					} else {
-						/* Different size, we need a replacement */
-						unit_intr_t *nu = i_ddi_alloc_unitintr(child_intr_cells + child_addr_cells);
-
-						if (i_ddi_unitaddr(dip, nu->ui_v, child_addr_cells) != child_addr_cells) {
-							dev_err(dip, CE_PANIC, "couldn't interpret unit address");
-							return (NULL);	/* Unreachable */
-						}
-
-						/*
-						 * Use the same interrupt
-						 * specifier as before.  Note
-						 * that we're careful not to
-						 * use `child_addr_cells`
-						 * relative to `nu`, as that
-						 * refers to the wrong node.
-						 */
-						memcpy(nu->ui_v + child_addr_cells, ui->ui_v +
-						    (ui->ui_nelems - child_intr_cells), child_intr_cells);
-						i_ddi_free_unitintr(ui);
-						ui = nu;
-						priv->ip_unitintr = nu;
-					}
 
 					if (i_ddi_attach_node_hierarchy(parent)
 					    != DDI_SUCCESS) {
@@ -1601,7 +1563,7 @@ map_interrupt_core(dev_info_t *dip,
 				ddi_prop_free(intr_mask);
 		}
 
-		dev_info_t *idom = NULL;
+		dev_info_t *ipar = NULL;
 
 		/*
 		 * If we pass this up the chain, we will absolutely skip nodes
@@ -1611,16 +1573,16 @@ map_interrupt_core(dev_info_t *dip,
 		    "interrupt-parent", -1);
 
 		if (ip != -1) {
-			idom = e_ddi_nodeid_to_dip(ip);
+			ipar = e_ddi_nodeid_to_dip(ip);
 
-			if (i_ddi_attach_node_hierarchy(idom)
+			if (i_ddi_attach_node_hierarchy(ipar)
 			    != DDI_SUCCESS) {
 				/* XXX: Release? */
-				dev_err(idom, CE_PANIC, "no driver for interrupt controller?");
+				dev_err(ipar, CE_PANIC, "no driver for interrupt controller?");
 				return (NULL); /* Unreachable */
 			}
 		} else {
-			idom = ddi_get_parent(dip);
+			ipar = ddi_get_parent(dip);
 		}
 
 		/*
@@ -1629,9 +1591,12 @@ map_interrupt_core(dev_info_t *dip,
 		 * "interrupt-map", but that's not true, it's entirely
 		 * possible for "#address-cells" to change.
 		 */
+		dev_info_t *idom = i_ddi_interrupt_domain(ipar);
+
 		int intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, idom,
 		    DDI_PROP_DONTPASS, "#interrupt-cells", 1);
-		int addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip, 0,
+
+		int addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, ipar, 0,
 		    "#address-cells", 2);
 
 		if ((intr_cells + addr_cells) == ui->ui_nelems) {
@@ -1642,7 +1607,8 @@ map_interrupt_core(dev_info_t *dip,
 			}
 		} else {
 			/* Different size, we need a replacement */
-			unit_intr_t *nu = i_ddi_alloc_unitintr(intr_cells + addr_cells);
+			nu = i_ddi_alloc_unitintr(addr_cells,
+			    intr_cells);
 
 			if (i_ddi_unitaddr(dip, nu->ui_v, addr_cells) != addr_cells) {
 				dev_err(dip, CE_PANIC, "couldn't interpret unit address");
@@ -1661,30 +1627,11 @@ map_interrupt_core(dev_info_t *dip,
 			priv->ip_unitintr = nu;
 		}
 
-		return (idom);
+		return (ipar);
 	}
 
 	ASSERT(0 && "Unreachable!");
 	return ((dev_info_t *)-1); /* That dip is PoOOiiiSoooOOOoon */
-}
-
-dev_info_t *
-map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
-{
-	ASSERT(RW_WRITE_HELD(&hdlp->ih_rwlock));
-
-	ihdl_plat_t *priv = (ihdl_plat_t *)hdlp->ih_private;
-	VERIFY3P(priv, !=, NULL);
-
-	/*
-	 * XXXGIC: Our first pass only, initialize the unitintr for the rest
-	 * of the work.  If we already have one stashed in the handle, keep
-	 * using it, we're recursing up the interrupt tree.
-	 */
-	if (priv->ip_unitintr == NULL)
-		priv->ip_unitintr = i_ddi_unitintr(dip, hdlp->ih_inum);
-
-	return (map_interrupt_core(dip, hdlp));
 }
 
 int
@@ -1803,7 +1750,7 @@ i_ddi_get_intx_nintrs(dev_info_t *dip)
 		VERIFY3P(intrd, !=, NULL);
 
 		intr_sz = ddi_prop_get_int(DDI_DEV_T_ANY, intrd,
-		    0, "#interrupt-cells", -1);
+		    DDI_PROP_DONTPASS, "#interrupt-cells", -1);
 
 		VERIFY3S(intr_sz, !=, -1);
 
