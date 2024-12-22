@@ -731,7 +731,10 @@ implementation.
   vector from the point of view of the main interrupt controller.  On SPARC
   and AArch64 this is re-set between requests, so that interrupts maybe
   re-mapped.  Intel need not do this because the PSM sets <<interrupt-flags,
-  flags>> indicating the domain of `ih_vector`.
+  flags>> indicating the domain of `ih_vector`.  AArch64 does not use this
+  field, because a single `uint32_t` cannot represent an interrupt, and
+  because determining which field of an interrupt description is the vector is
+  bus-specific.
 
 `uint16_t ih_ver`::
   Interrupt handle version.  `DDI_INTR_VERSION`.  NOTE: this is the 5th
@@ -2025,6 +2028,15 @@ directly replaced with `i_ddi_intr_ops()` calls.  Other operations are either
 unnecessary in this scheme (vector translation) or not currently implementable
 on AArch64, but with the appearance we could implement these in the same manner.
 
+Because `uint32_t ih_vector` cannot represent an interrupt in most cases, we
+use `ip_unitintr` to hold this data.
+
+Because the data in `ip_unitintr` is only intelligible by the bus, `ih_vector`
+isn't kept up-to-date.  We would require an operation to ask the bus for the
+vector given a descriptor.  We haven't added such an operation (private or
+otherwise) because it doesn't, so far, seem we need one.  It would be easy
+to add.
+
 ====== Vastly increased interrupt vector space
 
 The autovectoring interrupt support in illumos currently has a maximum of 256
@@ -2057,16 +2069,6 @@ some additional fields
 `uint64_t ip_ticks`::
   The number of ticks spent fielding this device's interrupts.
 
-`uint32_t ihdl_gic_cfg`::
-  Currently used to smuggle the "configuration" part
-  of a 3-tuple interrupt from the GIC Devicetree binding.  WARNING: Being
-  phased out in favour of `ip_unitintr`.
-
-`uint32_t ihdl_gic_sense`::
-  Currently used to smuggle the "sense" part of a 3-tuple interrupt from the
-  GIC Devicetree binding.
-  WARNING:  Being phased out in favour of `ip_unitintr`
-
 `unit_intr_t *ip_unitintr`::
   A device-tree unit interrupt descriptor (the combination of unit address and
   interrupt descriptor).  Used by interrupt mapping internal to the AArch64
@@ -2074,7 +2076,8 @@ some additional fields
   but should exist in a usable manner given a devicetree constructed from
   ACPI.  This is opaque (actually, impossible to correctly interpret) to
   anyone not the interrupt-controller currently processing `hdlp` and the DDI
-  implementation.
+  implementation.  This is used in place of `ih_vector` which cannot represent
+  an interrupt completely. 
 
 == References
 

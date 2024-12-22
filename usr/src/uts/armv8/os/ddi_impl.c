@@ -1153,12 +1153,8 @@ i_ddi_interrupt_domain(dev_info_t *pdip)
  * given interrupt. Note that this function is called only for the FIXED
  * interrupt type.
  *
- * NB: i_ddi_get_inum returns a single uint32_t, which is insufficient to
- * fully describe an interrupt.  We are returning the full interrupt
- * descriptor, plus the length of the vector (for the purpose of freeing it).
- *
- * This _is_ enough to fully specify an interrupt, but is only intelligible by
- * the controller to which it is destined.
+ * This is enough to fully specify an interrupt, but is only intelligible by
+ * the controller, or someone who checks and knows the bus binding.
  */
 static size_t
 i_ddi_get_interrupt(dev_info_t *dip, uint_t inumber, int **ret)
@@ -1192,47 +1188,6 @@ i_ddi_get_interrupt(dev_info_t *dip, uint_t inumber, int **ret)
 	}
 
 	return (0);
-}
-
-/*
- * i_ddi_get_inum - Get the interrupt number property from the
- * specified device. Note that this function is called only for
- * the FIXED interrupt type.
- */
-uint32_t
-i_ddi_get_inum(dev_info_t *dip, uint_t inumber)
-{
-	int32_t			max_intrs;
-	int			*ip;
-	uint_t			ip_sz;
-	uint32_t		intr = 0;
-	size_t			intr_cells;
-
-	intr_cells = i_ddi_get_interrupt(dip, inumber, &ip);
-
-	switch (intr_cells) {
-	case 0:
-		intr = 0;
-		break;
-	case 1:
-		intr = *ip;
-		break;
-	case 3:
-		intr = *(ip + 1);
-		break;
-	default:
-		dev_err(dip, CE_PANIC, "unknown #interrupt-cells: %zd",
-		    intr_cells);
-		return (0);		/* Unreachable */
-	}
-
-	/*
-	 * XXXPCI: I hate this, it's weird now we have to handle 0.  We should
-	 * stop handling 0 and fix the virtio nodes
-	 */
-	if (intr_cells > 0)
-		kmem_free(ip, CELLS_1275_TO_BYTES(intr_cells));
-	return (intr);
 }
 
 /*
@@ -1662,9 +1617,6 @@ i_ddi_intr_ops(dev_info_t *dip, dev_info_t *rdip, ddi_intr_op_t op,
 
 		return (process_intr_ops(pdip, rdip, op, hdlp, result));
 	} else if (hdlp->ih_type == DDI_INTR_TYPE_FIXED) {
-		if (hdlp->ih_vector == 0)
-			hdlp->ih_vector = i_ddi_get_inum(rdip, hdlp->ih_inum);
-
 		if (hdlp->ih_pri == 0)
 			hdlp->ih_pri = i_ddi_get_intr_pri(rdip, hdlp->ih_inum);
 	}
