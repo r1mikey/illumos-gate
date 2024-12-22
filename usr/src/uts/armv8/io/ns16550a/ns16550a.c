@@ -57,6 +57,7 @@
 #include <sys/pci.h>
 #include <sys/policy.h>
 #include <sys/platmod.h>
+#include <sys/obpdefs.h>
 #include "ns16550a.h"
 
 #define UARTDR		0x00

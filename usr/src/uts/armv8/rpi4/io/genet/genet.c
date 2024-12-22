@@ -42,6 +42,7 @@
 #include <sys/sysmacros.h>
 #include <sys/platmod.h>
 #include <sys/controlregs.h>
+#include <sys/obpdefs.h>
 #include "genet.h"
 
 #define	GENET_DMA_BUFFER_SIZE	1536

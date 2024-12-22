@@ -43,6 +43,8 @@
 #include <sys/avintr.h>
 #include <sys/gic.h>
 #include <sys/promif.h>
+#include <sys/sysmacros.h>
+#include <sys/obpdefs.h>
 
 static int smpl_bus_map(dev_info_t *, dev_info_t *, ddi_map_req_t *, off_t,
     off_t, caddr_t *);
@@ -173,11 +175,11 @@ get_address_cells(pnode_t node)
 	int address_cells = 0;
 
 	while (node > 0) {
-		int len = prom_getproplen(node, "#address-cells");
+		int len = prom_getproplen(node, OBP_ADDRESS_CELLS);
 		if (len > 0) {
 			ASSERT(len == sizeof (int));
 			int prop;
-			prom_getprop(node, "#address-cells", (caddr_t)&prop);
+			prom_getprop(node, OBP_ADDRESS_CELLS, (caddr_t)&prop);
 			address_cells = ntohl(prop);
 			break;
 		}
@@ -211,19 +213,19 @@ get_interrupt_cells(pnode_t node)
 	int interrupt_cells = 0;
 
 	while (node > 0) {
-		int len = prom_getproplen(node, "#interrupt-cells");
+		int len = prom_getproplen(node, OBP_INTERRUPT_CELLS);
 		if (len > 0) {
 			ASSERT(len == sizeof (int));
 			int prop;
-			prom_getprop(node, "#interrupt-cells", (caddr_t)&prop);
+			prom_getprop(node, OBP_INTERRUPT_CELLS, (caddr_t)&prop);
 			interrupt_cells = ntohl(prop);
 			break;
 		}
-		len = prom_getproplen(node, "interrupt-parent");
+		len = prom_getproplen(node, OBP_INTERRUPT_PARENT);
 		if (len > 0) {
 			ASSERT(len == sizeof (int));
 			int prop;
-			prom_getprop(node, "interrupt-parent", (caddr_t)&prop);
+			prom_getprop(node, OBP_INTERRUPT_PARENT, (caddr_t)&prop);
 			node = prom_findnode_by_phandle(ntohl(prop));
 			continue;
 		}
@@ -260,7 +262,7 @@ smpl_bus_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp, off_t offset,
 	uint_t rangelen;
 
 	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip,
-	    DDI_PROP_DONTPASS, "ranges", (int **)&rangep, &rangelen) !=
+	    DDI_PROP_DONTPASS, OBP_RANGES, (int **)&rangep, &rangelen) !=
 	    DDI_SUCCESS || rangelen == 0) {
 		rangelen = 0;
 		rangep = NULL;
@@ -272,7 +274,7 @@ smpl_bus_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp, off_t offset,
 		uint32_t *rp;
 
 		if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, rdip,
-		    DDI_PROP_DONTPASS, "reg", (int **)&rp, &reglen) !=
+		    DDI_PROP_DONTPASS, OBP_REG, (int **)&rp, &reglen) !=
 		    DDI_SUCCESS || reglen == 0) {
 			if (rangep != NULL) {
 				ddi_prop_free(rangep);
@@ -495,7 +497,7 @@ smpl_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 			int *irupts_prop;
 			uint_t irupts_len;
 			if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, rdip,
-			    DDI_PROP_DONTPASS, "interrupts",
+			    DDI_PROP_DONTPASS, OBP_INTERRUPTS,
 			    (int **)&irupts_prop, &irupts_len) != DDI_SUCCESS ||
 			    irupts_len == 0) {
 				return (DDI_FAILURE);
@@ -567,7 +569,7 @@ smpl_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 			int irupts_len;
 			if (interrupt_cells != 0 &&
 			    ddi_getproplen(DDI_DEV_T_ANY, rdip,
-			    DDI_PROP_DONTPASS, "interrupts",
+			    DDI_PROP_DONTPASS, OBP_INTERRUPTS,
 			    &irupts_len) == DDI_SUCCESS) {
 				*(int *)result = irupts_len /
 				    CELLS_1275_TO_BYTES(interrupt_cells);
@@ -583,7 +585,7 @@ smpl_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 			int irupts_len;
 			if (interrupt_cells != 0 &&
 			    ddi_getproplen(DDI_DEV_T_ANY, rdip,
-			    DDI_PROP_DONTPASS, "interrupts",
+			    DDI_PROP_DONTPASS, OBP_INTERRUPTS,
 			    &irupts_len) == DDI_SUCCESS) {
 				*(int *)result = irupts_len /
 				    CELLS_1275_TO_BYTES(interrupt_cells);

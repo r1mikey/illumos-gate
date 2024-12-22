@@ -38,6 +38,7 @@
 #include <sys/sdcard/sda.h>
 #include <sys/callo.h>
 #include <sys/ddi_subrdefs.h>
+#include <sys/obpdefs.h>
 
 #include "bcm2711-emmc2.h"
 

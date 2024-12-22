@@ -65,6 +65,7 @@
 #include <sys/lgrp.h>
 #include <sys/mach_intr.h>
 #include <vm/hat_aarch64.h>
+#include <sys/obpdefs.h>
 
 size_t dma_max_copybuf_size = 0x101000;		/* 1M + 4K */
 uint64_t ramdisk_start, ramdisk_end;
@@ -1173,9 +1174,9 @@ i_ddi_get_intx_nintrs(dev_info_t *dip)
 
 	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS |
 	    DDI_PROP_CANSLEEP,
-	    "interrupts", &ip, &intrlen) == DDI_SUCCESS) {
+	    OBP_INTERRUPTS, &ip, &intrlen) == DDI_SUCCESS) {
 		intr_sz = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
-		    0, "#interrupt-cells", 1);
+		    0, OBP_INTERRUPT_CELLS, 1);
 
 		intr_sz = CELLS_1275_TO_BYTES(intr_sz);
 		ret = intrlen / intr_sz;
@@ -2564,7 +2565,7 @@ getlongprop_buf(int id, char *name, char *buf, int maxlen)
 	if (-1 == prom_getprop((pnode_t)id, name, buf))
 		return (-1);
 
-	if (strcmp("name", name) == 0) {
+	if (strcmp(OBP_NAME, name) == 0) {
 		if (buf[size - 1] != '\0') {
 			buf[size] = '\0';
 			size += 1;
@@ -2608,7 +2609,7 @@ status_okay(int id, char *buf, int buflen)
 	char *bufp = buf;
 	int len = buflen;
 	int proplen;
-	static const char *status = "status";
+	static const char *status = OBP_STATUS;
 	static const char *fail = "fail";
 	int fail_len = (int)strlen(fail);
 

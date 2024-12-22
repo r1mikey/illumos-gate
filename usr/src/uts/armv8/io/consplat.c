@@ -43,6 +43,7 @@
 #include <sys/promif.h>
 #include <sys/modctl.h>
 #include <sys/termios.h>
+#include <sys/obpdefs.h>
 
 int
 plat_use_polled_debug()
@@ -96,12 +97,12 @@ plat_ttypath(void)
 	if (ttypath != NULL)
 		return (ttypath);
 
-	len = prom_getproplen(prom_chosennode(), "stdout-path");
+	len = prom_getproplen(prom_chosennode(), OBP_STDOUTPATH);
 	if (len <= 0)
 		return (NULL);
 
 
-	prom_getprop(prom_chosennode(), "stdout-path", buf);
+	prom_getprop(prom_chosennode(), OBP_STDOUTPATH, buf);
 	buf[len] = '\0';
 
 	char *p = strchr(buf, ':');

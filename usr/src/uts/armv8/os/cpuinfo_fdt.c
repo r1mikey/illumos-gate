@@ -63,7 +63,7 @@ get_cpu_mpidr(pnode_t node)
 	if (ac != 1 && ac != 2)
 		return (affinity);
 
-	cv = prom_getprop(node, "reg", (caddr_t)parts);
+	cv = prom_getprop(node, OBP_REG, (caddr_t)parts);
 	if ((ac == 1 && cv != 4) || (ac == 2 && cv != 8))
 		return (affinity);
 
@@ -155,12 +155,12 @@ get_cpu_status(pnode_t node)
 	boolean_t	exists;
 	char		prop[OBP_STANDARD_MAXPROPNAME];
 
-	exists = prom_node_has_property(node, "status");
+	exists = prom_node_has_property(node, OBP_STATUS);
 	if (exists != B_TRUE)
 		return (CPUNODE_STATUS_UNKNOWN);
 
 	cv = prom_bounded_getprop(
-	    node, "status", prop, OBP_STANDARD_MAXPROPNAME - 1);
+	    node, OBP_STATUS, prop, OBP_STANDARD_MAXPROPNAME - 1);
 	if (cv < 0)
 		return (CPUNODE_STATUS_ERROR);
 
@@ -180,11 +180,11 @@ is_cpu_node(pnode_t node)
 	int ret;
 	char prop[OBP_STANDARD_MAXPROPNAME];
 
-	ret = prom_getprop(node, "device_type", prop);
+	ret = prom_getprop(node, OBP_DEVICETYPE, prop);
 	if (ret < 0)
 		return (B_FALSE);
 
-	return (strcmp(prop, "cpu") == 0 ? B_TRUE : B_FALSE);
+	return (strcmp(prop, OBP_CPU) == 0 ? B_TRUE : B_FALSE);
 }
 
 static pnode_t
