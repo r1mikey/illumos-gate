@@ -74,6 +74,7 @@
 #include <io/pci/pci_tools_ext.h>
 #include <io/pci/pci_common.h>
 #include <io/pciex/pcie_nvidia.h>
+#include <sys/obpdefs.h>
 
 /*
  * Helper Macros
@@ -344,7 +345,7 @@ npe_attach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 	npe_enable_htmsi_children(devi);
 #endif
 
-	if (ddi_prop_update_string(DDI_DEV_T_NONE, devi, "device_type",
+	if (ddi_prop_update_string(DDI_DEV_T_NONE, devi, OBP_DEVICETYPE,
 	    "pciex") != DDI_PROP_SUCCESS) {
 		cmn_err(CE_WARN, "npe:  'device_type' prop create failed");
 	}
@@ -1012,7 +1013,7 @@ npe_initchild(dev_info_t *child)
 			 * DDI_SUCCESS instead of DDI_FAILURE.
 			 */
 			if (ddi_prop_get_int(DDI_DEV_T_ANY, child,
-			    DDI_PROP_DONTPASS, "interrupts", -1) == -1)
+			    DDI_PROP_DONTPASS, OBP_INTERRUPTS, -1) == -1)
 				return (DDI_SUCCESS);
 			/*
 			 * Create the ddi_parent_private_data for a pseudo
@@ -1035,7 +1036,7 @@ npe_initchild(dev_info_t *child)
 	}
 
 	if (ddi_prop_get_int(DDI_DEV_T_ANY, child, DDI_PROP_DONTPASS,
-	    "interrupts", -1) != -1)
+	    OBP_INTERRUPTS, -1) != -1)
 		pci_common_set_parent_private_data(child);
 	else
 		ddi_set_parent_data(child, NULL);

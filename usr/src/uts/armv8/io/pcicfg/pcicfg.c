@@ -44,6 +44,7 @@
 #include <sys/ndi_impldefs.h>
 #include <sys/pci_cfgacc.h>
 #include <sys/pci_props.h>
+#include <sys/obpdefs.h>
 
 /*
  * ************************************************************************
@@ -1908,7 +1909,7 @@ pcicfg_bridge_assign(dev_info_t *dip, void *hdl)
 	 * and program the base registers.
 	 */
 	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    "reg", (int **)&reg, &length) != DDI_PROP_SUCCESS) {
+	    OBP_REG, (int **)&reg, &length) != DDI_PROP_SUCCESS) {
 		DEBUG0("Failed to read reg property\n");
 		entry->error = PCICFG_FAILURE;
 		(void) pcicfg_config_teardown(&handle);
@@ -2035,8 +2036,8 @@ pcicfg_device_assign(dev_info_t *dip)
 	/*
 	 * XXX Failure here should be noted
 	 */
-	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS, "reg",
-	    (int **)&reg, &length) != DDI_PROP_SUCCESS) {
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    OBP_REG, (int **)&reg, &length) != DDI_PROP_SUCCESS) {
 		DEBUG0("Failed to read reg property\n");
 		return (PCICFG_FAILURE);
 	}
@@ -2523,7 +2524,7 @@ pcicfg_sum_resources(dev_info_t *dip, void *hdl)
 		return (DDI_WALK_CONTINUE);
 	} else {
 		if (ddi_getlongprop(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-		    "reg", (caddr_t)&pci_rp, &length) != DDI_PROP_SUCCESS) {
+		    OBP_REG, (caddr_t)&pci_rp, &length) != DDI_PROP_SUCCESS) {
 			/*
 			 * If one node in (the subtree of nodes)
 			 * doesn't have a "reg" property fail the
@@ -2625,7 +2626,7 @@ pcicfg_free_bridge_resources(dev_info_t *dip)
 
 
 	if ((i = ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    "ranges", (int **)&ranges, &length)) != DDI_PROP_SUCCESS) {
+	    OBP_RANGES, (int **)&ranges, &length)) != DDI_PROP_SUCCESS) {
 		DEBUG0("Failed to read ranges property\n");
 		if (ddi_get_child(dip)) {
 			cmn_err(CE_WARN, "No ranges property found for %s",
@@ -2921,7 +2922,7 @@ pcicfg_match_dev(dev_info_t *dip, void *hdl)
 	int pci_func;
 
 	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    "reg", (int **)&pci_rp, (uint_t *)&length) != DDI_PROP_SUCCESS) {
+	    OBP_REG, (int **)&pci_rp, (uint_t *)&length) != DDI_PROP_SUCCESS) {
 		ctrl->dip = NULL;
 		return (DDI_WALK_TERMINATE);
 	}
@@ -3007,7 +3008,7 @@ pcicfg_update_ranges_prop(dev_info_t *dip, ppb_ranges_t *addition)
 	uint_t		status;
 
 	status = ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    "ranges", (int **)&ranges, &rlen);
+	    OBP_RANGES, (int **)&ranges, &rlen);
 
 	rlen = CELLS_1275_TO_BYTES(rlen);
 
@@ -3020,7 +3021,7 @@ pcicfg_update_ranges_prop(dev_info_t *dip, ppb_ranges_t *addition)
 		default:
 			DEBUG0("no ranges property - creating one\n");
 			if (ndi_prop_update_int_array(DDI_DEV_T_NONE,
-			    dip, "ranges", (int *)addition,
+			    dip, OBP_RANGES, (int *)addition,
 			    sizeof (ppb_ranges_t)/sizeof (int))
 			    != DDI_SUCCESS) {
 				DEBUG0("Did'nt create ranges property\n");
@@ -3041,7 +3042,7 @@ pcicfg_update_ranges_prop(dev_info_t *dip, ppb_ranges_t *addition)
 	/*
 	 * Write out the new "ranges" property
 	 */
-	(void) ndi_prop_update_int_array(DDI_DEV_T_NONE, dip, "ranges",
+	(void) ndi_prop_update_int_array(DDI_DEV_T_NONE, dip, OBP_RANGES,
 	    (int *)newreg, (rlen + sizeof (ppb_ranges_t))/sizeof (int));
 
 	DEBUG1("Updating ranges property for %d entries",
@@ -3065,7 +3066,7 @@ pcicfg_update_reg_prop(dev_info_t *dip, uint32_t regvalue, uint_t reg_offset)
 	uint_t		status;
 
 	status = ddi_prop_lookup_int_array(DDI_DEV_T_ANY,
-	    dip, DDI_PROP_DONTPASS, "reg", (int **)&reg, &rlen);
+	    dip, DDI_PROP_DONTPASS, OBP_REG, (int **)&reg, &rlen);
 
 	rlen = CELLS_1275_TO_BYTES(rlen);
 
@@ -3127,7 +3128,7 @@ pcicfg_update_reg_prop(dev_info_t *dip, uint32_t regvalue, uint_t reg_offset)
 	/*
 	 * Write out the new "reg" property
 	 */
-	(void) ndi_prop_update_int_array(DDI_DEV_T_NONE, dip, "reg",
+	(void) ndi_prop_update_int_array(DDI_DEV_T_NONE, dip, OBP_REG,
 	    (int *)newreg, (rlen + sizeof (pci_regspec_t))/sizeof (int));
 
 	kmem_free(newreg, rlen + sizeof (pci_regspec_t));
@@ -3147,7 +3148,7 @@ pcicfg_update_assigned_prop_value(dev_info_t *dip, uint32_t size,
 	uint_t		status;
 
 	status = ddi_prop_lookup_int_array(DDI_DEV_T_ANY,
-	    dip, DDI_PROP_DONTPASS, "reg", (int **)&reg, &rlen);
+	    dip, DDI_PROP_DONTPASS, OBP_REG, (int **)&reg, &rlen);
 
 	rlen = CELLS_1275_TO_BYTES(rlen);
 
@@ -3247,14 +3248,14 @@ pcicfg_set_busnode_props(dev_info_t *dip, uint8_t pcie_device_type)
 		(void) strcpy(device_type, "pci");
 
 	if ((ret = ndi_prop_update_string(DDI_DEV_T_NONE, dip,
-	    "device_type", device_type)) != DDI_SUCCESS) {
+	    OBP_DEVICETYPE, device_type)) != DDI_SUCCESS) {
 		return (ret);
 	}
 	if ((ret = ndi_prop_update_int(DDI_DEV_T_NONE, dip,
-	    "#address-cells", 3)) != DDI_SUCCESS) {
+	    OBP_ADDRESS_CELLS, 3)) != DDI_SUCCESS) {
 		return (ret);
 	}
-	if ((ret = ndi_prop_update_int(DDI_DEV_T_NONE, dip, "#size-cells", 2))
+	if ((ret = ndi_prop_update_int(DDI_DEV_T_NONE, dip, OBP_SIZE_CELLS, 2))
 	    != DDI_SUCCESS) {
 		return (ret);
 	}
@@ -3830,7 +3831,7 @@ pcicfg_probe_bridge(dev_info_t *new_child, ddi_acc_handle_t h, uint_t bus,
 	 * for pci/pcie devices in pcie fabric.
 	 */
 	if (ndi_prop_update_string(DDI_DEV_T_NONE, new_child,
-	    "device_type", "pci") != DDI_SUCCESS) {
+	    OBP_DEVICETYPE, "pci") != DDI_SUCCESS) {
 		DEBUG0("Failed to set \"device_type\" props\n");
 		return (PCICFG_FAILURE);
 	}
@@ -4551,7 +4552,7 @@ next:
 	 * Remove the ranges property if it exists since we will create
 	 * a new one.
 	 */
-	(void) ndi_prop_remove(DDI_DEV_T_NONE, new_child, "ranges");
+	(void) ndi_prop_remove(DDI_DEV_T_NONE, new_child, OBP_RANGES);
 
 	DEBUG2("Creating Ranges property - Mem Address %lx Mem Size %x\n",
 	    mem_base, mem_size);
@@ -4762,8 +4763,8 @@ pcicfg_config_setup(dev_info_t *dip, ddi_acc_handle_t *handle)
 	/*
 	 * Get the pci register spec from the node
 	 */
-	status = ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS, "reg",
-	    (int **)&reg, &rlen);
+	status = ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip,
+	    DDI_PROP_DONTPASS, OBP_REG, (int **)&reg, &rlen);
 	rlen = CELLS_1275_TO_BYTES(rlen);
 
 	switch (status) {
@@ -4831,7 +4832,8 @@ pcicfg_add_config_reg(dev_info_t *dip,
 
 	reg[0] = PCICFG_MAKE_REG_HIGH(bus, device, func, 0);
 
-	return (ndi_prop_update_int_array(DDI_DEV_T_NONE, dip, "reg", reg, 5));
+	return (ndi_prop_update_int_array(DDI_DEV_T_NONE, dip,
+	    OBP_REG, reg, 5));
 }
 
 static int
@@ -4937,7 +4939,7 @@ is_pcie_fabric(dev_info_t *dip)
 	for (pdip = dip; pdip && (pdip != root) && !found;
 	    pdip = ddi_get_parent(pdip)) {
 		if (ddi_prop_lookup_string(DDI_DEV_T_ANY, pdip,
-		    DDI_PROP_DONTPASS, "device_type", &bus) !=
+		    DDI_PROP_DONTPASS, OBP_DEVICETYPE, &bus) !=
 		    DDI_PROP_SUCCESS)
 			break;
 

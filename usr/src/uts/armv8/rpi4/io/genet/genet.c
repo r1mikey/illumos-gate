@@ -41,6 +41,7 @@
 #include <sys/sysmacros.h>
 #include <sys/platmod.h>
 #include <sys/controlregs.h>
+#include <sys/obpdefs.h>
 #include "genet.h"
 
 #define	GENET_DMA_BUFFER_SIZE	1536
@@ -656,11 +657,11 @@ genet_probe(dev_info_t *dip)
 	if (node < 0)
 		return (DDI_PROBE_FAILURE);
 
-	len = prom_getproplen(node, "status");
+	len = prom_getproplen(node, OBP_STATUS);
 	if (len <= 0 || len >= sizeof (buf))
 		return (DDI_PROBE_FAILURE);
 
-	prom_getprop(node, "status", (caddr_t)buf);
+	prom_getprop(node, OBP_STATUS, (caddr_t)buf);
 	if (strcmp(buf, "ok") != 0 && (strcmp(buf, "okay") != 0))
 		return (DDI_PROBE_FAILURE);
 

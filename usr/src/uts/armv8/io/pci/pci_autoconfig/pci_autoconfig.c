@@ -38,6 +38,7 @@
 #include <sys/promif.h>
 #include <sys/sunddi.h>
 #include <sys/sunndi.h>
+#include <sys/obpdefs.h>
 
 #include <sys/pci.h>
 #include <sys/pci_cfgspace.h>
@@ -62,9 +63,9 @@ create_pcie_root_bus(uchar_t bus, dev_info_t *dip)
 		return (B_FALSE);
 
 	(void) ndi_prop_update_string(DDI_DEV_T_NONE, dip,
-	    "device_type", "pciex");
+	    OBP_DEVICETYPE, "pciex");
 	(void) ndi_prop_update_string(DDI_DEV_T_NONE, dip,
-	    "compatible", "pciex_root_complex");
+	    OBP_COMPATIBLE, "pciex_root_complex");
 
 	pcie_rc_init_bus(dip);
 

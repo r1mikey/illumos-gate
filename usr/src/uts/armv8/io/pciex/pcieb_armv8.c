@@ -38,6 +38,7 @@
 #include <sys/pcie_impl.h>
 #include <sys/hotplug/hpctrl.h>
 #include <io/pciex/pcieb.h>
+#include <sys/obpdefs.h>
 
 void
 pcieb_peekpoke_cb(dev_info_t *dip, ddi_fm_error_t *derr)
@@ -153,7 +154,7 @@ pcieb_plat_initchild(dev_info_t *child)
 {
 	struct ddi_parent_private_data *pdptr;
 	if (ddi_prop_exists(DDI_DEV_T_NONE, child, DDI_PROP_DONTPASS,
-	    "interrupts")) {
+	    OBP_INTERRUPTS)) {
 		pdptr = kmem_zalloc((sizeof (struct ddi_parent_private_data) +
 		    sizeof (struct intrspec)), KM_SLEEP);
 		pdptr->par_intr = (struct intrspec *)(pdptr + 1);

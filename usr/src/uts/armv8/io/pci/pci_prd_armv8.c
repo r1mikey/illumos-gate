@@ -28,6 +28,7 @@
 #include <sys/pci.h>
 #include <sys/pci_impl.h>
 #include <sys/plat/pci_prd.h>
+#include <sys/obpdefs.h>
 
 static pci_prd_upcalls_t *prd_upcalls;
 
@@ -73,7 +74,8 @@ pci_prd_find_resource(uint32_t bus, pci_prd_rsrc_t rsrc)
 		pnode_t node = prom_finddevice("/pcie");
 
 		pci_ranges_t *ranges;
-		int length = prom_getproplen(node, "ranges") / sizeof (*ranges);
+		int length =
+		    prom_getproplen(node, OBP_RANGES) / sizeof (*ranges);
 
 		ranges = kmem_zalloc(length * sizeof (*ranges), KM_SLEEP);
 

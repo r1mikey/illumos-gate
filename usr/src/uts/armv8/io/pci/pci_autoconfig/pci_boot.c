@@ -180,6 +180,7 @@
 #include <io/pciex/pcie_nvidia.h>
 #include <sys/devcache.h>
 #include <sys/plat/pci_prd.h>
+#include <sys/obpdefs.h>
 
 /* pci bus resource maps */
 struct pci_bus_resource *pci_bus_res;
@@ -548,7 +549,7 @@ enumerate_root_cb(dev_info_t *dip, void *arg)
 	uint_t *root_bus_addr = arg;
 
 	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    "device_type", &devtype) == DDI_SUCCESS) {
+	    OBP_DEVICETYPE, &devtype) == DDI_SUCCESS) {
 		if (strcmp(devtype, "pci") == 0) {
 			int bus_def[] = {0, 0xff};
 			int *busrng;
@@ -583,7 +584,7 @@ enumerate_root_cb(dev_info_t *dip, void *arg)
 				if (create_pcie_root_bus(i, dip) == B_FALSE) {
 					/* Undo (most of) what create_pcie_root_bus did, while failing */
 					(void) ndi_prop_update_string(DDI_DEV_T_NONE, dip,
-					    "device_type", "pci");
+					    OBP_DEVICETYPE, "pci");
 				}
 
 				(void) ndi_devi_bind_driver(dip, 0);
@@ -1160,7 +1161,7 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 		return;
 
 	rv = ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    "reg", &regp, &reglen);
+	    OBP_REG, &regp, &reglen);
 	if (rv != DDI_PROP_SUCCESS || reglen == 0)
 		return;
 	physhi = regp[0];
@@ -1637,7 +1638,7 @@ pci_reprogram(void)
 				    new_addr;
 				(void) ndi_prop_update_int_array(
 				    DDI_DEV_T_NONE, pci_bus_res[bus].dip,
-				    "reg", (int *)pci_regs, 3);
+				    OBP_REG, (int *)pci_regs, 3);
 			}
 			index++;
 		}
@@ -2221,22 +2222,22 @@ process_devfunc(uchar_t bus, uchar_t dev, uchar_t func, int config_op)
 		 * Proposal #414 Version 1
 		 */
 		(void) ndi_prop_update_string(DDI_DEV_T_NONE, dip,
-		    "device_type", "pci-ide");
+		    OBP_DEVICETYPE, "pci-ide");
 		(void) ndi_prop_update_int(DDI_DEV_T_NONE, dip,
-		    "#address-cells", 1);
+		    OBP_ADDRESS_CELLS, 1);
 		(void) ndi_prop_update_int(DDI_DEV_T_NONE, dip,
-		    "#size-cells", 0);
+		    OBP_SIZE_CELLS, 0);
 
 		/* allocate two child nodes */
 		ndi_devi_alloc_sleep(dip, "ide",
 		    (pnode_t)DEVI_SID_NODEID, &cdip);
 		(void) ndi_prop_update_int(DDI_DEV_T_NONE, cdip,
-		    "reg", 0);
+		    OBP_REG, 0);
 		(void) ndi_devi_bind_driver(cdip, 0);
 		ndi_devi_alloc_sleep(dip, "ide",
 		    (pnode_t)DEVI_SID_NODEID, &cdip);
 		(void) ndi_prop_update_int(DDI_DEV_T_NONE, cdip,
-		    "reg", 1);
+		    OBP_REG, 1);
 		(void) ndi_devi_bind_driver(cdip, 0);
 
 		reprogram = B_FALSE;	/* don't reprogram pci-ide bridge */
@@ -2875,7 +2876,7 @@ add_reg_props(dev_info_t *dip, uchar_t bus, uchar_t dev, uchar_t func,
 done:
 	dump_memlists("add_reg_props end", bus);
 
-	(void) ndi_prop_update_int_array(DDI_DEV_T_NONE, dip, "reg",
+	(void) ndi_prop_update_int_array(DDI_DEV_T_NONE, dip, OBP_REG,
 	    (int *)regs, nreg * sizeof (pci_regspec_t) / sizeof (int));
 	(void) ndi_prop_update_int_array(DDI_DEV_T_NONE, dip,
 	    "assigned-addresses",
@@ -2954,11 +2955,11 @@ add_ppb_props(dev_info_t *dip, uchar_t bus, uchar_t dev, uchar_t func,
 		pci_bus_res[bus].num_bridge++;
 
 	(void) ndi_prop_update_string(DDI_DEV_T_NONE, dip,
-	    "device_type", dev_type);
+	    OBP_DEVICETYPE, dev_type);
 	(void) ndi_prop_update_int(DDI_DEV_T_NONE, dip,
-	    "#address-cells", 3);
+	    OBP_ADDRESS_CELLS, 3);
 	(void) ndi_prop_update_int(DDI_DEV_T_NONE, dip,
-	    "#size-cells", 2);
+	    OBP_SIZE_CELLS, 2);
 
 	/*
 	 * Collect bridge window specifications, and use them to populate
@@ -3223,7 +3224,7 @@ add_ranges_prop(int bus, boolean_t ppb)
 	    PCI_ADDR_MEM32 | PCI_RELOCAT_B | PCI_PREFETCH_B, ppb);
 
 	(void) ndi_prop_update_int_array(DDI_DEV_T_NONE, pci_bus_res[bus].dip,
-	    "ranges", (int *)rp, alloc_size / sizeof (int));
+	    OBP_RANGES, (int *)rp, alloc_size / sizeof (int));
 
 	kmem_free(rp, alloc_size);
 	pci_memlist_free_all(&iolist);

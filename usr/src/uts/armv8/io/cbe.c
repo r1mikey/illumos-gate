@@ -45,6 +45,7 @@
 #include <sys/promif.h>
 #include <sys/arch_timer.h>
 #include <sys/gic.h>
+#include <sys/obpdefs.h>
 
 static int cbe_ticks = 0;
 
@@ -310,19 +311,19 @@ get_interrupt_cells(pnode_t node)
 	int interrupt_cells = 0;
 
 	while (node > 0) {
-		int len = prom_getproplen(node, "#interrupt-cells");
+		int len = prom_getproplen(node, OBP_INTERRUPT_CELLS);
 		if (len > 0) {
 			ASSERT(len == sizeof (int));
 			int prop;
-			prom_getprop(node, "#interrupt-cells", (caddr_t)&prop);
+			prom_getprop(node, OBP_INTERRUPT_CELLS, (caddr_t)&prop);
 			interrupt_cells = ntohl(prop);
 			break;
 		}
-		len = prom_getproplen(node, "interrupt-parent");
+		len = prom_getproplen(node, OBP_INTERRUPT_PARENT);
 		if (len > 0) {
 			ASSERT(len == sizeof (int));
 			int prop;
-			prom_getprop(node, "interrupt-parent", (caddr_t)&prop);
+			prom_getprop(node, OBP_INTERRUPT_PARENT, (caddr_t)&prop);
 			node = prom_findnode_by_phandle(ntohl(prop));
 			continue;
 		}
@@ -341,10 +342,10 @@ get_cbe_vector(void)
 
 	if (timer > 0) {
 		boolean_t found = B_FALSE;
-		int len = prom_getproplen(timer, "compatible");
+		int len = prom_getproplen(timer, OBP_COMPATIBLE);
 		if (len > 0) {
 			char *compatible = __builtin_alloca(len);
-			prom_getprop(timer, "compatible", compatible);
+			prom_getprop(timer, OBP_COMPATIBLE, compatible);
 			int offset = 0;
 			while (offset < len) {
 				if (strcmp(compatible,
@@ -357,14 +358,14 @@ get_cbe_vector(void)
 		}
 
 		if (found) {
-			len = prom_getproplen(timer, "interrupts");
+			len = prom_getproplen(timer, OBP_INTERRUPTS);
 
 			if (len > 0) {
 				int interrupt_cells = get_interrupt_cells(timer);
 				int num = len / CELLS_1275_TO_BYTES(interrupt_cells);
 				if (num > 0) {
 					uint32_t *interrupts = __builtin_alloca(len);
-					prom_getprop(timer, "interrupts", (caddr_t)interrupts);
+					prom_getprop(timer, OBP_INTERRUPTS, (caddr_t)interrupts);
 					int index = (num > 1)? 1: 0;
 					/*
 					 * Select the timer interrupt index from the boot EL.
