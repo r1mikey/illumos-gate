@@ -275,8 +275,9 @@ viommionex_bus_config(dev_info_t *dip, uint_t flags,
 	ddi_prop_free(compat);
 
 	/*
-	 * XXXGIC: Copy the reg property, so we appear as a sufficiently
-	 * normal device for the 1275 interrupt mapping algorithm.
+	 * XXXGIC: Copy the "reg" and "interrupts" properties, so we appear as
+	 * a sufficiently normal device for the 1275 interrupt mapping
+	 * algorithm.
 	 *
 	 * It would be nice to either avoid this, or avoid the choice not to
 	 * copy reg/interrupts/etc onto the child.
@@ -294,6 +295,20 @@ viommionex_bus_config(dev_info_t *dip, uint_t flags,
 		}
 	}
 	ddi_prop_free(reg);
+
+	int *intr;
+	uint_t intr_cells;
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "interrupts", &intr, &intr_cells) == DDI_SUCCESS) {
+		if (ddi_prop_update_int_array(DDI_DEV_T_NONE, rdip, "interrupts", intr,
+		    intr_cells) != DDI_PROP_SUCCESS) {
+			(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
+			ddi_prop_free(intr);
+			ndi_devi_exit(dip);
+			return (DDI_FAILURE);
+		}
+	}
+	ddi_prop_free(intr);
 
 	if (ndi_devi_bind_driver(rdip, 0) != NDI_SUCCESS) {
 		(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
