@@ -37,6 +37,7 @@
 #include <sys/sdcard/sda.h>
 #include <sys/callo.h>
 #include <sys/ddi_subrdefs.h>
+#include <sys/obpdefs.h>
 
 #include "bcm2711-emmc2.h"
 
@@ -1557,11 +1558,11 @@ mmc_probe(dev_info_t *dip)
 	if (node < 0)
 		return (DDI_PROBE_FAILURE);
 
-	len = prom_getproplen(node, "status");
+	len = prom_getproplen(node, OBP_STATUS);
 	if (len <= 0 || len >= sizeof (buf))
 		return (DDI_PROBE_FAILURE);
 
-	prom_getprop(node, "status", (caddr_t)buf);
+	prom_getprop(node, OBP_STATUS, (caddr_t)buf);
 	if (strcmp(buf, "ok") != 0 && (strcmp(buf, "okay") != 0))
 		return (DDI_PROBE_FAILURE);
 

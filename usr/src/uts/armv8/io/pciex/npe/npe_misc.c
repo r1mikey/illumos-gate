@@ -34,6 +34,7 @@
 #include <sys/pci_cap.h>
 #include <sys/pcie_impl.h>
 #include <sys/cpuvar.h>
+#include <sys/obpdefs.h>
 
 /*
  * Prototype declaration
@@ -83,7 +84,7 @@ npe_child_is_pci(dev_info_t *dip)
 	boolean_t parent_is_pci, child_is_pciex;
 
 	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, ddi_get_parent(dip),
-	    DDI_PROP_DONTPASS, "device_type", &dev_type) ==
+	    DDI_PROP_DONTPASS, OBP_DEVICETYPE, &dev_type) ==
 	    DDI_PROP_SUCCESS) {
 		parent_is_pci = (strcmp(dev_type, "pci") == 0);
 		ddi_prop_free(dev_type);
@@ -92,7 +93,7 @@ npe_child_is_pci(dev_info_t *dip)
 	}
 
 	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    "device_type", &dev_type) == DDI_PROP_SUCCESS) {
+	    OBP_DEVICETYPE, &dev_type) == DDI_PROP_SUCCESS) {
 		child_is_pciex = (strcmp(dev_type, "pciex") == 0);
 		ddi_prop_free(dev_type);
 	} else {

@@ -47,6 +47,7 @@
 #include <sys/pci_cfgspace.h>
 #include <sys/pci_impl.h>
 #include <sys/pci_cap.h>
+#include <sys/obpdefs.h>
 
 /*
  * Function prototypes
@@ -91,7 +92,7 @@ pci_common_name_child(dev_info_t *child, char *name, int namelen)
 	}
 
 	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, child, DDI_PROP_DONTPASS,
-	    "reg", (int **)&pci_rp, (uint_t *)&length) != DDI_PROP_SUCCESS) {
+	    OBP_REG, (int **)&pci_rp, (uint_t *)&length) != DDI_PROP_SUCCESS) {
 		cmn_err(CE_WARN, "cannot find reg property in %s",
 		    ddi_get_name(child));
 		return (DDI_FAILURE);

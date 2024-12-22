@@ -57,6 +57,7 @@
 #include <sys/pci.h>
 #include <sys/policy.h>
 #include <sys/platmod.h>
+#include <sys/obpdefs.h>
 #include "ns16550a.h"
 
 #define UARTDR		0x00
@@ -945,13 +946,13 @@ ns16550probe(dev_info_t *dip)
 	if (node < 0)
 		return (DDI_PROBE_FAILURE);
 
-	int len = prom_getproplen(node, "status");
+	int len = prom_getproplen(node, OBP_STATUS);
 	if (len <= 0)
 		return (DDI_PROBE_SUCCESS);
 	if (len >= sizeof(buf))
 		return (DDI_PROBE_FAILURE);
 
-	prom_getprop(node, "status", (caddr_t)buf);
+	prom_getprop(node, OBP_STATUS, (caddr_t)buf);
 	if (strcmp(buf, "ok") != 0 && strcmp(buf, "okay") != 0)
 		return (DDI_PROBE_FAILURE);
 
