@@ -1369,8 +1369,8 @@ i_ddi_unitintr(dev_info_t *dip, uint_t inum)
 	}
 
 	if (intr_cells > 0) {
-		memcpy(ui->ui_v + addr_cells, intrs,
-		    CELLS_1275_TO_BYTES(intr_cells));
+		memcpy(ui->ui_v + ui->ui_addrcells, intrs,
+		    CELLS_1275_TO_BYTES(ui->ui_intrcells));
 		kmem_free(intrs, CELLS_1275_TO_BYTES(intr_cells));
 	}
 
@@ -1455,8 +1455,6 @@ map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
 				ui->ui_v[i] &= intr_mask[i];
 			}
 
-			int unitintr_cells = ui->ui_nelems;
-
 			/*
 			 * The effective stride through the table, the width
 			 * of the row we're reading as we're reading it.
@@ -1472,7 +1470,7 @@ map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
 				 * unit-interrupt specifier plus the parent
 				 * phandle
 				 */
-				effective_stride = unitintr_cells + 1;
+				effective_stride = ui->ui_nelems + 1;
 
 				parent = e_ddi_nodeid_to_dip(scan[effective_stride - 1]);
 
@@ -1551,35 +1549,35 @@ map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
 		 */
 		dev_info_t *idom = i_ddi_interrupt_domain(ipar);
 
-		int intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, idom,
+		int par_intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, idom,
 		    DDI_PROP_DONTPASS, OBP_INTERRUPT_CELLS, 1);
-
-		int addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, ipar, 0,
+		int par_addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, ipar, 0,
 		    OBP_ADDRESS_CELLS, 2);
 
-		if ((intr_cells + addr_cells) == ui->ui_nelems) {
+		VERIFY3U(par_intr_cells, ==, ui->ui_intrcells);
+
+		if ((par_intr_cells == ui->ui_intrcells) &&
+		    (par_addr_cells == ui->ui_addrcells)) {
 			/* Same size, just overwrite the unit address */
-			if (i_ddi_unitaddr(dip, ui->ui_v, addr_cells) != addr_cells) {
+			if (i_ddi_unitaddr(dip, ui->ui_v, ui->ui_addrcells) !=
+			    ui->ui_addrcells) {
 				dev_err(dip, CE_PANIC, "couldn't interpret unit address");
 				return (NULL);	/* Unreachable */
 			}
 		} else {
 			/* Different size, we need a replacement */
-			nu = i_ddi_alloc_unitintr(addr_cells,
-			    intr_cells);
+			nu = i_ddi_alloc_unitintr(par_addr_cells,
+			    par_intr_cells);
 
-			if (i_ddi_unitaddr(dip, nu->ui_v, addr_cells) != addr_cells) {
+			if (i_ddi_unitaddr(dip, nu->ui_v, nu->ui_addrcells)
+			    != nu->ui_addrcells) {
 				dev_err(dip, CE_PANIC, "couldn't interpret unit address");
 				return (NULL);	/* Unreachable */
 			}
 
-			/*
-			 * Use the same interrupt specifier as before.  Note
-			 * that we're careful not to use "addr_cells", as that
-			 * refers to the wrong node.
-			 */
-			memcpy(nu->ui_v + addr_cells, ui->ui_v +
-			    (ui->ui_nelems - intr_cells), intr_cells);
+			/* Use the same interrupt specifier as before. */
+			memcpy(nu->ui_v + nu->ui_addrcells, ui->ui_v +
+			    ui->ui_addrcells, nu->ui_intrcells);
 			i_ddi_free_unitintr(ui);
 			ui = nu;
 			priv->ip_unitintr = nu;
