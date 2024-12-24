@@ -23,13 +23,6 @@
  * and compatible string, then creates a child node per that information,
  * allowing the kernel to attach the correct driver.
  *
- * The nexus does not copy resource information (registers and interrupts) to
- * the child node, as the interpretation of this information is
- * firmware-specific. Instead, the nexus implements the `bus_map' and
- * `bus_intr_op' operations by calling the nexus-parent with the nexus device
- * information pointer as the resource dip, allowing DDI to find the correct
- * resources.
- *
  * The nexus unconditionally sets the `virtio-is-mmio' property, instructing
  * the virtio library module to use the MMIO transport.
  */
@@ -157,11 +150,7 @@ static int
 viommionex_intr_op(dev_info_t *pdip, dev_info_t *rdip __unused,
     ddi_intr_op_t intr_op, ddi_intr_handle_impl_t *hdlp, void *result)
 {
-	/*
-	 * Pass ourselves as the resource dip, since we are the one with
-	 * interrupts
-	 */
-	return (i_ddi_intr_ops(pdip, pdip, intr_op, hdlp, result));
+	return (i_ddi_intr_ops(pdip, rdip, intr_op, hdlp, result));
 }
 
 static int
@@ -265,7 +254,7 @@ viommionex_bus_config(dev_info_t *dip, uint_t flags,
 	ddi_prop_free(driver);
 
 	compatible[0] = (char *)compat;
-	if (ddi_prop_update_string_array(DDI_DEV_T_NONE, rdip,
+	if (ndi_prop_update_string_array(DDI_DEV_T_NONE, rdip,
 	    "compatible", compatible, 1) != DDI_PROP_SUCCESS) {
 		ddi_prop_free(compat);
 		(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
@@ -286,7 +275,7 @@ viommionex_bus_config(dev_info_t *dip, uint_t flags,
 	uint_t reg_cells;
 	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
 	    "reg", &reg, &reg_cells) == DDI_SUCCESS) {
-		if (ddi_prop_update_int_array(DDI_DEV_T_NONE, rdip, "reg", reg,
+		if (ndi_prop_update_int_array(DDI_DEV_T_NONE, rdip, "reg", reg,
 		    reg_cells) != DDI_PROP_SUCCESS) {
 			(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
 			ddi_prop_free(reg);
@@ -300,7 +289,7 @@ viommionex_bus_config(dev_info_t *dip, uint_t flags,
 	uint_t intr_cells;
 	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
 	    "interrupts", &intr, &intr_cells) == DDI_SUCCESS) {
-		if (ddi_prop_update_int_array(DDI_DEV_T_NONE, rdip, "interrupts", intr,
+		if (ndi_prop_update_int_array(DDI_DEV_T_NONE, rdip, "interrupts", intr,
 		    intr_cells) != DDI_PROP_SUCCESS) {
 			(void) ndi_devi_offline(rdip, NDI_DEVI_REMOVE);
 			ddi_prop_free(intr);

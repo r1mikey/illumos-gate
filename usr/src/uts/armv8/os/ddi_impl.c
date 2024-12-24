@@ -1331,6 +1331,7 @@ i_ddi_alloc_unitintr(size_t addrcells, size_t intrcells)
 {
 	size_t nelems = addrcells + intrcells;
 
+	ASSERT3U(intrcells, !=, 0);
 	ASSERT3U(nelems, >=, intrcells);
 
 	unit_intr_t *ui = kmem_zalloc(sizeof (*ui) +
