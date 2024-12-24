@@ -1166,7 +1166,7 @@ _init(void)
 	 * This is necessary because the clock _must_ tick prior to normal
 	 * autoconfiguration taking place, or even being possible.
 	 */
-	if (strcmp(gic_module_name, "gicv3") == 0) {
+	if (strcmp(gic_module_name, "gicthree") == 0) {
 		gic_ops.go_send_ipi = gicv3_send_ipi;
 		gic_ops.go_init = gicv3_init;
 		gic_ops.go_cpu_init = gicv3_cpu_init;

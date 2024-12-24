@@ -199,8 +199,8 @@ GENASSYM_DEFS	 = $(MACHINE_DEFS) $(OPTION_DEFS) \
 DRV_KMODS += simple-bus
 DRV_KMODS += rootnex
 DRV_KMODS += ns16550a
-DRV_KMODS += gicv2
-DRV_KMODS += gicv3
+DRV_KMODS += gictwo
+DRV_KMODS += gicthree
 
 MISC_KMODS += pci_autoconfig
 MISC_KMODS += pci_prd

@@ -266,12 +266,12 @@ set_gic_module_name(void)
 {
 	if (prom_has_compatible("arm,gic-400") ||
 	    prom_has_compatible("arm,cortex-a15-gic")) {
-		gic_module_name = "gicv2";
+		gic_module_name = "gictwo";
 		return;
 	}
 
 	if (prom_has_compatible("arm,gic-v3")) {
-		gic_module_name = "gicv3";
+		gic_module_name = "gicthree";
 		return;
 	}
 

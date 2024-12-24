@@ -975,7 +975,7 @@ _init(void)
 	 * This is necessary because the clock _must_ tick prior to normal
 	 * autoconfiguration taking place, or even being possible.
 	 */
-	if (strcmp(gic_module_name, "gicv2") == 0) {
+	if (strcmp(gic_module_name, "gictwo") == 0) {
 		gic_ops.go_send_ipi = gicv2_send_ipi;
 		gic_ops.go_init = gicv2_init;
 		gic_ops.go_cpu_init = gicv2_cpu_init;
