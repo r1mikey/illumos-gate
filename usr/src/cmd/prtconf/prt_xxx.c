@@ -149,19 +149,50 @@ init_priv_data(struct di_priv_data *fetch)
 static void
 obio_printregs(struct regspec *rp, int ilev)
 {
+#if defined(__aarch64__)
+	uint64_t addr;
+	uint32_t bustype;
+#endif
 	indent_to_level(ilev);
+#if defined(__aarch64__)
+	addr = (((uint64_t)(rp->regspec_bustype & 0x00ffffff)) << 32) |
+	    rp->regspec_addr;
+	bustype = (rp->regspec_bustype >> 24) & 0xff;
+
+	(void) printf("    Bus Type=0x%x, Address=0x%lx, Size=0x%x\n",
+	    bustype, addr, rp->regspec_size);
+#else
 	(void) printf("    Bus Type=0x%x, Address=0x%x, Size=0x%x\n",
 	    rp->regspec_bustype, rp->regspec_addr, rp->regspec_size);
+#endif
 }
 
 static void
 obio_printranges(struct rangespec *rp, int ilev)
 {
+#if defined(__aarch64__)
+	uint64_t coffset;
+	uint64_t offset;
+	uint32_t cbustype;
+	uint64_t bustype;
+#endif
 	indent_to_level(ilev);
+#if defined(__aarch64__)
+	coffset = (((uint64_t)(rp->rng_cbustype & 0x00ffffff)) << 32) |
+	    rp->rng_coffset;
+	cbustype = (rp->rng_cbustype >> 24) & 0xff;
+	offset = (((uint64_t)(rp->rng_bustype & 0x00ffffff)) << 32) |
+	    rp->rng_offset;
+	bustype = (rp->rng_bustype >> 24) & 0xff;
+
+	(void) printf("    Ch: %.2x,%.16lx Pa: %.2x,%.16lx, Sz: %x\n",
+	    cbustype, coffset, bustype, offset, rp->rng_size);
+#else
 	(void) printf("    Ch: %.2x,%.8x Pa: %.2x,%.8x, Sz: %x\n",
 	    rp->rng_cbustype, rp->rng_coffset,
 	    rp->rng_bustype, rp->rng_offset,
 	    rp->rng_size);
+#endif
 }
 
 static void

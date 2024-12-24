@@ -33,6 +33,7 @@
 #include <sys/types.h>
 #include <sys/dditypes.h>
 #include <sys/ddi_impldefs.h>
+#include <sys/ddi_isa.h>
 #include <sys/sunddi.h>
 #include <sys/cpu.h>
 
@@ -109,10 +110,10 @@ i_ddi_bus_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp,
 
 #ifdef	DDI_MAP_DEBUG
 	cmn_err(CE_CONT,
-	    "i_ddi_bus_map: <%s,%s> <0x%x, 0x%x, 0x%x> "
+	    "i_ddi_bus_map: <%s,%s> <0x%x, 0x%lx, 0x%x> "
 	    "offset %ld len %ld handle 0x%p\n",
 	    ddi_get_name(dip), ddi_get_name(rdip),
-	    rp->regspec_bustype, rp->regspec_addr, rp->regspec_size,
+	    REGSPEC_BUSTYPE(rp), REGSPEC_ADDR(rp), REGSPEC_SIZE(rp),
 	    offset, len, mp->map_handlep);
 #endif	/* DDI_MAP_DEBUG */
 
@@ -121,38 +122,22 @@ i_ddi_bus_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp,
 	 *
 	 *	<bustype=0, addr=x, len=x>: memory
 	 *	<bustype=1, addr=x, len=x>: i/o
-	 *	<bustype>1, addr=0, len=x>: x86-compatibility i/o
 	 */
 
-	if (rp->regspec_bustype > 1 && rp->regspec_addr != 0) {
-		cmn_err(CE_WARN, "<%s,%s>: invalid register spec"
-		    " <0x%x, 0x%x, 0x%x>\n", ddi_get_name(dip),
-		    ddi_get_name(rdip), rp->regspec_bustype,
-		    rp->regspec_addr, rp->regspec_size);
-		return (DDI_ME_INVAL);
-	}
-
-	if (rp->regspec_bustype > 1 && rp->regspec_addr == 0) {
-		/*
-		 * compatibility i/o mapping
-		 */
-		rp->regspec_bustype += (uint_t)offset;
-	} else {
-		/*
-		 * Normal memory or i/o mapping
-		 */
-		rp->regspec_addr += (uint_t)offset;
-	}
+	/* No compatability I/O on aarch64 */
+	ASSERT3U(REGSPEC_BUSTYPE(rp), <=, 1);
+	/* Normal memory or i/o mapping */
+	REGSPEC_INCR_ADDR(rp, (uint_t)offset);
 
 	if (len != 0)
-		rp->regspec_size = (uint_t)len;
+		REGSPEC_SET_SIZE(rp, (uint_t)len);
 
 #ifdef	DDI_MAP_DEBUG
 	cmn_err(CE_CONT,
-	    "               <%s,%s> <0x%x, 0x%x, %d> "
+	    "               <%s,%s> <0x%x, 0x%lx, %d> "
 	    "offset %ld len %ld\n",
 	    ddi_get_name(dip), ddi_get_name(rdip),
-	    rp->regspec_bustype, rp->regspec_addr, rp->regspec_size,
+	    REGSPEC_BUSTYPE(rp), REGSPEC_ADDR(rp), REGSPEC_SIZE(rp),
 	    offset, len);
 #endif	/* DDI_MAP_DEBUG */
 
@@ -205,17 +190,17 @@ i_ddi_rnumber_to_regspec(dev_info_t *dip, int rnumber)
 static int
 reg_is_enclosed_in_range(struct regspec *rp, struct rangespec *rangep)
 {
-	if (rp->regspec_bustype != rangep->rng_cbustype)
+	if (REGSPEC_BUSTYPE(rp) != RANGESPEC_CHILD_BUSTYPE(rangep))
 		return (0);
 
-	if (rp->regspec_addr < rangep->rng_coffset)
+	if (REGSPEC_ADDR(rp) < RANGESPEC_CHILD_OFFSET(rangep))
 		return (0);
 
-	if (rangep->rng_size == 0)
+	if (RANGESPEC_SIZE(rangep) == 0)
 		return (1);	/* size is really 2**(bits_per_word) */
 
-	if ((rp->regspec_addr + rp->regspec_size - 1) <=
-	    (rangep->rng_coffset + rangep->rng_size - 1))
+	if ((REGSPEC_ADDR(rp) + REGSPEC_SIZE(rp) - 1) <=
+	    (RANGESPEC_CHILD_OFFSET(rangep) + RANGESPEC_SIZE(rangep) - 1))
 		return (1);
 
 	return (0);
@@ -259,19 +244,21 @@ i_ddi_apply_range(dev_info_t *dp, dev_info_t *rdip, struct regspec *rp)
 	}
 
 #ifdef	DDI_MAP_DEBUG
-	ddi_map_debug("    Input:  %x.%x.%x\n", rp->regspec_bustype,
-	    rp->regspec_addr, rp->regspec_size);
-	ddi_map_debug("    Range:  %x.%x %x.%x %x\n",
-	    rangep->rng_cbustype, rangep->rng_coffset,
-	    rangep->rng_bustype, rangep->rng_offset, rangep->rng_size);
+	ddi_map_debug("    Input:  %x.%lx.%x\n", REGSPEC_BUSTYPE(rp),
+	    REGSPEC_ADDR(rp), REGSPEC_SIZE(rp));
+	ddi_map_debug("    Range:  %x.%lx %x.%lx %x\n",
+	    RANGESPEC_CHILD_BUSTYPE(rangep), RANGESPEC_CHILD_OFFSET(rangep),
+	    RANGESPEC_BUSTYPE(rangep), RANGESPEC_OFFSET(rangep),
+	    RANGESPEC_SIZE(rangep));
 #endif	/* DDI_MAP_DEBUG */
 
-	rp->regspec_bustype = rangep->rng_bustype;
-	rp->regspec_addr += rangep->rng_offset - rangep->rng_coffset;
+	REGSPEC_SET_BUSTYPE(rp, RANGESPEC_BUSTYPE(rangep));
+	REGSPEC_INCR_ADDR(rp,
+	    RANGESPEC_OFFSET(rangep) - RANGESPEC_CHILD_OFFSET(rangep));
 
 #ifdef	DDI_MAP_DEBUG
-	ddi_map_debug("    Return: %x.%x.%x\n", rp->regspec_bustype,
-	    rp->regspec_addr, rp->regspec_size);
+	ddi_map_debug("    Return: %x.%lx.%x\n", REGSPEC_BUSTYPE(rp),
+	    REGSPEC_ADDR(rp), REGSPEC_SIZE(rp));
 #endif	/* DDI_MAP_DEBUG */
 
 	return (0);
