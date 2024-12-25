@@ -202,6 +202,7 @@ $(i386_ONLY)driver name=balloon perms="* 0444 root sys"
 $(i386_ONLY)driver name=cpudrv alias=cpu
 $(i386_ONLY)driver name=domcaps perms="* 0444 root sys"
 $(i386_ONLY)driver name=evtchn perms="* 0666 root sys"
+$(aarch64_ONLY)driver name=gicthree alias=arm,gic-v3
 $(aarch64_ONLY)driver name=gictwo \
     alias=arm,cortex-a15-gic \
     alias=arm,gic-400

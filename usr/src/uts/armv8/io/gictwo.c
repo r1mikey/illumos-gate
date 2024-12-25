@@ -295,7 +295,11 @@ gicv2_config_irq(uint32_t irq, bool is_edge)
 	 * corresponding programmable Int_config field is changed. GIC
 	 * behavior is otherwise UNPREDICTABLE.
 	 */
-	/* XXXPCI: We have shared interrupts now, so we have to be smarter than this.  But I'm not sure how. */
+	/*
+	 * XXXPCI: We have real shared interrupts now, and need to do better.
+	 * at least check the config is _changing_?  Do the manuals make it
+	 * clear if it is a _change_ or a _write_ that matters?
+	 */
 #if XXXPCI_SHARED_INTERRUPTS
 	ASSERT(((gicd_read(&conf, GICD_ISENABLERn(GICD_IENABLER_REGNUM(irq))) &
 	    GICD_IENABLER_REGBIT(irq)) == 0));
@@ -951,7 +955,7 @@ static struct dev_ops gicv2_ops = {
 	.devo_cb_ops  = NULL,
 	.devo_bus_ops = &gicv2_bus_ops,
 	.devo_power = nulldev,
-	.devo_quiesce = ddi_quiesce_not_needed,
+	.devo_quiesce = ddi_quiesce_not_supported,
 };
 
 static struct modldrv modldrv = {
