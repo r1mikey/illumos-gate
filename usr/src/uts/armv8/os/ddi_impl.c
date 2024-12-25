@@ -65,7 +65,6 @@
 #include <sys/lgrp.h>
 #include <sys/mach_intr.h>
 #include <vm/hat_aarch64.h>
-#include <sys/gic.h>
 #include <sys/obpdefs.h>
 
 size_t dma_max_copybuf_size = 0x101000;		/* 1M + 4K */
