@@ -1362,17 +1362,17 @@ i_ddi_unitintr(dev_info_t *dip, uint_t inum)
 	int *intrs = NULL;
 	int intr_cells = i_ddi_get_interrupt(dip, inum, &intrs);
 
+	VERIFY3U(intr_cells, >, 0);
+
 	ui = i_ddi_alloc_unitintr(addr_cells, intr_cells);
 	if (i_ddi_unitaddr(dip, ui->ui_v, addr_cells) != addr_cells) {
 		dev_err(dip, CE_PANIC, "couldn't interpret unit address");
 		return (NULL);	/* Unreachable */
 	}
 
-	if (intr_cells > 0) {
-		memcpy(ui->ui_v + ui->ui_addrcells, intrs,
-		    CELLS_1275_TO_BYTES(ui->ui_intrcells));
-		kmem_free(intrs, CELLS_1275_TO_BYTES(intr_cells));
-	}
+	memcpy(ui->ui_v + ui->ui_addrcells, intrs,
+	    CELLS_1275_TO_BYTES(ui->ui_intrcells));
+	kmem_free(intrs, CELLS_1275_TO_BYTES(intr_cells));
 
 	return (ui);
 }
@@ -1638,8 +1638,8 @@ i_ddi_intr_ops(dev_info_t *dip, dev_info_t *rdip, ddi_intr_op_t op,
 	case DDI_INTROP_BLOCKENABLE:
 	case DDI_INTROP_BLOCKDISABLE:
 		/*
-		 * Try and determine our interrupt domain and possibly an interrupt
-		 * translation
+		 * Try and determine our interrupt domain and possibly an
+		 * interrupt translation
 		 */
 		if ((pdip = map_interrupt(dip, hdlp)) == NULL) {
 			dev_err(dip, CE_WARN, "could not find interrupt "
