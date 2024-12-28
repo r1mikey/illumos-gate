@@ -1158,7 +1158,7 @@ rootnex_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 		break;
 	case DDI_INTROP_SUPPORTED_TYPES:
 		/*
-		 * XXXGIC: We have no MSI support yet, so this always filters
+		 * XXXARM: We have no MSI support yet, so this always filters
 		 * the types supported by the child down to just FIXED, or
 		 * returns that it itself only supports FIXED however you want
 		 * to look at it.
@@ -1166,11 +1166,7 @@ rootnex_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 		*(int *)result = DDI_INTR_TYPE_FIXED;
 		break;
 	case DDI_INTROP_GETCAP:
-		/*
-		 * We support FLAG_LEVEL in addition to whatever the child
-		 * supports.  XXXGIC: I think
-		 */
-		*(int *)result |= DDI_INTR_FLAG_LEVEL;
+		*(int *)result = DDI_INTR_FLAG_LEVEL;
 		break;
 	case DDI_INTROP_ALLOC:
 		hdlp->ih_pri = i_ddi_get_intr_pri(rdip, hdlp->ih_inum);

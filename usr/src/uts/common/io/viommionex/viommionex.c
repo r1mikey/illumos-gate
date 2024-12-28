@@ -264,12 +264,9 @@ viommionex_bus_config(dev_info_t *dip, uint_t flags,
 	ddi_prop_free(compat);
 
 	/*
-	 * XXXGIC: Copy the "reg" and "interrupts" properties, so we appear as
-	 * a sufficiently normal device for the 1275 interrupt mapping
+	 * Copy the "reg" and "interrupts" properties, so we appear as a
+	 * sufficiently normal device for the 1275 interrupt mapping
 	 * algorithm.
-	 *
-	 * It would be nice to either avoid this, or avoid the choice not to
-	 * copy reg/interrupts/etc onto the child.
 	 */
 	int *reg;
 	uint_t reg_cells;

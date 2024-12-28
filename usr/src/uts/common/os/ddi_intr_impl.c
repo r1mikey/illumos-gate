@@ -110,7 +110,6 @@ i_ddi_intr_get_supported_types(dev_info_t *dip)
 		return (intr_p->devi_intr_sup_types);
 
 	bzero(&hdl, sizeof (ddi_intr_handle_impl_t));
-	/* XXXGIC: Surely this should allocate the private bits, so the hdl is fully valid? */
 	hdl.ih_dip = dip;
 
 	/*

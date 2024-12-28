@@ -63,7 +63,7 @@ typedef struct ihdl_plat {
 	kstat_t		*ip_ksp;	/* Kstat pointer */
 	uint64_t	ip_ticks;	/* Interrupt ticks for this device */
 
-	/* XXXGIC: `void *ihdl_ctlr_private`? */
+	/* XXXARM: `void *ihdl_ctlr_private`? */
 	unit_intr_t	*ip_unitintr;	/* devicetree unit interrupt spec. */
 } ihdl_plat_t;
 

@@ -1318,11 +1318,11 @@ i_ddi_unitaddr(dev_info_t *dip, uint_t *out, size_t out_cells)
 	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
 	    OBP_REG, &reg, &reg_cells) != DDI_SUCCESS) {
 		/*
-		 * XXXGIC: If we have address cells, but no registers to fill
-		 * them from.  Fill with 0.  This feels like the wrong thing
-		 * to do but for eg QEMU,virt has a / node with
-		 * #address-cells=2 but no registers, and the / node has an
-		 * interrupt-parent, and so takes part in mapping.
+		 * If we have address cells, but no registers to fill them
+		 * from.  Fill with 0.  This feels like the wrong thing to do
+		 * but for eg QEMU,virt has a / node with #address-cells=2 but
+		 * no registers, and the / node has an interrupt-parent, and
+		 * so takes part in mapping.
 		 */
 		memset(out, 0, CELLS_1275_TO_BYTES(out_cells));
 	} else {

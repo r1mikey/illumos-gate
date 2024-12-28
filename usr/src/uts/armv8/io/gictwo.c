@@ -296,11 +296,11 @@ gicv2_config_irq(uint32_t irq, bool is_edge)
 	 * behavior is otherwise UNPREDICTABLE.
 	 */
 	/*
-	 * XXXPCI: We have real shared interrupts now, and need to do better.
+	 * XXXGIC: We have real shared interrupts now, and need to do better.
 	 * at least check the config is _changing_?  Do the manuals make it
 	 * clear if it is a _change_ or a _write_ that matters?
 	 */
-#if XXXPCI_SHARED_INTERRUPTS
+#if XXXGIC_SHARED_INTERRUPTS
 	ASSERT(((gicd_read(&conf, GICD_ISENABLERn(GICD_IENABLER_REGNUM(irq))) &
 	    GICD_IENABLER_REGBIT(irq)) == 0));
 #endif
@@ -854,8 +854,8 @@ gicv2_intr_ops(dev_info_t *dip, dev_info_t *rdip,
 		VERIFY3P(priv->ip_unitintr, !=, NULL);
 
 		/*
-		 * XXXGIC: Always 3 interrupt cells in the gicv2 binding
-		 * (but this is FDT specific, and needs to be better)
+		 * Always 3 interrupt cells in the gicv2 binding (but this is
+		 * FDT specific, and needs to be better)
 		 */
 		uint32_t *p = &priv->ip_unitintr->ui_v[priv->ip_unitintr->ui_addrcells];
 		const uint32_t cfg = *p++;
@@ -883,8 +883,8 @@ gicv2_intr_ops(dev_info_t *dip, dev_info_t *rdip,
 		VERIFY3P(priv->ip_unitintr, !=, NULL);
 
 		/*
-		 * XXXGIC: Always 3 interrupt cells in the gicv2 binding
-		 * (but this is FDT specific, and needs to be better).
+		 * Always 3 interrupt cells in the gicv2 binding (but this is
+		 * FDT specific, and needs to be better).
 		 *
 		 * Here we don't use the sense
 		 */
