@@ -1359,6 +1359,53 @@ i_ddi_free_unitintr(unit_intr_t *ui)
 	kmem_free(ui, sizeof (*ui) + CELLS_1275_TO_BYTES(ui->ui_nelems));
 }
 
+/*
+ * Update ui to have the address of dip, the interrupt portion is unchanged
+ */
+static unit_intr_t *
+i_ddi_update_unitintr_unit(unit_intr_t *ui, dev_info_t *dip)
+{
+	dev_info_t *idom = i_ddi_interrupt_domain(dip);
+
+	int new_intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, idom,
+	    DDI_PROP_DONTPASS, OBP_INTERRUPT_CELLS, 1);
+	int new_addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, dip, 0,
+	    OBP_ADDRESS_CELLS, 2);
+
+	ndi_rele_devi(idom);
+
+	VERIFY3U(new_intr_cells, ==, ui->ui_intrcells);
+
+	if (new_addr_cells == ui->ui_addrcells) {
+		if (i_ddi_unitaddr(dip, ui->ui_v, ui->ui_addrcells) !=
+		    ui->ui_addrcells) {
+			ndi_rele_devi(dip);
+			dev_err(dip, CE_PANIC, "couldn't interpret "
+			    "unit address");
+			return (NULL);	/* Unreachable */
+		}
+
+		return (ui);
+	} else {
+		/* Different size, we need a replacement */
+		unit_intr_t *new = i_ddi_alloc_unitintr(new_addr_cells,
+		    new_intr_cells);
+
+		if (i_ddi_unitaddr(dip, new->ui_v, new->ui_addrcells)
+		    != new->ui_addrcells) {
+			ndi_rele_devi(dip);
+			dev_err(dip, CE_PANIC, "couldn't interpret "
+			    "unit address");
+			return (NULL);	/* Unreachable */
+		}
+
+		/* Use the same interrupt specifier as before. */
+		memcpy(new->ui_v + new->ui_addrcells, ui->ui_v +
+		    ui->ui_addrcells, new->ui_intrcells);
+		i_ddi_free_unitintr(ui);
+		return (new);
+	}
+}
 
 static unit_intr_t *
 i_ddi_unitintr(dev_info_t *dip, uint_t inum)
@@ -1422,54 +1469,7 @@ map_interrupt_parent(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
 		ndi_hold_devi(ipdip);
 	}
 
-	/*
-	 * It may feel like the size here could not possibly change,
-	 * because if it did then this would require an
-	 * "interrupt-map", but that's not true, it's entirely
-	 * possible for "#address-cells" to change.
-	 */
-	dev_info_t *idom = i_ddi_interrupt_domain(ipdip);
-
-	int par_intr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, idom,
-	    DDI_PROP_DONTPASS, OBP_INTERRUPT_CELLS, 1);
-	int par_addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, ipdip, 0,
-	    OBP_ADDRESS_CELLS, 2);
-
-	ndi_rele_devi(idom);
-
-	unit_intr_t *ui = priv->ip_unitintr;
-	unit_intr_t *nu = NULL;
-
-	VERIFY3U(par_intr_cells, ==, ui->ui_intrcells);
-
-	if ((par_intr_cells == ui->ui_intrcells) &&
-	    (par_addr_cells == ui->ui_addrcells)) {
-		/* Same size, just overwrite the unit address */
-		if (i_ddi_unitaddr(dip, ui->ui_v, ui->ui_addrcells) !=
-		    ui->ui_addrcells) {
-			ndi_rele_devi(ipdip);
-			dev_err(dip, CE_PANIC, "couldn't interpret unit address");
-			return (NULL);	/* Unreachable */
-		}
-	} else {
-		/* Different size, we need a replacement */
-		nu = i_ddi_alloc_unitintr(par_addr_cells,
-		    par_intr_cells);
-
-		if (i_ddi_unitaddr(dip, nu->ui_v, nu->ui_addrcells)
-		    != nu->ui_addrcells) {
-			ndi_rele_devi(ipdip);
-			dev_err(dip, CE_PANIC, "couldn't interpret unit address");
-			return (NULL);	/* Unreachable */
-		}
-
-		/* Use the same interrupt specifier as before. */
-		memcpy(nu->ui_v + nu->ui_addrcells, ui->ui_v +
-		    ui->ui_addrcells, nu->ui_intrcells);
-		i_ddi_free_unitintr(ui);
-		ui = nu;
-		priv->ip_unitintr = nu;
-	}
+	priv->ip_unitintr = i_ddi_update_unitintr_unit(priv->ip_unitintr, dip);
 
 	return (ipdip);
 }
