@@ -374,20 +374,23 @@ gicv3_config_irq_spi(gicv3_conf_t *gc, uint32_t irq, uint32_t v)
 	 * §12.9.9 Changing Int_config when the interrupt is
 	 * individually enabled is UNPREDICTABLE.
 	 */
-	/*
-	 * XXXGIC: We have real shared interrupts now, and need to do better.
-	 * at least check the config is _changing_?  Do the manuals make it
-	 * clear if it is a _change_ or a _write_ that matters?
-	 */
-#if XXXGIC_SHARED_INTERRUPTS
-	ASSERT(((gicd_read4(gc,
+	if ((gicd_read4(gc,
 	    GICD_ISENABLERn(GICD_IENABLER_REGNUM(irq))) &
-	    GICD_IENABLER_REGBIT(irq)) == 0));
-#endif
-	(void) gicd_rmw4(gc,
-	    GICD_ICFGRn(GICD_ICFGR_REGNUM(irq)),
-	    GICD_ICFGR_REGVAL(irq, GICD_ICFGR_INT_CONFIG_MASK),
-	    GICD_ICFGR_REGVAL(irq, v));
+	    GICD_IENABLER_REGBIT(irq)) != 0) {
+
+		if (gicd_read4(gc, GICD_ICFGRn(GICD_ICFGR_REGNUM(irq))) !=
+		    GICD_ICFGR_REGVAL(irq, v)) {
+			cmn_err(CE_WARN, "gicthree: vector %d already "
+			    "configured differently", irq);
+			return;
+		}
+
+	} else {
+		(void) gicd_rmw4(gc,
+		    GICD_ICFGRn(GICD_ICFGR_REGNUM(irq)),
+		    GICD_ICFGR_REGVAL(irq, GICD_ICFGR_INT_CONFIG_MASK),
+		    GICD_ICFGR_REGVAL(irq, v));
+	}
 	GICD_UNLOCK();
 }
 

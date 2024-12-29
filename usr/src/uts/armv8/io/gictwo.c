@@ -295,25 +295,25 @@ gicv2_config_irq(uint32_t irq, bool is_edge)
 	 * corresponding programmable Int_config field is changed. GIC
 	 * behavior is otherwise UNPREDICTABLE.
 	 */
-	/*
-	 * XXXGIC: We have real shared interrupts now, and need to do better.
-	 * at least check the config is _changing_?  Do the manuals make it
-	 * clear if it is a _change_ or a _write_ that matters?
-	 */
-#if XXXGIC_SHARED_INTERRUPTS
-	ASSERT(((gicd_read(&conf, GICD_ISENABLERn(GICD_IENABLER_REGNUM(irq))) &
-	    GICD_IENABLER_REGBIT(irq)) == 0));
-#endif
-
-	/*
-	 * GICD_ICFGR<n> is a packed field with 2 bits per interrupt, the even
-	 * bit is reserved, the odd bit is 1 for edge-triggered 0 for
-	 * level.
-	 */
-	(void) gicd_rmw(&conf,
-	    GICD_ICFGRn(GICD_ICFGR_REGNUM(irq)),
-	    GICD_ICFGR_REGVAL(irq, GICD_ICFGR_INT_CONFIG_MASK),
-	    GICD_ICFGR_REGVAL(irq, v));
+	if ((gicd_read(&conf, GICD_ISENABLERn(GICD_IENABLER_REGNUM(irq))) &
+	    GICD_IENABLER_REGBIT(irq)) != 0) {
+		if (gicd_read(&conf, GICD_ICFGRn(GICD_ICFGR_REGNUM(irq))) !=
+		    GICD_ICFGR_REGVAL(irq, v)) {
+			cmn_err(CE_WARN, "gictwo: vector %d already "
+			    "configured differently", irq);
+			return;
+		}
+	} else {
+		/*
+		 * GICD_ICFGR<n> is a packed field with 2 bits per interrupt,
+		 * the even bit is reserved, the odd bit is 1 for
+		 * edge-triggered 0 for level.
+		 */
+		(void) gicd_rmw(&conf,
+		    GICD_ICFGRn(GICD_ICFGR_REGNUM(irq)),
+		    GICD_ICFGR_REGVAL(irq, GICD_ICFGR_INT_CONFIG_MASK),
+		    GICD_ICFGR_REGVAL(irq, v));
+	}
 	GICV2_GICD_UNLOCK();
 }
 
