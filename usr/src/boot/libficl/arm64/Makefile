@@ -11,27 +11,21 @@
 
 #
 # Copyright 2016 Toomas Soome <tsoome@me.com>
+# Copyright 2016 RackTop Systems.
+# Copyright 2025 Michael van der Westhuizen
 #
 
 include $(SRC)/Makefile.master
 
-i386_SUBDIRS = $(MACH) $(MACH64)
-aarch64_SUBDIRS = arm64
-SUBDIRS = softcore $($(MACH)_SUBDIRS)
+MACHINE=	arm64
+DYNLIB=		libficl_pics.a
 
-all	:=	TARGET = all
-install	:=	TARGET = install
-clean	:=	TARGET = clean
-clobber	:=	TARGET = clobber
+all install: $(DYNLIB)
 
-all install: $(SUBDIRS)
-clean clobber: $(SUBDIRS)
+include ../Makefile.com
 
-$($(MACH)_SUBDIRS): softcore
+CFLAGS += $(CFLAGS64)
 
-.PARALLEL:
-
-$(SUBDIRS): FRC
-	@cd $@; pwd; $(MAKE) $(TARGET)
+include $(BOOTSRC)/Makefile.lib
 
 FRC:
