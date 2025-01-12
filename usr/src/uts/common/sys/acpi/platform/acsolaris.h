@@ -98,6 +98,13 @@ uint32_t acpi_strtoul(const char *, char **, int);
  */
 #define	ACPI_USE_SYSTEM_CLIBRARY
 
+#if defined(__aarch64__)
+#if defined(ACPI_REDUCED_HARDWARE)
+#undef	ACPI_REDUCED_HARDWARE
+#endif
+#define	ACPI_REDUCED_HARDWARE	1
+#endif
+
 #ifdef _KERNEL
 #define	strtoul(s, r, b)	acpi_strtoul(s, r, b)
 #define	toupper(x)		(islower(x) ? (x) - 'a' + 'A' : (x))
