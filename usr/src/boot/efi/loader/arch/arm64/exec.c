@@ -37,26 +37,34 @@
 
 #include <efi.h>
 #include <efilib.h>
+#include <Guid/Acpi.h>
+#include <Guid/Fdt.h>
 
 #include "loader_efi.h"
 #include "cache.h"
+#include "libzfs.h"
 
 #include "platform/acfreebsd.h"
 #include "acconfig.h"
 #define ACPI_SYSTEM_XFACE
-#define ACPI_USE_SYSTEM_INTTYPES
+#if !defined(ACPI_USE_SYSTEM_INTTYPES)
+#define ACPI_USE_SYSTEM_INTTYPES 1
+#endif
 #include "actypes.h"
 #include "actbl.h"
 
 static EFI_GUID acpi_guid = ACPI_TABLE_GUID;
-static EFI_GUID acpi20_guid = ACPI_20_TABLE_GUID;
+static EFI_GUID acpi20_guid = EFI_ACPI_20_TABLE_GUID;
 
 static int elf64_exec(struct preloaded_file *amp);
+#ifdef XXXARM
 static int elf64_obj_exec(struct preloaded_file *amp);
+#endif
 
 int bi_load(char *args, vm_offset_t *modulep, vm_offset_t *kernendp);
 
-static struct file_format arm64_elf = {
+static
+struct file_format arm64_elf = {
 	elf64_loadfile,
 	elf64_exec
 };
@@ -74,10 +82,42 @@ elf64_exec(struct preloaded_file *fp)
 	size_t clean_size;
 	struct file_metadata *md;
 	ACPI_TABLE_RSDP *rsdp;
+	void *fdtp;
 	Elf_Ehdr *ehdr;
 	char buf[24];
 	int err, revision;
 	void (*entry)(vm_offset_t);
+	bool zfs_root = false;
+	struct devdesc *rootdev;
+
+	efi_getdev((void **)(&rootdev), NULL, NULL);
+	if (rootdev == NULL) {
+		printf("can't determine root device\n");
+		return (EFTYPE);	/* XXX: need a better code */
+	}
+	if (rootdev->d_dev->dv_type == DEVT_ZFS)
+		zfs_root = true;
+	/* If we have fstype set in env, reset zfs_root if needed. */
+	const char *fs = getenv("fstype");
+	if (fs != NULL && strcmp(fs, "zfs") != 0)
+		zfs_root = false;
+#if XXXARM
+	/*
+	 * If we have fstype set on the command line,
+	 * reset zfs_root if needed.
+	 */
+	int rv = find_property_value(fp->f_args, "fstype", &fs, &len);
+	if (rv != 0 && rv != ENOENT)
+		return (EFTYPE);	/* XXX: need a better code */
+	if (fs != NULL && strncmp(fs, "zfs", len) != 0)
+		zfs_root = false;
+	/* zfs_bootfs() will set the environment, it must be called. */
+	if (zfs_root == true)
+		fs = zfs_bootfs(rootdev);
+#else
+	if (zfs_root == true)
+		(void) zfs_bootfs(rootdev);
+#endif
 
 	rsdp = efi_get_table(&acpi20_guid);
 	if (rsdp == NULL) {
@@ -104,6 +144,16 @@ elf64_exec(struct preloaded_file *fp)
 			sprintf(buf, "%d", rsdp->Length);
 			setenv("hint.acpi.0.xsdt_length", buf, 1);
 		}
+	} else {
+		fdtp = efi_get_table(&gFdtTableGuid);
+		if (fdtp == NULL) {
+			/* We need either FDT or ACPI */
+			printf("can't determine firmware table type\n");
+			return (EFTYPE);	/* XXX: need a better code */
+		}
+
+		sprintf(buf, "0x%016llx", (unsigned long long)fdtp);
+		setenv("hint.devicetree.0.fdtp", buf, 1);
 	}
 
 	if ((md = file_findmetadata(fp, MODINFOMD_ELFHDR)) == NULL)
@@ -119,6 +169,7 @@ elf64_exec(struct preloaded_file *fp)
 		return (err);
 	}
 
+	efi_time_fini();
 	dev_cleanup();
 
 	/* Clean D-cache under kernel area and invalidate whole I-cache */
@@ -132,6 +183,7 @@ elf64_exec(struct preloaded_file *fp)
 	panic("exec returned");
 }
 
+#ifdef XXXARM
 static int
 elf64_obj_exec(struct preloaded_file *fp)
 {
@@ -140,4 +192,4 @@ elf64_obj_exec(struct preloaded_file *fp)
 	    fp->f_name);
 	return (ENOSYS);
 }
-
+#endif
