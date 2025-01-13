@@ -11,26 +11,25 @@
 
 #
 # Copyright 2016 Toomas Soome <tsoome@me.com>
+# Copyright 2016 RackTop Systems.
+# Copyright 2025 Michael van der Westhuizen
 #
-
-.KEEP_STATE:
 
 include $(SRC)/Makefile.master
 
-i386_SUBDIRS = $(MACH) $(MACH64)
-aarch64_SUBDIRS = arm64
-SUBDIRS = $($(MACH)_SUBDIRS)
+MACHINE=	arm64
+EFIPROG=	loader64.efi
 
-all	:=	TARGET = all
-clean	:=	TARGET = clean
-clobber	:=	TARGET = clobber
-install	:=	TARGET = install
+all:		$(EFIPROG)
 
-all clean clobber install: $(SUBDIRS)
+include ../Makefile.com
 
-.PARALLEL:
+EFI_TARGET=	binary
+LDFLAGS +=	-znocombreloc
 
-$(SUBDIRS): FRC
-	@cd $@; pwd; $(MAKE) $(TARGET)
+efi_main.o := CPPFLAGS += -DLOADER_EFI=L\"loader64.efi\"
+CFLAGS +=	$(CFLAGS64) -_gcc=-mgeneral-regs-only
 
-FRC:
+CLEANFILES +=	machine $(EFIPROG)
+
+$(OBJS):	machine
