@@ -85,6 +85,12 @@ $if _arm && _ELF64
 $add aarch64
 $endif
 
+SYMBOL_VERSION ILLUMOS_0.50 {
+    protected:
+	wcslcat;
+	wcslcpy;
+} ILLUMOS_0.49;
+
 SYMBOL_VERSION ILLUMOS_0.49 {
     protected:
 	stdc_bit_ceil_uc;

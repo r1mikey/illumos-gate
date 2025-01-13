@@ -276,7 +276,7 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/aarch64/zfs/%.c
 	$(CTFCONVERT_O)
 
 $(ASSYM_H): $(GENASSYM_CF)
-	$(GENASSYM) -- $(CC) $(CPPFLAGS) < $(GENASSYM_CF) > $(ASSYM_H)
+	$(GENASSYM) -- $(CC) $(CPPFLAGS) $(CSTD) < $(GENASSYM_CF) > $(ASSYM_H)
 
 #
 # krtld compiled into unix

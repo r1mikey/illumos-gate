@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2022 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 #
 
 PROG	= elfcap.chk
@@ -21,8 +21,9 @@ include	$(SRC)/Makefile.master.64
 include	$(SRC)/Makefile.native
 include	../Makefile.com
 
-CSTD =		$(GNU_C99)
+CSTD =		$(CSTD_GNU17)
 ADJUNCT_LIBS +=	libc.so
+
 #
 # We reach into the tools include area which provides us with a snapshot
 # of all of the data that we need. This does mean that if someone is in

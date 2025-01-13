@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2024 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 #
 
 include $(SRC)/Makefile.master
@@ -36,7 +36,7 @@ $(ROOTOPTEXECVPE)/execvpe-noperm := FILEMODE = 0444
 
 include $(SRC)/cmd/Makefile.cmd
 
-CSTD = $(GNU_C99)
+CSTD = $(CSTD_GNU17)
 .KEEP_STATE:
 
 all: $(PROGS32) $(PROGS64)

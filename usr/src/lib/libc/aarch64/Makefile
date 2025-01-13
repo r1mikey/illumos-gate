@@ -677,6 +677,8 @@ PORTI18N=			\
 	putwchar.o		\
 	putws.o			\
 	strtows.o		\
+	wcslcat.o		\
+	wcslcpy.o		\
 	wcsnlen.o		\
 	wcsstr.o		\
 	wcstoimax.o		\

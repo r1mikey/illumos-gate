@@ -38,7 +38,7 @@ $(NFSBOOT_OUT): $(NFS_MAPFILE) $(NFS_SRT0) $(NFS_OBJS) $(LIBDEPS)
 	$(GLD) $(NFS_LDFLAGS) -o $@ $(NFS_SRT0) $(NFS_OBJS) --start-group $(NFS_LIBS) --end-group
 
 $(ASSYM_H): $(GENASSYM_CF)
-	${GENASSYM} -- $(CC) $(CPPFLAGS) <  $(GENASSYM_CF) > $@
+	${GENASSYM} -- $(CC) $(CSTD) $(CPPFLAGS) <  $(GENASSYM_CF) > $@
 
 $(ROOT_PSM_DIR):
 	$(INS.dir)

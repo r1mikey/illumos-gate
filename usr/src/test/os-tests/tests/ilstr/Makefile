@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2023 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 #
 
 include $(SRC)/Makefile.master
@@ -37,7 +37,7 @@ LDLIBS64 += -lumem
 
 CTF_MODE = link
 
-CSTD = $(GNU_C99)
+CSTD = $(CSTD_GNU17)
 
 .KEEP_STATE:
 

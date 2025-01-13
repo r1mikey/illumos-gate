@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2022 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 #
 
 include $(SRC)/Makefile.master
@@ -28,7 +28,7 @@ ROOTOPTPROGS = $(PROGS32:%=$(ROOTOPTPORTFS)/%) \
 
 include $(SRC)/cmd/Makefile.cmd
 
-CSTD=$(GNU_C99)
+CSTD=$(CSTD_GNU17)
 
 .KEEP_STATE:
 
