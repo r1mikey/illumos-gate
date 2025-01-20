@@ -294,7 +294,6 @@ av_get_vec_lvl(uint_t vect, int *lvl)
 	vectindex = vect % MAX_VECT;
 	vecp = &autovect[vectindex];
 
-#if defined(__aarch64__)
 	/*
 	 * avh_hi_pri of 0 means there are no entries in this bucket
 	 */
@@ -310,11 +309,6 @@ av_get_vec_lvl(uint_t vect, int *lvl)
 	}
 
 	return (0);
-#else
-	if (lvl != NULL)
-		*lvl = p->av_prilevel;
-	return (vecp->avh_hi_pri != 0);
-#endif
 }
 
 void
