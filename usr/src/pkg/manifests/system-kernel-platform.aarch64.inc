@@ -35,13 +35,17 @@ dir  path=platform/armv8/kernel/dacf/$(ARCH)
 file path=platform/armv8/kernel/dacf/$(ARCH)/consconfig_dacf mode=0755
 dir  path=platform/armv8/kernel/drv
 dir  path=platform/armv8/kernel/drv/$(ARCH)
-file path=platform/armv8/kernel/drv/$(ARCH)/gicv2
-file path=platform/armv8/kernel/drv/$(ARCH)/gicv3
+file path=platform/armv8/kernel/drv/$(ARCH)/gicthree
+file path=platform/armv8/kernel/drv/$(ARCH)/gictwo
 file path=platform/armv8/kernel/drv/$(ARCH)/ns16550a
 file path=platform/armv8/kernel/drv/$(ARCH)/rootnex
 file path=platform/armv8/kernel/drv/$(ARCH)/simple-bus
 file path=platform/armv8/kernel/drv/ns16550a.conf
 file path=usr/share/man/man4d/simple-bus.4d
+driver name=gicthree alias=arm,gic-v3
+driver name=gictwo \
+    alias=arm,cortex-a15-gic \
+    alias=arm,gic-400
 driver name=ns16550a perms="* 0666 root sys" perms="*,cu 0600 uucp uucp" \
     alias=arm,pl011
 driver name=rootnex
