@@ -46,6 +46,21 @@
 #include <sys/vcio.h>
 #include <sys/gpio.h>
 
+/*
+ * Clock IDs from DT bindings
+ *
+ * These are the devicetree clock IDs, which will be internally mapped to
+ * mailbox properties interface clock IDs in plat_hwclock_get_rate.
+ *
+ * The comments after each define show the decimal value, the symbolic
+ * name of the mailbox properties interface clock ID and the decimal
+ * value of that clock ID.
+ */
+#define	DTPROP_CLK_ARM		0x7	/*  7: VCPROP_CLK_ARM (3) */
+#define	DTPROP_CLK_UART		0x13	/* 19: VCPROP_CLK_UART (2) */
+#define	DTPROP_CLK_EMMC		0x1C	/* 28: VCPROP_CLK_EMMC (1) */
+#define	DTPROP_CLK_EMMC2	0x33	/* 51: VCPROP_CLK_EMMC2 (12) */
+
 void
 set_platform_defaults(void)
 {
@@ -69,10 +84,10 @@ plat_get_cpu_clock(int cpu_no)
 	if (node == 0)
 		cmn_err(CE_PANIC, "cprman register is not found");
 
-	struct prom_hwclock clk = { node, VCPROP_CLK_ARM };
+	struct prom_hwclock clk = { node, DTPROP_CLK_ARM };
 	err = plat_hwclock_get_rate(&clk);
 	if (err == -1)
-		return (1500 * 1000 * 1000);
+		cmn_err(CE_PANIC, "unable to read CPU clock rate");
 	return (err);
 }
 
@@ -237,11 +252,6 @@ mbox_prop_send(void *data, uint32_t len)
 
 	mutex_exit(&mbox_lock);
 }
-static int clock_id_table[] = {
-	[19] = VCPROP_CLK_UART,
-	[28] = VCPROP_CLK_EMMC,
-	[51] = VCPROP_CLK_EMMC2,
-};
 
 int
 plat_hwclock_get_rate(struct prom_hwclock *clk)
@@ -251,10 +261,11 @@ plat_hwclock_get_rate(struct prom_hwclock *clk)
 
 	int id;
 	switch (clk->id) {
-	case 19: id = VCPROP_CLK_UART; break;
-	case 28: id = VCPROP_CLK_EMMC; break;
-	case 51: id = VCPROP_CLK_EMMC2; break;
-	default: return -1;
+	case DTPROP_CLK_ARM: id = VCPROP_CLK_ARM; break;
+	case DTPROP_CLK_UART: id = VCPROP_CLK_UART; break;
+	case DTPROP_CLK_EMMC: id = VCPROP_CLK_EMMC; break;
+	case DTPROP_CLK_EMMC2: id = VCPROP_CLK_EMMC2; break;
+	default: return (-1);
 	}
 
 	struct {
