@@ -10,28 +10,28 @@
 #
 
 #
-# Copyright 2015 Toomas Soome <tsoome@me.com>
+# Copyright 2024 Michael van der Westhuizen
 #
-
-.KEEP_STATE:
 
 include $(SRC)/Makefile.master
 
-i386_SUBDIRS =
-aarch64_SUBDIRS = libfdt libfdtutil libmmio_uart libfdtuart libacpica
-
-SUBDIRS = libefi $($(MACH)_SUBDIRS) loader
-
-all install clean clobber: $(SUBDIRS)
+i386_SUBDIRS = $(MACH64)
+aarch64_SUBDIRS = arm64
+SUBDIRS = $($(MACH)_SUBDIRS)
 
 all	:=	TARGET = all
 clean	:=	TARGET = clean
 clobber	:=	TARGET = clobber
 install	:=	TARGET = install
 
-loader:	libefi $($(MACH)_SUBDIRS)
+.KEEP_STATE:
+
+all clean clobber install: $(SUBDIRS)
+
+install: all
 
 .PARALLEL:
+
 $(SUBDIRS): FRC
 	@cd $@; pwd; $(MAKE) $(TARGET)
 
