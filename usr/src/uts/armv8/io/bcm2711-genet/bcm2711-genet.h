@@ -36,7 +36,6 @@ extern "C" {
 #include <sys/ethernet.h>
 #include <sys/sunddi.h>
 #include <sys/ddi_impldefs.h>
-#include <sys/genetreg.h>
 
 struct genet_reg {
 	ddi_acc_handle_t handle;

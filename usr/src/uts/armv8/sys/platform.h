@@ -20,26 +20,24 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2017 Hayashi Naoyuki
+ * Copyright 2021 Hayashi Naoyuki
  */
 
-#ifndef _SYS_GPIO_H
-#define _SYS_GPIO_H
+#ifndef _SYS_PLATFORM_H
+#define _SYS_PLATFORM_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include <sys/promif.h>
-#include <sys/types.h>
+#include <sys/machparam.h>
 
-struct gpio_ctrl {
-	pnode_t node;
-	int pin;
-};
+/* XXXARM: this is thw wrong place for these defines - it's always 64 */
+#define	DCACHE_LINE	64
+#define	ICACHE_LINE	64
 
-#ifdef	__cplusplus
+#ifdef __cplusplus
 }
 #endif
 
-#endif	/* _SYS_GPIO_H */
+#endif	/* _SYS_PLATFORM_H */

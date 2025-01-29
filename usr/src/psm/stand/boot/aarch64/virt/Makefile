@@ -29,6 +29,8 @@ BOARD=	virt
 include ../Makefile.com
 ROOT_PSM_DIR=$(ROOT_PLAT_DIR)/QEMU,virt
 
+CFLAGS += -I.
+
 .KEEP_STATE:
 
 all: $(NFSBOOT_BIN)

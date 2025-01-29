@@ -61,6 +61,11 @@
 #include <sys/vcprop.h>
 #include <sys/vcio.h>
 
+#define	PERIPHERAL0_PHYS	0xfc000000ul
+#define	PERIPHERAL0_SIZE	0x04000000ul
+#define	PERIPHERAL1_PHYS	0x600000000ul
+#define	PERIPHERAL1_SIZE	0x100000000ul
+
 #ifndef rounddown
 #define	rounddown(x, y)	(((x)/(y))*(y))
 #endif

@@ -20,32 +20,27 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2021 Hayashi Naoyuki
+ * Copyright 2017 Hayashi Naoyuki
  */
 
-#ifndef _SYS_PLATFORM_H
-#define _SYS_PLATFORM_H
+#ifndef _SYS_GPIO_H
+#define _SYS_GPIO_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include <sys/machparam.h>
+#include <sys/promif.h>
+#include <sys/types.h>
 
-// Low Peripheral mode
-#define	PERIPHERAL0_PHYS	0xfc000000ul
-#define	PERIPHERAL0_SIZE	0x04000000ul
-#define	PERIPHERAL1_PHYS	0x600000000ul
-#define	PERIPHERAL1_SIZE	0x100000000ul
-
-#define	BOOT_TMP_MAP_BASE	0x440000000ul
-#define	BOOT_TMP_MAP_SIZE	0x20000000
-
-#define	DCACHE_LINE	64
-#define	ICACHE_LINE	64
+struct gpio_ctrl {
+	pnode_t node;
+	uint32_t pin;
+	uint32_t flags;
+};
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif	/* _SYS_PLATFORM_H */
+#endif	/* _SYS_GPIO_H */

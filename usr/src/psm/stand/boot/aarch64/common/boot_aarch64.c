@@ -36,6 +36,7 @@
 #include <sys/sysmacros.h>
 #include <sys/bootconf.h>
 #include <sys/psci.h>
+#include <inetboot_platform.h>
 #include "prom_dev.h"
 #include "boot_plat.h"
 

@@ -28,6 +28,14 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/ns16550a/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/bcm2711-emmc2/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/bcm2711-genet/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 $(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)

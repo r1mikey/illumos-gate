@@ -92,6 +92,12 @@ NS16550A_OBJS += ns16550a.o
 GICTWO_OBJS += gictwo.o
 GICTHREE_OBJS += gicthree.o
 
+#
+# rpi4 modules
+#
+BCM2711_EMMC2_OBJS += bcm2711-emmc2.o
+BCM2711_GENET_OBJS += bcm2711-genet.o
+
 ASSYM_DEPS +=			\
 	aarch64_subr.o		\
 	copy.o			\

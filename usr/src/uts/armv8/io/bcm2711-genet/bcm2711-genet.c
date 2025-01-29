@@ -43,7 +43,9 @@
 #include <sys/platmod.h>
 #include <sys/controlregs.h>
 #include <sys/obpdefs.h>
-#include "genet.h"
+
+#include "bcm2711-genet-reg.h"
+#include "bcm2711-genet.h"
 
 #define	GENET_DMA_BUFFER_SIZE	1536
 
@@ -434,8 +436,6 @@ genet_alloc_packet(struct genet_sc *sc)
 static boolean_t
 genet_alloc_buffer(struct genet_sc *sc)
 {
-	int len;
-
 	for (int index = 0; index < GENET_DMA_DESC_COUNT; index++) {
 		struct genet_packet *pkt = genet_alloc_packet(sc);
 		if (!pkt)
@@ -666,8 +666,6 @@ static void
 genet_mii_notify(void *arg, link_state_t link)
 {
 	struct genet_sc *sc = arg;
-	uint32_t gmac;
-	uint32_t gpcr;
 	link_flowctrl_t fc __unused; /* XXXARM */
 	link_duplex_t duplex;
 	int speed;

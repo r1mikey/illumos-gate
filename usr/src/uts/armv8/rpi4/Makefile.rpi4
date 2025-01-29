@@ -36,13 +36,6 @@ ROOT_PLAT_MOD_DIRS	+= $(ROOT_RPI4_MOD_DIR)
 ROOT_PLAT_MISC_DIRS	+= $(ROOT_RPI4_MISC_DIR)
 ROOT_PLAT_DRV_DIRS	= $(ROOT_RPI4_DRV_DIR)
 
-#
-# Define modules
-#
-RPI4_KMODS	=	\
-	genet		\
-	bcm2711-emmc2
-
 include $(UTSBASE)/armv8/rpi4/Makefile.files
 
 #

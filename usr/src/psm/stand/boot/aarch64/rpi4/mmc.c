@@ -42,7 +42,7 @@
 #include <sys/bcm2835_mboxreg.h>
 #include <sys/vcprop.h>
 #include <sys/vcio.h>
-#include <sys/mmcreg.h>
+#include "mmcreg.h"
 #include "prom_dev.h"
 #include "boot_plat.h"
 #include "mmc.h"
