@@ -2138,13 +2138,13 @@ impl_sunbus_name_child(dev_info_t *child, char *name, int namelen)
 
 	name[0] = '\0';
 
-	if (sparc_pd_getnreg(child) > 0) {
+	if (i_ddi_pd_getnreg(child) > 0) {
 		/*
 		 * Note that unlike other platforms, we don't include the
 		 * bustype, to match practice in devicetree.
 		 */
 		(void) snprintf(name, namelen, "%lx",
-		    sparc_pd_getreg(child, 0)->regspec_addr);
+		    i_ddi_pd_getreg(child, 0)->regspec_addr);
 	}
 
 	return (DDI_SUCCESS);
