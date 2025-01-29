@@ -92,6 +92,8 @@ NS16550A_OBJS += ns16550a.o
 GICTWO_OBJS += gictwo.o
 GICTHREE_OBJS += gicthree.o
 
+PL03ONE_OBJS += pl03one.o
+
 #
 # rpi4 modules
 #

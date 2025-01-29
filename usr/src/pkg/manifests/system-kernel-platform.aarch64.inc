@@ -45,6 +45,9 @@ file path=platform/armv8/kernel/drv/$(ARCH)/simple-bus
 file path=platform/armv8/kernel/drv/bcm2711-emmc2.conf
 file path=platform/armv8/kernel/drv/bcm2711-genet.conf
 file path=platform/armv8/kernel/drv/ns16550a.conf
+dir  path=platform/armv8/kernel/tod
+dir  path=platform/armv8/kernel/tod/$(ARCH)
+file path=platform/armv8/kernel/tod/$(ARCH)/pl03one mode=0755
 file path=usr/share/man/man4d/simple-bus.4d
 driver name=bcm2711-emmc2 perms="* 0666 root sys" alias=brcm,bcm2711-emmc2
 driver name=bcm2711-genet perms="* 0666 root sys" alias=brcm,bcm2711-genet-v5
