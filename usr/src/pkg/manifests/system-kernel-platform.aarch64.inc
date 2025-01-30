@@ -30,6 +30,9 @@
 
 dir  path=platform/armv8
 dir  path=platform/armv8/kernel
+dir  path=platform/armv8/kernel/$(ARCH)
+file path=platform/armv8/kernel/$(ARCH)/unix mode=0755 \
+    pkg.depend.bypass-generate=dtracestubs
 dir  path=platform/armv8/kernel/dacf
 dir  path=platform/armv8/kernel/dacf/$(ARCH)
 file path=platform/armv8/kernel/dacf/$(ARCH)/consconfig_dacf mode=0755
