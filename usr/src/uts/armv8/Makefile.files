@@ -79,6 +79,9 @@ CORE_OBJS +=			\
 	bootsvcs.o		\
 	arch_timer.o		\
 	earlybsa.o		\
+	platimpl.o		\
+	plat_rpi4.o		\
+	plat_virt.o		\
 	$(CORE_OBJS_FDT)
 
 CORE_OBJS += $(PCI_STRING_OBJS)

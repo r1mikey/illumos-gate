@@ -36,6 +36,14 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/bcm2711-genet/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/rpi4/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/virt/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 $(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)

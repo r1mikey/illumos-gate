@@ -21,6 +21,7 @@
 
 /*
  * Copyright 2021 Hayashi Naoyuki
+ * Copyright 2025 Michael van der Westhuizen
  */
 
 #include <sys/types.h>
@@ -40,14 +41,18 @@
 #include <sys/ddi_subrdefs.h>
 #include <sys/param.h>
 #include <vm/hat.h>
-#include <sys/bcm2835_mbox.h>
-#include <sys/bcm2835_mboxreg.h>
-#include <sys/vcprop.h>
-#include <sys/vcio.h>
+#include <sys/platimpl.h>
 #include <sys/gpio.h>
 
+#include "bcm2835_mbox.h"
+#include "bcm2835_mboxreg.h"
+#include "vcprop.h"
+#include "vcio.h"
+
+static int rpi4_hwclock_get_rate(struct prom_hwclock *clk);
+
 void
-set_platform_defaults(void)
+rpi4_set_platform_defaults(void)
 {
 }
 
@@ -59,8 +64,8 @@ find_cprman(pnode_t node, void *arg)
 	*(pnode_t *)arg = node;
 }
 
-uint64_t
-plat_get_cpu_clock(int cpu_no)
+static uint64_t
+rpi4_get_cpu_clock(int cpu_no)
 {
 	pnode_t node = 0;
 	int err;
@@ -70,7 +75,7 @@ plat_get_cpu_clock(int cpu_no)
 		cmn_err(CE_PANIC, "cprman register is not found");
 
 	struct prom_hwclock clk = { node, VCPROP_CLK_ARM };
-	err = plat_hwclock_get_rate(&clk);
+	err = rpi4_hwclock_get_rate(&clk);
 	if (err == -1)
 		return (1500 * 1000 * 1000);
 	return (err);
@@ -159,11 +164,13 @@ mbox_reg_read(uint32_t offset)
 {
 	return (*(volatile uint32_t *)(mbox_base + offset));
 }
+
 static void
 mbox_reg_write(uint32_t offset, uint32_t val)
 {
 	*(volatile uint32_t *)(mbox_base + offset) = val;
 }
+
 static uint32_t
 mbox_prop_send_impl(uint32_t chan, uint32_t addr)
 {
@@ -237,14 +244,9 @@ mbox_prop_send(void *data, uint32_t len)
 
 	mutex_exit(&mbox_lock);
 }
-static int clock_id_table[] = {
-	[19] = VCPROP_CLK_UART,
-	[28] = VCPROP_CLK_EMMC,
-	[51] = VCPROP_CLK_EMMC2,
-};
 
-int
-plat_hwclock_get_rate(struct prom_hwclock *clk)
+static int
+rpi4_hwclock_get_rate(struct prom_hwclock *clk)
 {
 	if (!prom_is_compatible(clk->node, "brcm,bcm2711-cprman"))
 		return (-1);
@@ -289,8 +291,8 @@ plat_hwclock_get_rate(struct prom_hwclock *clk)
 	return (vb.vbt_clockrate.rate);
 }
 
-int
-plat_gpio_get(struct gpio_ctrl *gpio)
+static int
+rpi4_gpio_get(struct gpio_ctrl *gpio)
 {
 	int offset;
 	if (prom_is_compatible(gpio->node, "raspberrypi,firmware-gpio")) {
@@ -333,8 +335,8 @@ plat_gpio_get(struct gpio_ctrl *gpio)
 	return (vb.vbt_gpio.state);
 }
 
-int
-plat_gpio_set(struct gpio_ctrl *gpio, int value)
+static int
+rpi4_gpio_set(struct gpio_ctrl *gpio, int value)
 {
 	int offset;
 	if (prom_is_compatible(gpio->node, "raspberrypi,firmware-gpio")) {
@@ -375,3 +377,11 @@ plat_gpio_set(struct gpio_ctrl *gpio, int value)
 
 	return (0);
 }
+
+const platimpl_t rpi4_fdt_platimpl = {
+	.pi_set_platform_defaults	= rpi4_set_platform_defaults,
+	.pi_get_cpu_clock		= rpi4_get_cpu_clock,
+	.pi_gpio_get			= rpi4_gpio_get,
+	.pi_gpio_set			= rpi4_gpio_set,
+	.pi_hwclock_get_rate		= rpi4_hwclock_get_rate
+};

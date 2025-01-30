@@ -56,10 +56,10 @@
 #include <libfdt.h>
 #include <sys/salib.h>
 
-#include <sys/bcm2835_mbox.h>
-#include <sys/bcm2835_mboxreg.h>
-#include <sys/vcprop.h>
-#include <sys/vcio.h>
+#include <bcm2835_mbox.h>
+#include <bcm2835_mboxreg.h>
+#include <vcprop.h>
+#include <vcio.h>
 
 #define	PERIPHERAL0_PHYS	0xfc000000ul
 #define	PERIPHERAL0_SIZE	0x04000000ul

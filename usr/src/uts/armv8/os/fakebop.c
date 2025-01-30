@@ -86,7 +86,7 @@ static void build_boot_properties(struct xboot_info *);
 static void boot_prop_display(char *);
 
 static bootops_t bootop;
-static struct xboot_info *xbootp;
+struct xboot_info *xbootp;
 static char *boot_args = "";
 static char *whoami;
 #define	BUFFERSIZE	256

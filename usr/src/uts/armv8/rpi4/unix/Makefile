@@ -99,6 +99,7 @@ CLOBBERFILES	= $(CLEANFILES) $(UNIX_BIN)
 # Turn on doubleword alignment for 64 bit counter timer registers
 #
 CFLAGS += $(CCVERBOSE)
+$(OBJS_DIR)/platimpl.o := CPPFLAGS += -I$(SRC)/contrib/libfdt
 
 #
 # For now, disable these lint checks; maintainers should endeavor

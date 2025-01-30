@@ -91,6 +91,7 @@
 #include <sys/cpuinfo.h>
 #include <sys/prom_debug.h>
 #include <sys/bitext.h>
+#include <sys/platimpl.h>
 
 extern void brand_init(void);
 extern void pcf_init(void);
@@ -1192,8 +1193,18 @@ startup_modules(void)
 	int32_t v, h;
 	char d[11];
 	char *cp;
+	extern struct xboot_info *xbootp;
 
 	PRM_POINT("startup_modules() starting...");
+
+	/*
+	 * Select the platform implementation prior to calling any platform
+	 * functions.
+	 *
+	 * XXXARM: we're probably ready to start investigating platmods at
+	 * this point in our evolution.
+	 */
+	plat_select(xbootp);
 
 	if (&set_platform_defaults)
 		set_platform_defaults();

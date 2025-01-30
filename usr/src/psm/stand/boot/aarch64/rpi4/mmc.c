@@ -38,10 +38,10 @@
 #include <util/sscanf.h>
 #include <sys/platmod.h>
 #include <sys/gpio.h>
-#include <sys/bcm2835_mbox.h>
-#include <sys/bcm2835_mboxreg.h>
-#include <sys/vcprop.h>
-#include <sys/vcio.h>
+#include <bcm2835_mbox.h>
+#include <bcm2835_mboxreg.h>
+#include <vcprop.h>
+#include <vcio.h>
 #include "mmcreg.h"
 #include "prom_dev.h"
 #include "boot_plat.h"

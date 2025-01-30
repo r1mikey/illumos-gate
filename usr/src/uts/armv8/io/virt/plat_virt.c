@@ -21,6 +21,7 @@
 
 /*
  * Copyright 2017 Hayashi Naoyuki
+ * copyright 2025 Michael van der Westhuizen
  */
 
 #include <sys/types.h>
@@ -29,15 +30,16 @@
 #include <sys/cmn_err.h>
 #include <sys/platmod.h>
 #include <sys/promif.h>
+#include <sys/platimpl.h>
 
-void
-set_platform_defaults(void)
+static void
+virt_set_platform_defaults(void)
 {
 	tod_module_name = "pl03one";
 }
 
-uint64_t
-plat_get_cpu_clock(int cpu_no)
+static uint64_t
+virt_get_cpu_clock(int cpu_no)
 {
 	char name[80];
 	sprintf(name, "/cpus/cpu@%d", cpu_no);
@@ -54,20 +56,7 @@ plat_get_cpu_clock(int cpu_no)
 	return (1000 * 1000 * 1000);
 }
 
-int
-plat_hwclock_get_rate(struct prom_hwclock *clk __unused)
-{
-	return -1;
-}
-
-int
-plat_gpio_get(struct gpio_ctrl *gpio __unused)
-{
-	return -1;
-}
-
-int
-plat_gpio_set(struct gpio_ctrl *gpio __unused, int value __unused)
-{
-	return -1;
-}
+const platimpl_t virt_fdt_platimpl = {
+	.pi_set_platform_defaults       = virt_set_platform_defaults,
+	.pi_get_cpu_clock               = virt_get_cpu_clock
+};

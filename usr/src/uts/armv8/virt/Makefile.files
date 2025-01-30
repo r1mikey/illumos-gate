@@ -23,12 +23,3 @@
 # Copyright 2017 Hayashi Naoyuki
 # Copyright 2024 Michael van der Westhuizen
 #
-
-# XXXARM: I might be mis-using this.  These are what would be the platmod, if
-# we didn't need it so early for console I/O
-CORE_OBJS += virt.o
-
-#
-# Miscellaneous
-#
-INC_PATH	+= -I$(UTSBASE)/armv8/virt

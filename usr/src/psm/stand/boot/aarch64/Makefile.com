@@ -105,8 +105,8 @@ CPPINCS	=	-I$(PORT_DIR) \
 		-I$(STANDDIR)/lib/sa \
 		-I$(STANDDIR) -I$(CMNDIR) -I$(MACHDIR) \
 		-I$(STANDDIR)/aarch64 \
-		-I$(SYSDIR)/armv8/$(BOARD) \
 		-I$(SYSDIR)/armv8 \
+		-I$(SYSDIR)/armv8/io/$(BOARD) \
 		-I$(SYSDIR)/aarch64 \
 		-I$(SYSDIR)/common \
 		-I$(TOP_CMN_DIR) \

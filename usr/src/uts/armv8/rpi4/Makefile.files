@@ -22,12 +22,3 @@
 #
 # Copyright 2017 Hayashi Naoyuki
 #
-
-# XXXARM: I might be mis-using this.  These are what would be the platmod, if
-# we didn't need it so early for console I/O
-CORE_OBJS += rpi4.o
-
-#
-# Miscellaneous
-#
-INC_PATH	+= -I$(UTSBASE)/armv8/rpi4
