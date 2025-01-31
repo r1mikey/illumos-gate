@@ -86,6 +86,8 @@ CORE_OBJS +=			\
 
 CORE_OBJS += $(PCI_STRING_OBJS)
 
+PLATMOD_OBJS = platmod.o
+
 SIMPLEBUS_OBJS += simple-bus.o
 
 ROOTNEX_OBJS += rootnex.o

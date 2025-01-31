@@ -55,11 +55,8 @@ LIBS		= $(GENLIB) $(PLATLIB) $(CPULIB)
 GENUNIX_DIR	= $(UTSBASE)/$(MACH)/genunix
 GENUNIX		= genunix
 
-# XXXARM: We have no platmods as yet, but this is left here so we remember how
-# they work.
-#
-#PLAT_DIR	= $(UTSBASE)/armv8/platmod
-#PLATOPTS	= -L$(PLAT_DIR)/$(OBJS_DIR) -l$(PLATMOD)
+PLAT_DIR	= $(UTSBASE)/armv8/platmod
+PLATOPTS	= -L$(PLAT_DIR)/$(OBJS_DIR) -l$(PLATMOD)
 
 GENOPTS		= -L$(GENUNIX_DIR)/$(OBJS_DIR) -l$(GENUNIX)
 
@@ -153,11 +150,9 @@ symcheck:	$(UNIX_O) $(KRTLD_O) $(MODSTUBS_O) $(LIBS)
 $(KRTLD_O):	$(KRTLD_OBJECTS)
 	$(LD) -r -M$(KRTLD_MAPFILE) -o $@ $(KRTLD_OBJECTS)
 
-# XXXARM: We have no platmods as yet, but this is left here so we remember how
-# they work.
-# $(PLATLIB):
-# 	?@(cd $(PLAT_DIR); pwd; $(MAKE) all.targ)
-# 	?@pwd
+$(PLATLIB):
+	?@(cd $(PLAT_DIR); pwd; $(MAKE) all.targ)
+	?@pwd
 
 #
 #	Include common targets.

@@ -66,6 +66,7 @@ $(IMPLEMENTATIONS):     FRC
 $(XMODS):	FRC
 	cd $@; pwd; $(MAKE) $(NO_STATE) $(TARGET)
 
+# XXXARM: are we going to need install_platforms?
 install_h check:	$(IMPLEMENTATIONS) FRC
 	@cd sys; pwd; $(MAKE) $(TARGET)
 
