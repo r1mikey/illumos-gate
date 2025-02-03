@@ -142,3 +142,23 @@ bi_isadir(void)
 		    "variable: %d\n", rc);
 	}
 }
+
+void
+bi_implarch(void)
+{
+	int rc;
+	if ((rc = setenv("IMPLARCH", "i86pc", 1)) != 0) {
+		printf("Warning: failed to set IMPLARCH environment "
+		    "variable: %d\n", rc);
+	}
+}
+
+void
+bi_platform(void)
+{
+	int rc;
+	if ((rc = setenv("PLATFORM", "", 1)) != 0) {
+		printf("Warning: failed to set PLATFORM environment "
+		    "variable: %d\n", rc);
+	}
+}

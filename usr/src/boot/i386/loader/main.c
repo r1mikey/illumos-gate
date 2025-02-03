@@ -197,6 +197,8 @@ main(void)
 	autoload_font(OPT_CHECK(RBX_TEXT_MODE) != 0);
 
 	bi_isadir();
+	bi_implarch();
+	bi_platform();
 	bios_getsmap();
 
 	interact(NULL);
