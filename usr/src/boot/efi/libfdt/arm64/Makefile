@@ -10,29 +10,17 @@
 #
 
 #
-# Copyright 2015 Toomas Soome <tsoome@me.com>
+# Copyright 2025 Michael van der Westhuizen
 #
 
-.KEEP_STATE:
+MACHINE=	arm64
 
-include $(SRC)/Makefile.master
+all:		libfdt.a
 
-i386_SUBDIRS =
-aarch64_SUBDIRS = libfdt
+include ../Makefile.com
 
-SUBDIRS = libefi $($(MACH)_SUBDIRS) loader
+CFLAGS +=	$(CFLAGS64)
 
-all install clean clobber: $(SUBDIRS)
+CLEANFILES +=	machine
 
-all	:=	TARGET = all
-clean	:=	TARGET = clean
-clobber	:=	TARGET = clobber
-install	:=	TARGET = install
-
-loader:	libefi $($(MACH)_SUBDIRS)
-
-.PARALLEL:
-$(SUBDIRS): FRC
-	@cd $@; pwd; $(MAKE) $(TARGET)
-
-FRC:
+$(OBJS): machine

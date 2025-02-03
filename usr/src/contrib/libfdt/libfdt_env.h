@@ -7,16 +7,26 @@
  * Copyright 2012 Kim Phillips, Freescale Semiconductor.
  */
 
+#if defined(_STANDALONE)
+#include <sys/_null.h>
+#include <inttypes.h>
+#include <stdbool.h>
+#include <limits.h>
+#include <stand.h>
+#else
 #include <sys/inttypes.h>
 #include <sys/null.h>
 #include <sys/types.h>
 #include <sys/stdbool.h>
+#endif
 
 #if defined(_KERNEL) && !defined(_BOOT)
 #include <sys/ddi.h>
 #include <sys/sunddi.h>
 #else
+#if !defined(_STANDALONE)
 #include <stdlib.h>
+#endif
 #include <string.h>
 #endif
 
