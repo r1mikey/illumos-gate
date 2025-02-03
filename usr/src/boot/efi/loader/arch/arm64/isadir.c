@@ -41,10 +41,13 @@ bi_implarch(void)
 void
 bi_platform(void)
 {
-	int rc;
+	const void *fdtp;
 
-	if ((rc = setenv("PLATFORM", "", 1)) != 0) {
-		printf("Warning: failed to set PLATFORM environment "
-		    "variable: %d\n", rc);
+	extern void bi_platform_fdt(const void *);
+	extern const void * efi_get_fdtp(void);
+
+	if ((fdtp = efi_get_fdtp()) != NULL) {
+		bi_platform_fdt(fdtp);
+		return;
 	}
 }
