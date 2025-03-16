@@ -400,8 +400,18 @@ create_devinfo_tree(void)
 	pnode_t nodeid;
 
 	i_ddi_node_cache_init();
-#if defined(__sparc) || defined(__aarch64__)
+#if defined(__sparc)
 	nodeid = prom_nextnode(0);
+#elif defined(__aarch64__)
+	/*
+	 * On ACPI systems we have an entirely software-defined tree like we
+	 * do on i86pc. When we're not using ACPI we assume FDT, which means
+	 * that we are PROM-backed like we would be on SPARC.
+	 */
+	if (BOP_GETPROPLEN(bootops, "acpi-root-tab") != -1)
+		nodeid = DEVI_SID_NODEID;
+	else
+		nodeid = prom_nextnode(0);
 #else /* x86 */
 	nodeid = DEVI_SID_NODEID;
 #endif
