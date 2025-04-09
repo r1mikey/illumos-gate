@@ -31,6 +31,7 @@ include ../Makefile.armv8
 FILEMODE = 644
 
 HDRS= \
+	acpidev.h \
 	clock.h \
 	gic.h \
 	syspic.h \
