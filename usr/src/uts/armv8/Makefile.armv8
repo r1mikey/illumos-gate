@@ -240,6 +240,7 @@ DACF_KMODS += consconfig_dacf
 #
 #	'Misc' Modules (/kernel/misc):
 #
+MISC_KMODS += acpidev
 MISC_KMODS += bootdev
 MISC_KMODS += gfx_private
 MISC_KMODS += pci_prd
