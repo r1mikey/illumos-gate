@@ -1013,6 +1013,12 @@ fcnname##_info:								\
 	NO_UNLOAD_STUB(acpica, acpi_reset_system, nomod_minus_one) ;
 	END_MODULE(acpica);
 
+	MODULE(acpidev,misc);
+	NO_UNLOAD_STUB(acpidev, acpidev_dr_get_cpu_numa_info, nomod_minus_one) ;
+	NO_UNLOAD_STUB(acpidev, acpidev_dr_free_cpu_numa_info,
+	    nomod_minus_one) ;
+	END_MODULE(acpidev);
+
 	MODULE(ipnet,drv);
 	STUB(ipnet, ipnet_if_getdev, nomod_zero);
 	STUB(ipnet, ipnet_walk_if, nomod_zero);

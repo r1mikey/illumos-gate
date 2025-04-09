@@ -56,6 +56,7 @@ file path=platform/armv8/kernel/drv/efidev.conf
 file path=platform/armv8/kernel/drv/ns16550a.conf
 dir  path=platform/armv8/kernel/misc
 dir  path=platform/armv8/kernel/misc/$(ARCH)
+file path=platform/armv8/kernel/misc/$(ARCH)/acpidev group=sys mode=0755
 file path=platform/armv8/kernel/misc/$(ARCH)/gfx_private group=sys mode=0755
 file path=platform/armv8/kernel/misc/$(ARCH)/pci_prd group=sys mode=0755
 file path=platform/armv8/kernel/misc/$(ARCH)/pcie mode=0755
