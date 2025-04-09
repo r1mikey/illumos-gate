@@ -176,6 +176,11 @@ extern ACPI_STATUS acpica_untag_devinfo(dev_info_t *, ACPI_HANDLE);
 extern ACPI_STATUS acpica_get_devinfo(ACPI_HANDLE, dev_info_t **);
 extern ACPI_STATUS acpica_get_handle(dev_info_t *, ACPI_HANDLE *);
 extern ACPI_STATUS acpica_get_handle_cpu(int, ACPI_HANDLE *);
+
+#ifdef __aarch64__
+extern void acpica_pci_cfgspace_init(void);
+extern void acpica_pci_cfgspace_register(dev_info_t *);
+#endif
 extern ACPI_STATUS acpica_build_processor_map(void);
 extern ACPI_STATUS acpica_add_processor_to_map(UINT32, ACPI_HANDLE, UINT32);
 extern ACPI_STATUS acpica_remove_processor_from_map(UINT32);
