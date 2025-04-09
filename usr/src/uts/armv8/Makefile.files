@@ -29,6 +29,7 @@ CORE_OBJS_FDT +=		\
 
 CORE_OBJS +=			\
 	aarch64_subr.o		\
+	cpuid_mach.o		\
 	ddi_aarch64.o		\
 	kdi_asm.o		\
 	kdi_exceptions.o	\
@@ -179,6 +180,25 @@ BOOTDEV_OBJS		+= bootdev.o
 ACPINEX_OBJS +=			\
 	acpinex_drv.o		\
 	acpinex_event.o
+
+ACPIDEV_OBJS +=			\
+	acpidev_drv.o		\
+	acpidev_scope.o		\
+	acpidev_device.o	\
+	acpidev_container.o	\
+	acpidev_cpu.o		\
+	acpidev_devprop.o	\
+	acpidev_dr.o		\
+	acpidev_memory.o	\
+	acpidev_pci.o		\
+	acpidev_resource.o	\
+	acpidev_usbport.o	\
+	acpidev_gic.o		\
+	acpidev_iort.o		\
+	acpidev_arm_gtmr.o	\
+	acpidev_mcfg.o		\
+	acpidev_osc.o		\
+	acpidev_util.o
 
 ASSYM_DEPS +=			\
 	aarch64_subr.o		\
