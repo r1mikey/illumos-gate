@@ -1263,6 +1263,22 @@ process_boot_environment(struct boot_modules *benv, char *space)
 			bsetprops(name, propval);
 			continue;
 		}
+
+#if defined(_SBBR)
+		/*
+		 * Loader populates the `acpi.rsdp' property, but the illumos
+		 * convention is `acpi-root-tab'. Save the property using the
+		 * expected name.
+		 */
+		if (strcmp(name, "acpi.rsdp") == 0) {
+			uint64_t ui64val;
+			if (parse_value(value, &ui64val) == 0)
+				bsetprop64("acpi-root-tab", ui64val);
+
+			continue;
+		}
+#endif
+
 		if (name_is_blocklisted(name) == B_TRUE)
 			continue;
 
