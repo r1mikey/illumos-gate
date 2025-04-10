@@ -51,6 +51,10 @@
 #include <sys/controlregs.h>
 #include <sys/irq.h>
 #include <sys/cpuinfo.h>
+#include <sys/sunddi.h>
+#include <sys/sunndi.h>
+
+static int mach_cpu_create_devinfo(cpu_t *cp, dev_info_t **dipp);
 
 extern void return_instr(void);
 
@@ -63,6 +67,9 @@ void (*setsoftint)(int, struct av_softinfo *) =
 void (*kdisetsoftint)(int, struct av_softinfo *) =
 	(void (*)(int, struct av_softinfo *))return_instr;
 int (*slvltovect)(int) = (int (*)(int))return_instr;
+
+int (*psm_cpu_create_devinfo)(cpu_t *, dev_info_t **) = mach_cpu_create_devinfo;
+int (*psm_cpu_get_devinfo)(cpu_t *, dev_info_t **) = NULL;
 
 static int
 mach_softlvl_to_vect(int ipl)
@@ -362,6 +369,64 @@ cpu_wakeup(cpu_t *cpu, int bound)
 
 	if (cpu_found != CPU->cpu_seqid)
 		poke_cpu(cpu_seq[cpu_found]->cpu_id);
+}
+
+/*
+ * Default handler to create device node for CPU.
+ * One reference count will be held on created device node.
+ */
+static int
+mach_cpu_create_devinfo(cpu_t *cp, dev_info_t **dipp)
+{
+	int rv;
+	dev_info_t *dip;
+	static kmutex_t cpu_node_lock;
+	static dev_info_t *cpu_nex_devi = NULL;
+
+	ASSERT3P(cp, !=, NULL);
+	ASSERT3P(dipp, !=, NULL);
+	*dipp = NULL;
+
+	if (cpu_nex_devi == NULL) {
+		mutex_enter(&cpu_node_lock);
+		/* First check whether cpus exists. */
+		cpu_nex_devi = ddi_find_devinfo("cpus", -1, 0);
+		/* Create cpus if it doesn't exist. */
+		if (cpu_nex_devi == NULL) {
+			ndi_devi_enter(ddi_root_node());
+			rv = ndi_devi_alloc(ddi_root_node(), "cpus",
+			    (pnode_t)DEVI_SID_NODEID, &dip);
+			if (rv != NDI_SUCCESS) {
+				mutex_exit(&cpu_node_lock);
+				cmn_err(CE_CONT,
+				    "?failed to create cpu nexus device.\n");
+				return (DDI_FAILURE);
+			}
+			ASSERT3P(dip, !=, NULL);
+			(void) ndi_devi_online(dip, 0);
+			ndi_devi_exit(ddi_root_node());
+			cpu_nex_devi = dip;
+		}
+		mutex_exit(&cpu_node_lock);
+	}
+
+	/*
+	 * create a child node for cpu identified as 'cpu_id'
+	 */
+	ndi_devi_enter(cpu_nex_devi);
+	dip = ddi_add_child(cpu_nex_devi, "cpu", DEVI_SID_NODEID, -1);
+	if (dip == NULL) {
+		cmn_err(CE_CONT,
+		    "?failed to create device node for cpu%d.\n", cp->cpu_id);
+		rv = DDI_FAILURE;
+	} else {
+		*dipp = dip;
+		(void) ndi_hold_devi(dip);
+		rv = DDI_SUCCESS;
+	}
+	ndi_devi_exit(cpu_nex_devi);
+
+	return (rv);
 }
 
 void
