@@ -74,7 +74,8 @@ driver name=gictwo \
     alias=arm,cortex-a15-gic \
     alias=arm,gic-400
 driver name=gicv2m alias=arm,gic-v2m-frame
-driver name=ns16550a perms="* 0666 root sys" perms="*,cu 0600 uucp uucp" \
-    alias=arm,pl011
+driver name=ns16550a \
+    alias=ARMH0011 \
+    alias=arm,pl011 perms="* 0666 root sys" perms="*,cu 0600 uucp uucp"
 driver name=rootnex
 driver name=simple-bus
