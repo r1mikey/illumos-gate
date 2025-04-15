@@ -181,6 +181,10 @@ EFIFB_OBJS		+= efifb.o
 
 BOOTDEV_OBJS		+= bootdev.o
 
+ACPINEX_OBJS +=			\
+	acpinex_drv.o		\
+	acpinex_event.o
+
 ASSYM_DEPS +=			\
 	aarch64_subr.o		\
 	copy.o			\
