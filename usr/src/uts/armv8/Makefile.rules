@@ -33,6 +33,10 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/acpi/acpinex/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 $(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/promif/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
