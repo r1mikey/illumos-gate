@@ -43,6 +43,7 @@ dir  path=platform/armv8/kernel/dacf/$(ARCH)
 file path=platform/armv8/kernel/dacf/$(ARCH)/consconfig_dacf mode=0755
 dir  path=platform/armv8/kernel/drv
 dir  path=platform/armv8/kernel/drv/$(ARCH)
+file path=platform/armv8/kernel/drv/$(ARCH)/acpinex
 file path=platform/armv8/kernel/drv/$(ARCH)/arm_gtmr
 file path=platform/armv8/kernel/drv/$(ARCH)/efidev
 file path=platform/armv8/kernel/drv/$(ARCH)/efifb
@@ -68,6 +69,7 @@ file path=usr/share/man/man4d/devfdt.4d
 file path=usr/share/man/man4d/ecam.4d
 file path=usr/share/man/man4d/efidev.4d
 file path=usr/share/man/man4d/simple-bus.4d
+driver name=acpinex alias=acpivirtnex
 driver name=arm_gtmr alias=arm,armv8-timer
 driver name=devfdt perms="* 0400 root sys"
 driver name=ecam alias=pci-host-ecam-generic
