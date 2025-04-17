@@ -59,7 +59,7 @@
 #include <sys/xc_levels.h>
 
 #define	EXPECTED_NINTRS		4
-#define	ARM_GTMR_INUM_PHYS_NS	1
+#define	ARM_GTMR_INUM_HYP	3
 #define	ARM_GTMR_INUM_VIRTUAL	2
 
 static ddi_softint_hdl_impl_t cbe_low_hdl =
@@ -378,9 +378,9 @@ arm_gtmr_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	 * - 2: virtual
 	 * - 3: hypervisor
 	 *
-	 * If booted at EL1 we use the virtual timer (index 2), otherwise we
-	 * use the non-secure physical timer (index 1). We only ever use one
-	 * of the offered interrupts.
+	 * If booted at EL2 we use the hypervisor timer (index 2), otherwise
+	 * we use the virtual timer (index 2). We only ever use one of the
+	 * offered interrupts.
 	 *
 	 * While it is possible to defined a driver.conf(5) for this driver,
 	 * it is highly discouraged, as the only proprty that may make sense
@@ -401,7 +401,7 @@ arm_gtmr_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 
 	iwanted = 1;
 
-	inum = ARM_GTMR_INUM_PHYS_NS;
+	inum = ARM_GTMR_INUM_HYP;
 	if (CPU->cpu_m.mcpu_boot_el == 1)
 		inum = ARM_GTMR_INUM_VIRTUAL;
 
