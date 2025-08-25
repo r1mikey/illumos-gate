@@ -30,7 +30,7 @@
  * Copyright 2016 Nexenta Systems, Inc.
  * Copyright 2017 Hayashi Naoyuki
  * Copyright 2018 Joyent, Inc.
- * Copyright 2025 Michael van der Westhuizen
+ * Copyright 2026 Michael van der Westhuizen
  */
 
 #include <sys/types.h>
@@ -2244,6 +2244,75 @@ impl_fix_props(dev_info_t *dip, dev_info_t *ch_dip, char *name,
 	/* nothing (yet) */
 }
 
+static int
+impl_xlate_is_acpi_3cell(dev_info_t *dip)
+{
+	char			**compats;
+	uint_t			ncompats;
+	uint_t			n;
+	uint_t			i;
+	static const char	*known_3cell[] = {
+		"acpidevice",
+		"acpivirtnex",
+		"acpirootnex",
+	};
+	static const uint_t	num_known_3cell = ARRAY_SIZE(known_3cell);
+
+	if (ddi_prop_lookup_string_array(DDI_DEV_T_ANY, dip,
+	    DDI_PROP_DONTPASS, OBP_COMPATIBLE,
+	    &compats, &ncompats) == DDI_PROP_SUCCESS) {
+		for (n = 0; n < ncompats; ++n) {
+			for (i = 0; i < num_known_3cell; ++i) {
+				if (strcmp(compats[n], known_3cell[i]) == 0) {
+					ddi_prop_free(compats);
+					return (1);
+				}
+			}
+		}
+
+		ddi_prop_free(compats);
+	}
+
+	return (0);
+}
+
+static int
+impl_xlate_is_pci_3cell(dev_info_t *dip)
+{
+	char			*devtype;
+
+	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip,
+	    DDI_PROP_DONTPASS, OBP_DEVICETYPE, &devtype) == DDI_PROP_SUCCESS) {
+		/*
+		 * strncmp(devtype, "pci", 3) is probably enough, but let's be
+		 * defensive
+		 */
+		if ((strcmp(devtype, "pci") == 0) ||
+		    (strcmp(devtype, "pciex") == 0)) {
+			ddi_prop_free(devtype);
+			return (1);
+		}
+
+		ddi_prop_free(devtype);
+	}
+
+	return (0);
+}
+
+/*
+ * Determine if a dip represents a node that is known to have three address
+ * cells, where the address is stored in the lower two cells.
+ */
+static int
+impl_xlate_is_known_3cell(dev_info_t *dip)
+{
+	if (impl_xlate_is_pci_3cell(dip)) {
+		return (1);
+	}
+
+	return (impl_xlate_is_acpi_3cell(dip));
+}
+
 /*
  * We're prepared for either 2 or 1 address cells and 2 or 1 size cells.
  *
@@ -2260,6 +2329,7 @@ impl_xlate_regs(dev_info_t *child, uint32_t *in, size_t in_len,
 {
 	struct regspec *rp = NULL;
 	dev_info_t *parent = NULL;
+	int max_pac = 2;
 
 	parent = ddi_get_parent(child);
 
@@ -2278,7 +2348,17 @@ impl_xlate_regs(dev_info_t *child, uint32_t *in, size_t in_len,
 		return (1);
 	}
 
-	if (parent_addr_cells < 1 || parent_addr_cells > 2) {
+	/*
+	 * Explicitly allow ACPI parents with a known 3 address-cell format.
+	 *
+	 * The non-address data in the first cell is shifted off the top of
+	 * the uint64_t address.
+	 */
+	if (impl_xlate_is_acpi_3cell(parent)) {
+		max_pac = 3;
+	}
+
+	if (parent_addr_cells < 1 || parent_addr_cells > max_pac) {
 		dev_err(child, CE_WARN, "regspec: unsupported addr cells %d",
 		    parent_addr_cells);
 		return (1);
@@ -2358,7 +2438,6 @@ impl_xlate_ranges(dev_info_t *child, uint32_t *in, size_t in_len,
 	uint64_t		caddr;
 	uint64_t		paddr;
 	uint64_t		size;
-	char			*devtype;
 	int			max_cac = 2;
 
 	/* zero-length input means identity mapping */
@@ -2383,18 +2462,8 @@ impl_xlate_ranges(dev_info_t *child, uint32_t *in, size_t in_len,
 	 * XXXARM: The PCIe nexus drivers replace this with an interpreted
 	 * version (which is a hack, but so would be doing it here).
 	 */
-	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, child,
-	    DDI_PROP_DONTPASS, OBP_DEVICETYPE, &devtype) == DDI_PROP_SUCCESS) {
-		/*
-		 * strncmp(devtype, "pci", 3) is probably enough, but let's be
-		 * defensive
-		 */
-		if ((strcmp(devtype, "pci") == 0) ||
-		    (strcmp(devtype, "pciex") == 0)) {
-			max_cac = 3;
-		}
-
-		ddi_prop_free(devtype);
+	if (impl_xlate_is_known_3cell(child)) {
+		max_cac = 3;
 	}
 
 	pac = ddi_prop_get_int(DDI_DEV_T_ANY, pdip, DDI_PROP_DONTPASS,
