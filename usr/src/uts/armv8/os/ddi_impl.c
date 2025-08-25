@@ -2013,6 +2013,55 @@ impl_xlate_regs(dev_info_t *child, uint32_t *in, size_t in_len,
 }
 
 /*
+ * Determine if a dip represents a node that is known to have three address
+ * cells, where the address is stored in the lower two cells.
+ */
+static int
+impl_xlate_ranges_is_known_3cell(dev_info_t *dip)
+{
+	char			*devtype;
+	char			**compats;
+	int			ncompats;
+	int			n;
+	int			i;
+	static const char	*known_3cell[] = {
+		"acpidevice",
+		"acpivirtnex",
+		"acpirootnex",
+	};
+	static const int	num_known_3cell =
+		(int)(sizeof (known_3cell) / sizeof (known_3cell[0]));
+
+	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip,
+	    DDI_PROP_DONTPASS, OBP_DEVICETYPE, &devtype) == DDI_PROP_SUCCESS) {
+		/*
+		 * strncmp(devtype, "pci", 3) is probably enough, but let's be
+		 * defensive
+		 */
+		if ((strcmp(devtype, "pci") == 0) ||
+		    (strcmp(devtype, "pciex") == 0)) {
+			ddi_prop_free(devtype);
+			return (1);
+		}
+
+		ddi_prop_free(devtype);
+	}
+
+	if (ddi_prop_lookup_string_array(DDI_DEV_T_ANY, dip,
+	    DDI_PROP_DONTPASS, OBP_COMPATIBLE,
+	    &compats, (uint_t *)&ncompats) == DDI_PROP_SUCCESS) {
+		for (n = 0; n < ncompats; ++n) {
+			for (i = 0; i < num_known_3cell; ++i) {
+				if (strcmp(compats[n], known_3cell[i]) == 0)
+					return (1);
+			}
+		}
+	}
+
+	return (0);
+}
+
+/*
  * We're prepared for 3, 2 or 1 address cells and 2 or 1 size cells.
  *
  * We only support 3 address cells when the child format is known to contain
@@ -2040,7 +2089,6 @@ impl_xlate_ranges(dev_info_t *child, uint32_t *in, size_t in_len,
 	uint64_t		caddr;
 	uint64_t		paddr;
 	uint64_t		size;
-	char			*devtype;
 	int			max_cac = 2;
 
 	/* zero-length input means identity mapping */
@@ -2065,19 +2113,8 @@ impl_xlate_ranges(dev_info_t *child, uint32_t *in, size_t in_len,
 	 * XXXARM: The PCIe nexus drivers replace this with an interpreted
 	 * version (which is a hack, but so would be doing it here).
 	 */
-	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, child,
-	    DDI_PROP_DONTPASS, OBP_DEVICETYPE, &devtype) == DDI_PROP_SUCCESS) {
-		/*
-		 * strncmp(devtype, "pci", 3) is probably enough, but let's be
-		 * defensive
-		 */
-		if ((strcmp(devtype, "pci") == 0) ||
-		    (strcmp(devtype, "pciex") == 0)) {
-			max_cac = 3;
-		}
-
-		ddi_prop_free(devtype);
-	}
+	if (impl_xlate_ranges_is_known_3cell(child))
+		max_cac = 3;
 
 	pac = ddi_prop_get_int(DDI_DEV_T_ANY, pdip, DDI_PROP_DONTPASS,
 	    OBP_ADDRESS_CELLS, OBP_DEFAULT_ADDRESS_CELLS);
