@@ -1244,6 +1244,12 @@ process_boot_environment(struct boot_modules *benv, char *space)
 				    name, name_len, space, blen);
 			continue;
 		}
+		if (strcmp(name, "num-extra-pcierc") == 0) {
+			uint64_t ui64val;
+			if (parse_value(value, &ui64val) == 0)
+				bsetprop32("num-extra-pcierc",
+				    (uint32_t)ui64val);
+		}
 
 		/*
 		 * The loader allows multiple console devices to be specified
@@ -1462,8 +1468,19 @@ build_boot_properties(struct xboot_info *xbp)
 				}
 				bcopy(v, propbuf, l);
 				propbuf[l] = '\0';
-				bsetprop(DDI_PROP_TYPE_STRING, name, name_len,
-				    propbuf, l + 1);
+
+				if (strncmp(name, "num-extra-pcierc",
+				    name_len) == 0) {
+					uint64_t ui64val;
+					if (parse_value(propbuf,
+					    &ui64val) == 0) {
+						bsetprop32("num-extra-pcierc",
+						    (uint32_t)ui64val);
+					}
+				} else {
+					bsetprop(DDI_PROP_TYPE_STRING,
+					    name, name_len, propbuf, l + 1);
+				}
 			}
 			name = value + value_len;
 			while (*name == ',')

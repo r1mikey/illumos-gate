@@ -204,6 +204,17 @@ size_t		toxic_size = 1024 * 1024 * 1024;
  * complexes requires 2GiB of VA.
  */
 #define	MAX_KNOWN_PCIERC	64
+/*
+ * The operator can also request that we allocate KVA for a number of additional
+ * root complexes when we somehow get this wrong.
+ *
+ * This is useful on ACPI systems when root complexes can exist in the DSDT but
+ * not in the MCFG and when developing support for new root complex drivers in
+ * FDT systems.
+ *
+ * Similar to "known" root complexes, we limit this to up to 64 root complexes.
+ */
+#define	MAX_EXTRA_PCIERC	64
 
 
 /*
@@ -1437,6 +1448,17 @@ layout_kernel_va(void)
 		do_bsys_getprop(NULL, "num-known-pcierc", &pval);
 		if (pval != 0 && pval > MAX_KNOWN_PCIERC) {
 			pval = MAX_KNOWN_PCIERC;
+		}
+		if (pval > 0) {
+			toxic_size += (pval * (256ul * (1024ul * 1024ul)));
+		}
+	}
+
+	if (do_bsys_getproplen(NULL, "num-extra-pcierc") > 0) {
+		uint32_t pval;
+		do_bsys_getprop(NULL, "num-extra-pcierc", &pval);
+		if (pval != 0 && pval > MAX_EXTRA_PCIERC) {
+			pval = MAX_EXTRA_PCIERC;
 		}
 		if (pval > 0) {
 			toxic_size += (pval * (256ul * (1024ul * 1024ul)));
