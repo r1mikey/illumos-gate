@@ -19,7 +19,6 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2017 Hayashi Naoyuki
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 /*
@@ -29,6 +28,8 @@
 /*
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014, 2015 by Delphix. All rights reserved.
+ * Copyright 2017 Hayashi Naoyuki
+ * Copyright 2026 Michael van der Westhuizen
  */
 
 #include <sys/machparam.h>
@@ -69,6 +70,45 @@
  * Basic parameters for hat operation.
  */
 struct hat_mmu_info mmu;
+
+/*
+ * Global ASID allocator.
+ *
+ * ASIDs are globally unique: the same ASID means the same address space
+ * on every CPU.  This enables ASID-specific TLB invalidation (vale1is)
+ * for user address spaces, which is far more efficient than the
+ * ASID-unaware vaae1is that would otherwise be required.
+ *
+ * The allocator uses a simple bitmap protected by a spin mutex.  When
+ * all ASIDs are exhausted, an epoch rollover occurs: the bitmap is
+ * cleared, currently-active ASIDs are re-marked, all TLBs are flushed,
+ * and allocation resumes.
+ */
+#define	ASID_RESERVED_FOR_PID0	0
+/* ASID_RESERVED_FOR_EFI is 1, defined in hat_aarch64.h */
+#define	ASID_FIRST_AVAILABLE	2
+
+#define	HAT_ASID_COOKIE(asid, epoch)	\
+	((int64_t)((uint32_t)(asid) |	\
+	((uint64_t)(uint32_t)(epoch) << 32)))
+#define	HAT_COOKIE_TO_ASID(c)		((uint16_t)(c))
+#define	HAT_COOKIE_TO_EPOCH(c)		((int32_t)((uint64_t)(c) >> 32))
+#define	HAT_COOKIE_NONE			HAT_ASID_COOKIE(0xffff, INT_MIN)
+#define	HAT_COOKIE_NEEDS_ASSIGN		HAT_ASID_COOKIE(0xffff, INT_MAX)
+
+static ulong_t		*asid_bitmap;
+static kmutex_t		asid_lock;
+static uint32_t		asid_next = ASID_FIRST_AVAILABLE;
+static volatile int32_t	asid_epoch;
+static uint32_t		asid_count;	/* usable ASIDs (excludes sentinel) */
+
+/*
+ * Forward declarations for ASID allocator functions.
+ */
+static void hat_asid_init(void);
+static void hat_asid_alloc(hat_t *hat);
+static void hat_asid_free(hat_t *hat);
+static void hat_asid_rollover(void);
 
 /*
  * forward declaration of internal utility routines
@@ -180,10 +220,7 @@ hat_alloc(struct as *as)
 	kas.a_hat->hat_next = hat;
 	mutex_exit(&hat_list_lock);
 
-	for (int cpuid = 0; cpuid < NCPU; cpuid++) {
-		hat->hat_asid_gen[cpuid] = -1;
-		hat->hat_asid[cpuid] = 0;
-	}
+	hat->hat_asid_cookie = HAT_COOKIE_NEEDS_ASSIGN;
 
 	return (hat);
 }
@@ -233,6 +270,11 @@ hat_free_end(hat_t *hat)
 	hat->hat_next = hat->hat_prev = NULL;
 
 	/*
+	 * Release the hat's ASID back to the global bitmap.
+	 */
+	hat_asid_free(hat);
+
+	/*
 	 * Make a pass through the htables freeing them all up.
 	 */
 	htable_purge_hat(hat);
@@ -258,6 +300,167 @@ mmu_init(void)
 	mmu.max_asid = ((read_tcr() & TCR_AS)? 0xFFFF: 0xFF);
 	mmu.max_level = MAX_PAGE_LEVEL;
 	mmu.kernelbase = ~((1ul << (VA_BITS - 1)) - 1);
+}
+
+/*
+ * Initialize the global ASID bitmap allocator.  Called from hat_init()
+ * after kmem is available and mmu.max_asid has been set by mmu_init().
+ */
+static void
+hat_asid_init(void)
+{
+	asid_count = mmu.max_asid;
+	if (asid_count > 0xfffe) {
+		asid_count = 0xfffe;
+	}
+
+	asid_bitmap = kmem_zalloc(BT_SIZEOFMAP(asid_count), KM_SLEEP);
+	mutex_init(&asid_lock, NULL, MUTEX_SPIN,
+	    (void *)ipltospl(DISP_LEVEL));
+
+	/* Reserve ASIDs 0 (PID 0) and 1 (EFI runtime services). */
+	BT_SET(asid_bitmap, ASID_RESERVED_FOR_PID0);
+	BT_SET(asid_bitmap, ASID_RESERVED_FOR_EFI);
+
+	asid_next = ASID_FIRST_AVAILABLE;
+	asid_epoch = 0;
+}
+
+/*
+ * Epoch rollover: all ASIDs are exhausted.  Clear the bitmap, re-mark
+ * ASIDs that are currently loaded in a CPU's TTBR0 (so they are not
+ * prematurely reassigned), flush all TLBs, and resume allocation.
+ *
+ * Must be called with asid_lock held.
+ */
+static void
+hat_asid_rollover(void)
+{
+	cpu_t *cp;
+
+	ASSERT(MUTEX_HELD(&asid_lock));
+
+	asid_epoch++;
+
+	/* Clear entire bitmap. */
+	bzero(asid_bitmap, BT_SIZEOFMAP(asid_count));
+
+	/* Re-reserve permanent ASIDs. */
+	BT_SET(asid_bitmap, ASID_RESERVED_FOR_PID0);
+	BT_SET(asid_bitmap, ASID_RESERVED_FOR_EFI);
+
+	/*
+	 * Re-mark ASIDs that are currently loaded in a CPU's TTBR0.
+	 * Reading another CPU's cpu_current_hat without an IPI is safe
+	 * here: the worst case is a slightly stale read, which just means
+	 * we keep an ASID marked as used for one extra epoch (wasting
+	 * a slot, not a correctness issue).
+	 */
+	cp = cpu_list;
+	do {
+		hat_t *active_hat = cp->cpu_current_hat;
+		if (active_hat != NULL && active_hat != kas.a_hat) {
+			uint16_t asid =
+			    HAT_COOKIE_TO_ASID(active_hat->hat_asid_cookie);
+			if (asid < asid_count) {
+				BT_SET(asid_bitmap, asid);
+				active_hat->hat_asid_cookie =
+				    HAT_ASID_COOKIE(asid, asid_epoch);
+			}
+		}
+		cp = cp->cpu_next;
+	} while (cp != cpu_list);
+
+	/* Flush all TLBs across all CPUs. */
+	dsb(ish);
+	tlbi_allis();
+	dsb(ish);
+	isb();
+
+	asid_next = ASID_FIRST_AVAILABLE;
+}
+
+/*
+ * Allocate a globally-unique ASID for the given hat and record it
+ * in hat_asid_cookie.  If all ASIDs are exhausted, trigger an epoch
+ * rollover and retry.
+ */
+static void
+hat_asid_alloc(hat_t *hat)
+{
+	uint32_t asid;
+
+	mutex_enter(&asid_lock);
+
+	/* Another thread may have allocated while we waited for the lock. */
+	if (HAT_COOKIE_TO_EPOCH(hat->hat_asid_cookie) == asid_epoch) {
+		mutex_exit(&asid_lock);
+		return;
+	}
+
+	for (;;) {
+		for (asid = asid_next; asid < asid_count; asid++) {
+			if (!BT_TEST(asid_bitmap, asid))
+				goto found;
+		}
+		for (asid = ASID_FIRST_AVAILABLE; asid < asid_next; asid++) {
+			if (!BT_TEST(asid_bitmap, asid))
+				goto found;
+		}
+
+		/* All ASIDs exhausted - rollover. */
+		hat_asid_rollover();
+
+		/*
+		 * After rollover, the hat might already have a valid ASID
+		 * if it was active on a CPU.
+		 */
+		if (HAT_COOKIE_TO_EPOCH(hat->hat_asid_cookie) == asid_epoch) {
+			mutex_exit(&asid_lock);
+			return;
+		}
+	}
+
+found:
+	BT_SET(asid_bitmap, asid);
+	asid_next = asid + 1;
+	if (asid_next >= asid_count)
+		asid_next = ASID_FIRST_AVAILABLE;
+	hat->hat_asid_cookie = HAT_ASID_COOKIE(asid, asid_epoch);
+
+	mutex_exit(&asid_lock);
+}
+
+/*
+ * Release the ASID held by the given hat back to the global bitmap
+ * and invalidate any remaining TLB entries tagged with that ASID.
+ */
+static void
+hat_asid_free(hat_t *hat)
+{
+	int32_t epoch;
+	uint16_t asid;
+
+	epoch = HAT_COOKIE_TO_EPOCH(hat->hat_asid_cookie);
+	if (epoch == (int32_t)INT_MIN || epoch == (int32_t)INT_MAX) {
+		/* Never assigned or permanent - nothing to free. */
+		return;
+	}
+
+	asid = HAT_COOKIE_TO_ASID(hat->hat_asid_cookie);
+	hat->hat_asid_cookie = HAT_COOKIE_NONE;
+
+	mutex_enter(&asid_lock);
+	if (epoch == asid_epoch && asid < asid_count) {
+		BT_CLEAR(asid_bitmap, asid);
+	}
+	mutex_exit(&asid_lock);
+
+	/* Flush any remaining TLB entries for this ASID. */
+	dsb(ish);
+	tlbi_asid((uint64_t)asid);
+	dsb(ish);
+	isb();
 }
 
 /*
@@ -318,6 +521,9 @@ hat_init()
 	 */
 	hrm_hashtab = kmem_zalloc(HRM_HASHSIZE * sizeof (struct hrmstat *),
 	    KM_SLEEP);
+
+	/* Initialize the ASID allocator. */
+	hat_asid_init();
 }
 
 /*
@@ -365,31 +571,16 @@ hat_switch(hat_t *hat)
 				write_tcr(read_tcr() & ~TCR_EPD0);
 			}
 
-			processorid_t cpuid = cpu->cpu_id;
-			uint64_t cur_gen = cpu->cpu_asid_gen;
-			int req_tlbi = 0;
-
-			if (hat->hat_asid_gen[cpuid] != cur_gen) {
-				uint32_t cur_asid = cpu->cpu_asid + 1;
-				if (cur_asid > mmu.max_asid) {
-					cur_gen++;
-					cpu->cpu_asid_gen = cur_gen;
-					cur_asid = 1;
-					req_tlbi = 1;
-				}
-				cpu->cpu_asid = cur_asid;
-				hat->hat_asid_gen[cpuid] = cur_gen;
-				hat->hat_asid[cpuid] = cur_asid;
+			if (HAT_COOKIE_TO_EPOCH(hat->hat_asid_cookie) !=
+			    asid_epoch) {
+				hat_asid_alloc(hat);
 			}
-			write_ttbr0(((uint64_t)hat->hat_asid[cpuid] <<
-			    TTBR_ASID_SHIFT) |
+
+			uint16_t asid =
+			    HAT_COOKIE_TO_ASID(hat->hat_asid_cookie);
+			write_ttbr0(((uint64_t)asid << TTBR_ASID_SHIFT) |
 			    pfn_to_pa(hat->hat_htable->ht_pfn));
 			isb();
-			if (req_tlbi) {
-				tlbi_allis();
-				dsb(ish);
-				isb();
-			}
 		}
 		cpu->cpu_current_hat = hat;
 	}
@@ -1259,13 +1450,52 @@ hat_tlb_inval_range(hat_t *hat, uintptr_t va, size_t len)
 	if (hat->hat_flags & HAT_FREEING)
 		return;
 
-	dsb(ish);
-	if (va == DEMAP_ALL_ADDR) {
-			tlbi_allis();
-	} else {
-		for (size_t i = 0; i < len; i += MMU_PAGESIZE)
-			tlbi_mva(va + i);
+	/*
+	 * Page-align the range defensively.  The TLBI loop strides
+	 * by MMU_PAGESIZE, so a misaligned VA or length could miss
+	 * pages at the boundary.  DEMAP_ALL_ADDR is handled specially
+	 * below and must not be rounded.
+	 */
+	if (va != DEMAP_ALL_ADDR) {
+		uintptr_t end = P2ROUNDUP(va + len, MMU_PAGESIZE);
+		va = P2ALIGN(va, MMU_PAGESIZE);
+		len = end - va;
 	}
+
+	dsb(ish);
+	if (hat == kas.a_hat || hat->hat_ism_pgcnt > 0) {
+		/*
+		 * Kernel hat: kernel PTEs are global (PTE_NG is not
+		 * set), so global TLB entries are not tagged with an
+		 * ASID.  ASID-specific TLBI (vale1is, aside1is) only
+		 * matches non-global entries and cannot invalidate
+		 * them; vaae1is/vmalle1is are the only correct choice.
+		 *
+		 * ISM hat: the hat participates in shared page tables
+		 * (ISM/DISM), so other hats may have TLB entries for
+		 * the same physical pages under different ASIDs.  We
+		 * must use ASID-unaware invalidation to catch them all.
+		 */
+		if (va == DEMAP_ALL_ADDR) {
+			tlbi_allis();		/* vmalle1is */
+		} else {
+			for (size_t i = 0; i < len; i += MMU_PAGESIZE)
+				tlbi_mva(va + i);	/* vaae1is */
+		}
+	} else {
+		/*
+		 * User hat without ISM: use ASID-specific invalidation
+		 * to avoid disturbing other address spaces' TLB entries.
+		 */
+		uint16_t asid = HAT_COOKIE_TO_ASID(hat->hat_asid_cookie);
+		if (va == DEMAP_ALL_ADDR) {
+			tlbi_asid((uint64_t)asid);	/* aside1is */
+		} else {
+			for (size_t i = 0; i < len; i += MMU_PAGESIZE)
+				tlbi_va_asid(va + i, (uint64_t)asid);
+		}
+	}
+
 	dsb(ish);
 	isb();
 }

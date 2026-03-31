@@ -73,10 +73,11 @@ struct hat {
 	struct hat	*hat_prev;
 	htable_t	**hat_ht_hash;	/* htable hash buckets */
 	htable_t	*hat_ht_cached;	/* cached free htables */
-	uint64_t	hat_asid_gen[NCPU];
-	uint32_t	hat_asid[NCPU];
+	int64_t		hat_asid_cookie;
 };
 typedef struct hat hat_t;
+
+#define	ASID_RESERVED_FOR_EFI	1
 
 #define	PGCNT_INC(hat, level)	\
 	atomic_inc_ulong(&(hat)->hat_pages_mapped[level]);
