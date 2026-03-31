@@ -1671,10 +1671,7 @@ pte_set(htable_t *ht, uint_t entry, pte_t new, void *ptr)
 		 */
 		if (prev == n) {
 			old = new;
-			dsb(ish);
-			tlbi_mva(addr);
-			dsb(ish);
-			isb();
+			hat_tlb_inval(hat, addr);
 			goto done;
 		}
 
