@@ -21,7 +21,7 @@
 
 /*
  * Copyright 2017 Hayashi Naoyuki
- * Copyright 2024 Michael van der Westhuizen
+ * Copyright 2026 Michael van der Westhuizen
  */
 
 #ifndef	_ASM_CONTROLREGS_H
@@ -147,6 +147,36 @@ tlbi_mva(uint64_t addr)
 	 */
 	__asm__ __volatile__("tlbi vaae1is, %0"
 	    ::"r"((addr >> 12) & ((1ul << 44) - 1)):"memory");
+}
+
+static __inline__ void
+tlbi_va_asid(uint64_t addr, uint64_t asid)
+{
+	/*
+	 * TLB Invalidate by VA, ASID, EL1, Inner Shareable, last-level
+	 */
+	uint64_t r = ((addr >> 12) & ((1ul << 44) - 1)) | (asid << 48);
+	__asm__ __volatile__("tlbi vale1is, %0" ::"r"(r):"memory");
+}
+
+static __inline__ void
+tlbi_va_asid_any(uint64_t addr, uint64_t asid)
+{
+	/*
+	 * TLB Invalidate by VA, ASID, EL1, Inner Shareable, any level
+	 */
+	uint64_t r = ((addr >> 12) & ((1ul << 44) - 1)) | (asid << 48);
+	__asm__ __volatile__("tlbi vae1is, %0" ::"r"(r):"memory");
+}
+
+static __inline__ void
+tlbi_asid(uint64_t asid)
+{
+	/*
+	 * TLB Invalidate by ASID, EL1, Inner Shareable
+	 */
+	uint64_t r = asid << 48;
+	__asm__ __volatile__("tlbi aside1is, %0" ::"r"(r):"memory");
 }
 
 static __inline__ uint64_t
