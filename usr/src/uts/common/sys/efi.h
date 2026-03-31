@@ -80,6 +80,10 @@ extern "C" {
 	{ 0x880aaca3, 0x4adc, 0x4a04, 0x90, 0x79, \
 	{ 0xb7, 0x47, 0x34, 0x8, 0x25, 0xe5 } }
 
+#define	EFI_RT_PROPERTIES_TABLE_GUID	\
+	{ 0xeb66918a, 0x7eef, 0x402a, 0x84, 0x2e, \
+	{ 0x93, 0x1d, 0x21, 0xc3, 0x8a, 0xe9 } }
+
 typedef struct uuid efi_guid_t __aligned(8);
 
 /* Memory data */
@@ -160,9 +164,47 @@ typedef struct {
 #define	EFI_REV_MAJOR(x)	(((x) >> 16) & 0xffff)
 #define	EFI_REV_MINOR(x)	((x) & 0xffff)
 #define	EFI_SYSTEM_TABLE_SIGNATURE	0x5453595320494249
+#define	EFI_RUNTIME_SERVICES_SIGNATURE	0x56524553544e5552
+
+/*
+ * EFI status codes (UEFI Specification 2.10, Appendix D).
+ * The high bit indicates an error status.
+ */
+#define	EFI_ERROR_BIT		0x8000000000000000ull
+#define	EFI_SUCCESS		0
+#define	EFI_UNSUPPORTED		(EFI_ERROR_BIT | 3)
+#define	EFI_DEVICE_ERROR	(EFI_ERROR_BIT | 7)
 
 typedef uint32_t	efiptr32_t;
 typedef uint64_t	efiptr64_t;
+
+typedef struct {
+	uint16_t	Version;
+	uint16_t	Length;
+	uint32_t	RuntimeServicesSupported;
+} __packed EFI_RT_PROPERTIES_TABLE;
+
+#define	EFI_RT_PROPERTIES_TABLE_VERSION	0x1
+
+/*
+ * RuntimeServicesSupported bitmask values.
+ */
+#define	EFI_RT_SUPPORTED_GET_TIME			0x0001
+#define	EFI_RT_SUPPORTED_SET_TIME			0x0002
+#define	EFI_RT_SUPPORTED_GET_WAKEUP_TIME		0x0004
+#define	EFI_RT_SUPPORTED_SET_WAKEUP_TIME		0x0008
+#define	EFI_RT_SUPPORTED_GET_VARIABLE			0x0010
+#define	EFI_RT_SUPPORTED_GET_NEXT_VARIABLE_NAME		0x0020
+#define	EFI_RT_SUPPORTED_SET_VARIABLE			0x0040
+#define	EFI_RT_SUPPORTED_SET_VIRTUAL_ADDRESS_MAP	0x0080
+#define	EFI_RT_SUPPORTED_CONVERT_POINTER		0x0100
+#define	EFI_RT_SUPPORTED_GET_NEXT_HIGH_MONO_COUNT	0x0200
+#define	EFI_RT_SUPPORTED_RESET_SYSTEM			0x0400
+#define	EFI_RT_SUPPORTED_UPDATE_CAPSULE			0x0800
+#define	EFI_RT_SUPPORTED_QUERY_CAPSULE_CAPS		0x1000
+#define	EFI_RT_SUPPORTED_QUERY_VARIABLE_INFO		0x2000
+
+#define	EFI_RT_SUPPORTED_ALL				0x3FFF
 
 typedef struct _EFI_CONFIGURATION_TABLE32 {
 	efi_guid_t	VendorGuid;
@@ -218,6 +260,49 @@ typedef struct _EFI_SYSTEM_TABLE64 {
 	uint64_t		NumberOfTableEntries;
 	efiptr64_t		ConfigurationTable;
 } __packed EFI_SYSTEM_TABLE64;
+
+/*
+ * EFI Runtime Services Tables.
+ *
+ * The 32/64-bit variants use opaque pointers (efiptr32_t/efiptr64_t) for
+ * safe access to firmware tables from contexts where native pointer size
+ * may not match.
+ */
+typedef struct _EFI_RUNTIME_SERVICES32 {
+	EFI_TABLE_HEADER	Hdr;
+	efiptr32_t		GetTime;
+	efiptr32_t		SetTime;
+	efiptr32_t		GetWakeupTime;
+	efiptr32_t		SetWakeupTime;
+	efiptr32_t		SetVirtualAddressMap;
+	efiptr32_t		ConvertPointer;
+	efiptr32_t		GetVariable;
+	efiptr32_t		GetNextVariableName;
+	efiptr32_t		SetVariable;
+	efiptr32_t		GetNextHighMonotonicCount;
+	efiptr32_t		ResetSystem;
+	efiptr32_t		UpdateCapsule;
+	efiptr32_t		QueryCapsuleCapabilities;
+	efiptr32_t		QueryVariableInfo;
+} __packed EFI_RUNTIME_SERVICES32;
+
+typedef struct _EFI_RUNTIME_SERVICES64 {
+	EFI_TABLE_HEADER	Hdr;
+	efiptr64_t		GetTime;
+	efiptr64_t		SetTime;
+	efiptr64_t		GetWakeupTime;
+	efiptr64_t		SetWakeupTime;
+	efiptr64_t		SetVirtualAddressMap;
+	efiptr64_t		ConvertPointer;
+	efiptr64_t		GetVariable;
+	efiptr64_t		GetNextVariableName;
+	efiptr64_t		SetVariable;
+	efiptr64_t		GetNextHighMonotonicCount;
+	efiptr64_t		ResetSystem;
+	efiptr64_t		UpdateCapsule;
+	efiptr64_t		QueryCapsuleCapabilities;
+	efiptr64_t		QueryVariableInfo;
+} __packed EFI_RUNTIME_SERVICES64;
 
 /*
  * EFI memory map header, as passed by loader via dboot. This is a wrapper
