@@ -87,6 +87,8 @@
 	bl	savectx
 .nosavectx:
 
+	bl	kernel_fpu_no_swtch
+
 	// Call savepctx if process has installed context ops.
 	ldr	x0, [x21, #T_PROCP]
 	ldr	x1, [x0, #P_PCTX]
