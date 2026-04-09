@@ -329,6 +329,21 @@ gicv2_config_irq(gicv2_conf_t *sc, uint32_t irq, boolean_t is_edge)
 }
 
 /*
+ * Configure an SPI as edge-triggered or level-sensitive.
+ *
+ * This is a private interface, for use by GICv2m in setting edge-triggered
+ * mode for MSI SPIs.
+ */
+void
+gicv2_configure_irq(dev_info_t *gic_dip, uint32_t irq, boolean_t is_edge)
+{
+	gicv2_conf_t *sc = ddi_get_soft_state(gicv2_soft_state,
+	    ddi_get_instance(gic_dip));
+	VERIFY3P(sc, !=, NULL);
+	gicv2_config_irq(sc, irq, is_edge);
+}
+
+/*
  * Mask interrupts of priority lower than or equal to IRQ.
  */
 static int
@@ -1069,9 +1084,8 @@ static struct bus_ops gicv2_bus_ops = {
 	.busops_rev = BUSO_REV,
 	.bus_map = i_ddi_bus_map,
 	.bus_map_fault = i_ddi_map_fault,
-	.bus_dma_map = ddi_no_dma_map,
-	.bus_dma_allochdl = ddi_no_dma_allochdl,
 	.bus_ctl = gicv2_bus_ctl,
+	.bus_prop_op = ddi_bus_prop_op,
 	.bus_intr_op = gicv2_intr_ops,
 };
 
