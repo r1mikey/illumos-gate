@@ -75,6 +75,11 @@
 #include <sys/sysmacros.h>
 #include <sys/archsystm.h>
 #include <sys/mach_intr.h>
+#include <sys/gic_v3.h>
+#include <sys/vmem.h>
+#include <sys/list.h>
+#include <vm/hat.h>
+#include <vm/hat_pte.h>
 
 /*
  * A redistributor region is a block of redistributor MMIO space. One finds
@@ -115,7 +120,19 @@ typedef struct {
 	caddr_t			gr_vlpi_base;
 	uint64_t		gr_typer;
 	uint64_t		gr_sgir;
+	caddr_t			gr_pend;	/* PENDBASER table VA */
+	uint64_t		gr_pend_pa;	/* PENDBASER table PA */
+	ddi_dma_handle_t	gr_pend_dmah;
+	ddi_acc_handle_t	gr_pend_acch;
 } gicv3_redistributor_t;
+
+/*
+ * An ITS instance registered with its parent GICv3.
+ */
+typedef struct gicv3_its_node {
+	list_node_t	gin_node;
+	dev_info_t	*gin_dip;
+} gicv3_its_node_t;
 
 typedef struct gicv3_conf {
 	/* Base address of, and handle to, the distributor */
@@ -154,11 +171,35 @@ typedef struct gicv3_conf {
 	cpuset_t		gc_cpuset;
 
 	/*
+	 * LPI support.  Populated unconditionally during attach if the
+	 * hardware supports LPIs (GICD_TYPER.LPIS).
+	 */
+	dev_info_t		*gc_dip;
+	uint32_t		gc_lpi_idbits;	/* GICD_TYPER IDbits value */
+	uint32_t		gc_lpi_max_intid; /* (1 << idbits) - 1 */
+	uint32_t		gc_lpi_count;	/* max_intid - 8191 */
+	vmem_t			*gc_lpi_arena;	/* LPI INTID allocator */
+	uint8_t			*gc_lpi_prop;	/* PROPBASER table VA */
+	uint64_t		gc_lpi_prop_pa;	/* PROPBASER table PA */
+	size_t			gc_lpi_prop_sz;	/* PROPBASER table bytes */
+	size_t			gc_lpi_pend_sz;	/* per-redist PENDBASER sz */
+	ddi_dma_handle_t	gc_lpi_prop_dmah;
+	ddi_acc_handle_t	gc_lpi_prop_acch;
+
+	/*
 	 * System programmable interrupt controller registration control
 	 *
 	 * A GICv3 is always the system PIC.
 	 */
 	syspic_ops_t		gc_syspic;
+
+	/*
+	 * ITS instance list.  Populated by gicv3_register_its() during
+	 * ITS driver attach; used by the DDI MSI framework to discover
+	 * MSI controllers.
+	 */
+	list_t			gc_its_list;
+	kmutex_t		gc_its_list_lock;
 } gicv3_conf_t;
 
 #define	TO_CONF(__c)		((gicv3_conf_t *)(__c))
@@ -247,6 +288,18 @@ gicr_rd_rmw4(gicv3_redistributor_t *r,
     uint32_t reg, uint32_t clrbits, uint32_t setbits)
 {
 	return (reg_rmw4(r->gr_hdlp, r->gr_rd_base, reg, clrbits, setbits));
+}
+
+static inline uint64_t
+gicr_rd_read8(gicv3_redistributor_t *r, uint32_t reg)
+{
+	return (ddi_get64(r->gr_hdlp, (uint64_t *)(r->gr_rd_base + reg)));
+}
+
+static inline void
+gicr_rd_write8(gicv3_redistributor_t *r, uint32_t reg, uint64_t val)
+{
+	ddi_put64(r->gr_hdlp, (uint64_t *)(r->gr_rd_base + reg), val);
 }
 
 /*
@@ -533,6 +586,8 @@ gicv3_addspl(spo_ctx_t ctx, intr_intid_t intid, intr_ipl_t ipl,
 		    gicv3_addspl_percpu, (uint32_t)intid, (uint32_t)ipl);
 	} else if (GIC_INTID_IS_SPI(intid)) {
 		gicv3_addspl_spi(gc, (uint32_t)intid, (uint32_t)ipl);
+	} else if (GIC_INTID_IS_LPI(intid)) {
+		/* LPIs: config via PROPBASER table, not the distributor */
 	}
 
 	if (state != NULL) {
@@ -624,6 +679,8 @@ gicv3_delspl(spo_ctx_t ctx, intr_intid_t intid, intr_ipl_t ipl __unused,
 			    gicv3_delspl_percpu, (uint32_t)intid, 0);
 		} else if (GIC_INTID_IS_SPI(intid)) {
 			gicv3_delspl_spi(gc, (uint32_t)intid);
+		} else if (GIC_INTID_IS_LPI(intid)) {
+			/* LPIs: managed by ITS, not the distributor */
 		}
 
 		mutex_exit(&syspic_intrs_lock);
@@ -985,6 +1042,217 @@ gicv3_enable_system_register_access(void)
 }
 
 /*
+ * Allocate a physically contiguous, zeroed buffer and return both its
+ * virtual address and physical address.  The DMA and acc handles are
+ * returned for bookkeeping; the GIC never detaches so they are never freed.
+ */
+static int
+gicv3_contig_alloc(dev_info_t *dip, size_t size, size_t align,
+    caddr_t *vap, uint64_t *pap, ddi_dma_handle_t *dma_hdlp,
+    ddi_acc_handle_t *acc_hdlp)
+{
+	ddi_dma_attr_t dma_attr = {
+		.dma_attr_version = DMA_ATTR_V0,
+		.dma_attr_addr_lo = 0,
+		.dma_attr_addr_hi = 0xFFFFFFFFFFFFFFFFull,
+		.dma_attr_count_max = 0xFFFFFFFFFFFFFFFFull,
+		.dma_attr_align = align,
+		.dma_attr_burstsizes = 0,
+		.dma_attr_minxfer = 1,
+		.dma_attr_maxxfer = 0xFFFFFFFFFFFFFFFFull,
+		.dma_attr_seg = 0xFFFFFFFFFFFFFFFFull,
+		.dma_attr_sgllen = 1,	/* guarantees physical contiguity */
+		.dma_attr_granular = 1,
+		.dma_attr_flags = 0,
+	};
+	ddi_device_acc_attr_t acc_attr = {
+		.devacc_attr_version = DDI_DEVICE_ATTR_V0,
+		.devacc_attr_endian_flags = DDI_NEVERSWAP_ACC,
+		.devacc_attr_dataorder = DDI_STRICTORDER_ACC,
+	};
+	size_t real_size;
+	uint_t ncookies;
+	ddi_dma_cookie_t cookie;
+	int ret;
+
+	if ((ret = ddi_dma_alloc_handle(dip, &dma_attr, DDI_DMA_SLEEP,
+	    NULL, dma_hdlp)) != DDI_SUCCESS) {
+		return (ret);
+	}
+
+	if ((ret = ddi_dma_mem_alloc(*dma_hdlp, size, &acc_attr,
+	    DDI_DMA_CONSISTENT, DDI_DMA_SLEEP, NULL,
+	    vap, &real_size, acc_hdlp)) != DDI_SUCCESS) {
+		ddi_dma_free_handle(dma_hdlp);
+		return (ret);
+	}
+
+	bzero(*vap, real_size);
+
+	ret = ddi_dma_addr_bind_handle(*dma_hdlp, NULL, *vap, real_size,
+	    DDI_DMA_RDWR | DDI_DMA_CONSISTENT, DDI_DMA_SLEEP, NULL,
+	    &cookie, &ncookies);
+	if (ret != DDI_DMA_MAPPED || ncookies != 1) {
+		ddi_dma_mem_free(acc_hdlp);
+		ddi_dma_free_handle(dma_hdlp);
+		return (DDI_FAILURE);
+	}
+
+	*pap = cookie.dmac_laddress;
+	return (DDI_SUCCESS);
+}
+
+/*
+ * Allocate LPI property and pending tables, and create the vmem arena
+ * for LPI INTID allocation.
+ *
+ * Called during GICv3 attach, after redistributors have been assigned.
+ * If the hardware does not support LPIs (GICD_TYPER.LPIS == 0), this
+ * is a no-op.
+ */
+static int
+gicv3_init_lpis(gicv3_conf_t *gc)
+{
+	uint32_t idbits;
+	uint32_t i;
+
+	/* Check if LPIs are supported */
+	if ((gc->gc_gicd_typer & GICD_TYPER_LPIS) == 0)
+		return (DDI_SUCCESS);
+
+	idbits = GICD_TYPER_IDBITS(gc->gc_gicd_typer);
+	gc->gc_lpi_idbits = idbits;
+	gc->gc_lpi_max_intid = (1U << idbits) - 1;
+	gc->gc_lpi_count = gc->gc_lpi_max_intid - GIC_INTID_LPI_MIN + 1;
+
+	/*
+	 * PROPBASER table: one byte per INTID from 0 to max_intid.
+	 * Entries below GIC_INTID_LPI_MIN are reserved by the
+	 * architecture.  Must be page-aligned and physically contiguous.
+	 */
+	gc->gc_lpi_prop_sz = gc->gc_lpi_max_intid + 1 - GIC_INTID_LPI_MIN;
+
+	if (gicv3_contig_alloc(gc->gc_dip, gc->gc_lpi_prop_sz,
+	    PAGESIZE, (caddr_t *)&gc->gc_lpi_prop, &gc->gc_lpi_prop_pa,
+	    &gc->gc_lpi_prop_dmah, &gc->gc_lpi_prop_acch) != DDI_SUCCESS) {
+		dev_err(gc->gc_dip, CE_WARN,
+		    "failed to allocate LPI property table (%lu bytes)",
+		    (unsigned long)gc->gc_lpi_prop_sz);
+		return (DDI_FAILURE);
+	}
+
+	/*
+	 * All LPI configs start as disabled at lowest priority.
+	 * The bzero in gicv3_contig_alloc handles this (prio=0, enable=0).
+	 */
+
+	/*
+	 * PENDBASER tables: one bit per INTID, per redistributor.
+	 * Must be 64KB-aligned and physically contiguous.
+	 */
+	gc->gc_lpi_pend_sz = (gc->gc_lpi_max_intid + 1) / 8;
+
+	for (i = 0; i < gc->gc_num_redist; i++) {
+		gicv3_redistributor_t *r = &gc->gc_redist[i];
+
+		if (gicv3_contig_alloc(gc->gc_dip, gc->gc_lpi_pend_sz,
+		    64 * 1024, (caddr_t *)&r->gr_pend, &r->gr_pend_pa,
+		    &r->gr_pend_dmah, &r->gr_pend_acch) != DDI_SUCCESS) {
+			dev_err(gc->gc_dip, CE_WARN,
+			    "failed to allocate PENDBASER for redist %u", i);
+			return (DDI_FAILURE);
+		}
+	}
+
+	/* Create vmem arena for LPI INTID allocation */
+	gc->gc_lpi_arena = vmem_create("lpi_intid",
+	    (void *)(uintptr_t)GIC_INTID_LPI_MIN,
+	    gc->gc_lpi_count, 1, NULL, NULL, NULL, 0, VM_SLEEP);
+
+	return (DDI_SUCCESS);
+}
+
+/*
+ * Program LPI tables on a single redistributor and enable LPIs.
+ *
+ * GICR_PROPBASER and GICR_PENDBASER must be written before
+ * GICR_CTLR.EnableLPIs is set.  Once EnableLPIs is set, both
+ * registers become read-only until the redistributor is reset.
+ *
+ * We request inner-shareable, read/write-allocate write-back cacheable.
+ * The hardware may modify the shareability; if it clears it to
+ * non-shareable we retry with non-cacheable.
+ */
+static void
+gicv3_enable_redist_lpis(gicv3_conf_t *gc, gicv3_redistributor_t *r)
+{
+	uint64_t val, readback;
+
+	/* Skip if LPIs are not supported */
+	if (gc->gc_lpi_count == 0) {
+		return;
+	}
+
+	/* Skip if already enabled (one-shot register) */
+	if (gicr_rd_read4(r, GICR_CTLR) & GICR_CTLR_EnableLPIs) {
+		return;
+	}
+
+	/*
+	 * Program GICR_PROPBASER: shared table across all redistributors.
+	 */
+	val = (gc->gc_lpi_prop_pa & GICR_PROPBASER_Physical_Address) |
+	    GICR_PROPBASER_OC(GIC_CACHE_RaWaWb) |
+	    GICR_PROPBASER_SHARE(GIC_SHARE_IS) |
+	    GICR_PROPBASER_IC(GIC_CACHE_RaWaWb) |
+	    (uint64_t)(gc->gc_lpi_idbits - 1);
+	gicr_rd_write8(r, GICR_PROPBASER, val);
+
+	/* Read back - hardware may modify shareability */
+	readback = gicr_rd_read8(r, GICR_PROPBASER);
+	if ((readback & GICR_PROPBASER_Shareability) ==
+	    GICR_PROPBASER_SHARE(GIC_SHARE_NS)) {
+		/* Hardware rejected shareability; use non-cacheable */
+		val = (gc->gc_lpi_prop_pa &
+		    GICR_PROPBASER_Physical_Address) |
+		    GICR_PROPBASER_OC(GIC_CACHE_nC) |
+		    GICR_PROPBASER_SHARE(GIC_SHARE_NS) |
+		    GICR_PROPBASER_IC(GIC_CACHE_nC) |
+		    (uint64_t)(gc->gc_lpi_idbits - 1);
+		gicr_rd_write8(r, GICR_PROPBASER, val);
+	}
+
+	/*
+	 * Program GICR_PENDBASER: per-redistributor table.
+	 * PTZ=1 indicates the table is zeroed (we zeroed at allocation).
+	 */
+	val = (r->gr_pend_pa & GICR_PENDBASER_Physical_Address) |
+	    GICR_PENDBASER_PTZ |
+	    GICR_PENDBASER_OC(GIC_CACHE_RaWaWb) |
+	    GICR_PENDBASER_SHARE(GIC_SHARE_IS) |
+	    GICR_PENDBASER_IC(GIC_CACHE_RaWaWb);
+	gicr_rd_write8(r, GICR_PENDBASER, val);
+
+	readback = gicr_rd_read8(r, GICR_PENDBASER);
+	if ((readback & GICR_PENDBASER_Shareability) ==
+	    GICR_PENDBASER_SHARE(GIC_SHARE_NS)) {
+		val = (r->gr_pend_pa &
+		    GICR_PENDBASER_Physical_Address) |
+		    GICR_PENDBASER_PTZ |
+		    GICR_PENDBASER_OC(GIC_CACHE_nC) |
+		    GICR_PENDBASER_SHARE(GIC_SHARE_NS) |
+		    GICR_PENDBASER_IC(GIC_CACHE_nC);
+		gicr_rd_write8(r, GICR_PENDBASER, val);
+	}
+
+	/*
+	 * Enable LPIs.  This is a one-shot - once set, PROPBASER and
+	 * PENDBASER become read-only until reset.
+	 */
+	(void) gicr_rd_rmw4(r, GICR_CTLR, 0, GICR_CTLR_EnableLPIs);
+}
+
+/*
  * Public function used for initializing CPUs.
  *
  * The boot processor is initialized from the tail of the main gicv3_init
@@ -1038,6 +1306,11 @@ gicv3_cpu_init_raw(gicv3_conf_t *gc, cpu_t *cp)
 	gicv3_init_gicr(&gc->gc_redist[cp->cpu_id], 0, 0);
 
 	/*
+	 * Program LPI tables and enable LPIs on this redistributor.
+	 */
+	gicv3_enable_redist_lpis(gc, &gc->gc_redist[cp->cpu_id]);
+
+	/*
 	 * Finally, tell the world we're ready.
 	 */
 	CPUSET_ADD(gc->gc_cpuset, cp->cpu_id);
@@ -1060,6 +1333,13 @@ static int
 gicv3_init(dev_info_t *dip, gicv3_conf_t *gc)
 {
 	uint32_t	n;
+
+	gc->gc_dip = dip;
+
+	/* Initialise the ITS instance list */
+	mutex_init(&gc->gc_its_list_lock, NULL, MUTEX_DEFAULT, NULL);
+	list_create(&gc->gc_its_list, sizeof (gicv3_its_node_t),
+	    offsetof(gicv3_its_node_t, gin_node));
 
 	/*
 	 * Global initialization involves the distributor, so lock it.
@@ -1160,6 +1440,16 @@ gicv3_init(dev_info_t *dip, gicv3_conf_t *gc)
 	 * No CPUs have been configured yet.
 	 */
 	CPUSET_ZERO(gc->gc_cpuset);
+
+	/*
+	 * Initialize LPI tables.  This must happen before the first
+	 * call to gicv3_cpu_init_raw, which enables LPIs on the boot
+	 * processor's redistributor.
+	 */
+	if (gicv3_init_lpis(gc) != DDI_SUCCESS) {
+		dev_err(dip, CE_WARN, "failed to initialize LPI tables");
+		return (DDI_FAILURE);
+	}
 
 	/*
 	 * Initialize the boot processor.
@@ -1459,13 +1749,194 @@ gicv3_intr_ops(dev_info_t *dip, dev_info_t *rdip,
 	return (DDI_SUCCESS);
 }
 
+/*
+ * LPI INTID allocation - for ITS and MBI drivers.
+ */
+int
+gicv3_alloc_lpi(dev_info_t *gic_dip, uint32_t *intid)
+{
+	gicv3_conf_t *gc = ddi_get_soft_state(gicv3_soft_state,
+	    ddi_get_instance(gic_dip));
+	void *id;
+
+	VERIFY3P(gc, !=, NULL);
+	if (gc->gc_lpi_arena == NULL)
+		return (ENOTSUP);
+
+	id = vmem_alloc(gc->gc_lpi_arena, 1, VM_NOSLEEP);
+	if (id == NULL)
+		return (ENOMEM);
+	*intid = (uint32_t)(uintptr_t)id;
+	return (0);
+}
+
+int
+gicv3_alloc_lpi_block(dev_info_t *gic_dip, uint32_t count, uint32_t align,
+    uint32_t *base)
+{
+	gicv3_conf_t *gc = ddi_get_soft_state(gicv3_soft_state,
+	    ddi_get_instance(gic_dip));
+	void *id;
+
+	VERIFY3P(gc, !=, NULL);
+	if (gc->gc_lpi_arena == NULL)
+		return (ENOTSUP);
+
+	id = vmem_xalloc(gc->gc_lpi_arena, count, align,
+	    0, 0, NULL, NULL, VM_NOSLEEP);
+	if (id == NULL)
+		return (ENOMEM);
+	*base = (uint32_t)(uintptr_t)id;
+	return (0);
+}
+
+void
+gicv3_free_lpi(dev_info_t *gic_dip, uint32_t intid)
+{
+	gicv3_conf_t *gc = ddi_get_soft_state(gicv3_soft_state,
+	    ddi_get_instance(gic_dip));
+
+	VERIFY3P(gc, !=, NULL);
+	vmem_free(gc->gc_lpi_arena, (void *)(uintptr_t)intid, 1);
+}
+
+void
+gicv3_free_lpi_block(dev_info_t *gic_dip, uint32_t base, uint32_t count)
+{
+	gicv3_conf_t *gc = ddi_get_soft_state(gicv3_soft_state,
+	    ddi_get_instance(gic_dip));
+
+	VERIFY3P(gc, !=, NULL);
+	vmem_xfree(gc->gc_lpi_arena, (void *)(uintptr_t)base, count);
+}
+
+void
+gicv3_lpi_set_config(dev_info_t *gic_dip, uint32_t intid, uint8_t prio,
+    boolean_t enable)
+{
+	gicv3_conf_t *gc = ddi_get_soft_state(gicv3_soft_state,
+	    ddi_get_instance(gic_dip));
+
+	VERIFY3P(gc, !=, NULL);
+	VERIFY3U(intid, >=, GIC_INTID_LPI_MIN);
+	VERIFY3U(intid, <=, gc->gc_lpi_max_intid);
+
+	gc->gc_lpi_prop[intid - GIC_INTID_LPI_MIN] =
+	    (prio & 0xfc) | (enable ? 1 : 0);
+}
+
+uint8_t
+gicv3_lpi_get_config(dev_info_t *gic_dip, uint32_t intid)
+{
+	gicv3_conf_t *gc = ddi_get_soft_state(gicv3_soft_state,
+	    ddi_get_instance(gic_dip));
+
+	VERIFY3P(gc, !=, NULL);
+	VERIFY3U(intid, >=, GIC_INTID_LPI_MIN);
+	VERIFY3U(intid, <=, gc->gc_lpi_max_intid);
+
+	return (gc->gc_lpi_prop[intid - GIC_INTID_LPI_MIN]);
+}
+
+uint64_t
+gicv3_redist_pa(dev_info_t *gic_dip, processorid_t cpuid)
+{
+	gicv3_conf_t *gc = ddi_get_soft_state(gicv3_soft_state,
+	    ddi_get_instance(gic_dip));
+
+	VERIFY3P(gc, !=, NULL);
+	VERIFY3S(cpuid, >=, 0);
+	VERIFY3U((uint32_t)cpuid, <, gc->gc_num_redist);
+
+	return (pfn_to_pa(hat_getpfnum(kas.a_hat,
+	    gc->gc_redist[cpuid].gr_rd_base)));
+}
+
+uint32_t
+gicv3_redist_procnum(dev_info_t *gic_dip, processorid_t cpuid)
+{
+	gicv3_conf_t *gc = ddi_get_soft_state(gicv3_soft_state,
+	    ddi_get_instance(gic_dip));
+
+	VERIFY3P(gc, !=, NULL);
+	VERIFY3S(cpuid, >=, 0);
+	VERIFY3U((uint32_t)cpuid, <, gc->gc_num_redist);
+
+	return (GICR_TYPER_PROCNUM(gc->gc_redist[cpuid].gr_typer));
+}
+
+uint32_t
+gicv3_num_redists(dev_info_t *gic_dip)
+{
+	gicv3_conf_t *gc = ddi_get_soft_state(gicv3_soft_state,
+	    ddi_get_instance(gic_dip));
+
+	VERIFY3P(gc, !=, NULL);
+	return (gc->gc_num_redist);
+}
+
+uint32_t
+gicv3_lpi_idbits(dev_info_t *gic_dip)
+{
+	gicv3_conf_t *gc = ddi_get_soft_state(gicv3_soft_state,
+	    ddi_get_instance(gic_dip));
+
+	VERIFY3P(gc, !=, NULL);
+	return (gc->gc_lpi_idbits);
+}
+
+void
+gicv3_register_its(dev_info_t *gic_dip, dev_info_t *its_dip)
+{
+	gicv3_conf_t *gc = ddi_get_soft_state(gicv3_soft_state,
+	    ddi_get_instance(gic_dip));
+	gicv3_its_node_t *node;
+
+	VERIFY3P(gc, !=, NULL);
+
+	node = kmem_zalloc(sizeof (*node), KM_SLEEP);
+	node->gin_dip = its_dip;
+
+	mutex_enter(&gc->gc_its_list_lock);
+	list_insert_tail(&gc->gc_its_list, node);
+	mutex_exit(&gc->gc_its_list_lock);
+}
+
+void
+gicv3_unregister_its(dev_info_t *gic_dip, dev_info_t *its_dip)
+{
+	gicv3_conf_t *gc = ddi_get_soft_state(gicv3_soft_state,
+	    ddi_get_instance(gic_dip));
+	gicv3_its_node_t *node;
+
+	VERIFY3P(gc, !=, NULL);
+
+	mutex_enter(&gc->gc_its_list_lock);
+	for (node = list_head(&gc->gc_its_list); node != NULL;
+	    node = list_next(&gc->gc_its_list, node)) {
+		if (node->gin_dip == its_dip) {
+			list_remove(&gc->gc_its_list, node);
+			mutex_exit(&gc->gc_its_list_lock);
+			kmem_free(node, sizeof (*node));
+			return;
+		}
+	}
+	mutex_exit(&gc->gc_its_list_lock);
+}
+
 static struct bus_ops gicv3_bus_ops = {
 	.busops_rev = BUSO_REV,
 	.bus_map = i_ddi_bus_map,
 	.bus_map_fault = i_ddi_map_fault,
-	.bus_dma_map = ddi_no_dma_map,
-	.bus_dma_allochdl = ddi_no_dma_allochdl,
+	.bus_dma_allochdl = ddi_dma_allochdl,
+	.bus_dma_freehdl = ddi_dma_freehdl,
+	.bus_dma_bindhdl = ddi_dma_bindhdl,
+	.bus_dma_unbindhdl = ddi_dma_unbindhdl,
+	.bus_dma_flush = ddi_dma_flush,
+	.bus_dma_win = ddi_dma_win,
+	.bus_dma_ctl = ddi_dma_mctl,
 	.bus_ctl = gicv3_bus_ctl,
+	.bus_prop_op = ddi_bus_prop_op,
 	.bus_intr_op = gicv3_intr_ops,
 };
 
