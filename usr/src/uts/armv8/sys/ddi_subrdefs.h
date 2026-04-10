@@ -46,6 +46,16 @@ extern int i_ddi_convert_dma_attr(ddi_dma_attr_t *, dev_info_t *,
     const ddi_dma_attr_t *);
 extern int i_ddi_update_dma_attr(dev_info_t *, ddi_dma_attr_t *);
 extern uint32_t i_ddi_get_intr_pri(dev_info_t *dip, uint_t inumber);
+extern int i_ddi_msi_supported_types(dev_info_t *rdip,
+    ddi_intr_handle_impl_t *hdlp, int *typesp);
+extern int i_ddi_msi_alloc(dev_info_t *rdip,
+    ddi_intr_handle_impl_t *hdlp, void *result);
+extern int i_ddi_msi_free(dev_info_t *rdip,
+    ddi_intr_handle_impl_t *hdlp, void *result);
+extern int i_ddi_msi_enable(dev_info_t *rdip,
+    ddi_intr_handle_impl_t *hdlp, void *result);
+extern int i_ddi_msi_disable(dev_info_t *rdip,
+    ddi_intr_handle_impl_t *hdlp, void *result);
 
 #endif	/* _KERNEL */
 
