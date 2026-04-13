@@ -44,12 +44,14 @@ file path=platform/armv8/kernel/dacf/$(ARCH)/consconfig_dacf mode=0755
 dir  path=platform/armv8/kernel/drv
 dir  path=platform/armv8/kernel/drv/$(ARCH)
 file path=platform/armv8/kernel/drv/$(ARCH)/arm_gtmr
+file path=platform/armv8/kernel/drv/$(ARCH)/efidev
 file path=platform/armv8/kernel/drv/$(ARCH)/efifb
 file path=platform/armv8/kernel/drv/$(ARCH)/gicthree
 file path=platform/armv8/kernel/drv/$(ARCH)/gictwo
 file path=platform/armv8/kernel/drv/$(ARCH)/ns16550a
 file path=platform/armv8/kernel/drv/$(ARCH)/rootnex
 file path=platform/armv8/kernel/drv/$(ARCH)/simple-bus
+file path=platform/armv8/kernel/drv/efidev.conf
 file path=platform/armv8/kernel/drv/ns16550a.conf
 dir  path=platform/armv8/kernel/misc
 dir  path=platform/armv8/kernel/misc/$(ARCH)
@@ -64,10 +66,12 @@ file path=platform/armv8/kernel/tod/$(ARCH)/pl03one mode=0755
 file path=usr/lib/devfsadm/linkmod/SUNW_misc_link_aarch64.so
 file path=usr/share/man/man4d/devfdt.4d
 file path=usr/share/man/man4d/ecam.4d
+file path=usr/share/man/man4d/efidev.4d
 file path=usr/share/man/man4d/simple-bus.4d
 driver name=arm_gtmr alias=arm,armv8-timer
 driver name=devfdt perms="* 0400 root sys"
 driver name=ecam alias=pci-host-ecam-generic
+driver name=efidev perms="* 0666 root sys"
 driver name=efifb
 driver name=gicthree alias=arm,gic-v3
 driver name=gictwo \
