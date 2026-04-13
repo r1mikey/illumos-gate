@@ -1,0 +1,196 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2026 Michael van der Westhuizen
+.\"
+.Dd April 13, 2026
+.Dt EFIDEV 4D
+.Os
+.Sh NAME
+.Nm efidev
+.Nd UEFI variable access pseudo-device driver
+.Sh SYNOPSIS
+.In sys/efiio.h
+.Pp
+.Pa /dev/efi
+.Sh DESCRIPTION
+The
+.Nm
+driver provides
+.Pa /dev/efi ,
+a character device that exposes UEFI Runtime Services variable operations
+to userland.
+It is intended as the kernel interface for tools such as
+.Nm efibootmgr
+and
+.Nm efivar .
+.Pp
+Three ioctls are provided:
+.Bl -tag -width EFIIOC_VAR_NEXT
+.It Dv EFIIOC_VAR_GET
+Read a variable by name and vendor GUID.
+.It Dv EFIIOC_VAR_SET
+Create, modify, or delete a variable.
+Requires the
+.Sy PRIV_SYS_CONFIG
+privilege.
+Setting
+.Fa vi_data_size
+to 0 deletes the variable.
+.It Dv EFIIOC_VAR_NEXT
+Enumerate variable names.
+On the first call, seed the name buffer with an empty
+.Pq NUL-only
+UCS-2 string.
+On subsequent calls, seed with the name returned by the previous call.
+.El
+.Ss Data Structure
+All three ioctls use a pointer to an
+.Vt efi_var_ioc_t
+structure, defined in
+.In sys/efiio.h :
+.Bd -literal -offset indent
+typedef struct efi_var_ioc {
+	uint16_t	*vi_name;
+	size_t		vi_name_size;
+	efi_guid_t	vi_vendor;
+	uint32_t	vi_attrib;
+	void		*vi_data;
+	size_t		vi_data_size;
+} efi_var_ioc_t;
+.Ed
+.Pp
+.Fa vi_name
+points to a UCS-2
+.Pq 16-bit
+encoded, NUL-terminated variable name buffer.
+.Fa vi_name_size
+and
+.Fa vi_data_size
+are in/out fields expressed in bytes: on entry they describe the buffer
+sizes; on return they reflect the actual sizes.
+.Fa vi_vendor
+is the variable's namespace GUID.
+.Fa vi_attrib
+contains the EFI variable attribute bitmask
+.Pq returned by Dv EFIIOC_VAR_GET , supplied for Dv EFIIOC_VAR_SET .
+.Ss Buffer Size Discovery
+If the caller-supplied buffer is too small,
+.Dv EFIIOC_VAR_GET
+and
+.Dv EFIIOC_VAR_NEXT
+update the size field in the
+.Vt efi_var_ioc_t
+structure and return
+.Er EOVERFLOW .
+The caller can then retry with an appropriately sized buffer.
+.Ss Limits
+Variable names are limited to 1024 bytes and variable data to 32768
+bytes.
+These are limits imposed by the driver; the UEFI specification
+does not mandate maximum sizes.
+.Sh IOCTLS
+.Bl -tag -width EFIIOC_VAR_NEXT
+.It Dv EFIIOC_VAR_GET
+.Pp
+Input:
+.Fa vi_name ,
+.Fa vi_name_size ,
+.Fa vi_vendor ,
+.Fa vi_data ,
+.Fa vi_data_size .
+.Pp
+Output:
+.Fa vi_data
+.Pq filled ,
+.Fa vi_data_size
+.Pq actual ,
+.Fa vi_attrib .
+.It Dv EFIIOC_VAR_SET
+.Pp
+Input:
+.Fa vi_name ,
+.Fa vi_name_size ,
+.Fa vi_vendor ,
+.Fa vi_attrib ,
+.Fa vi_data ,
+.Fa vi_data_size .
+.It Dv EFIIOC_VAR_NEXT
+.Pp
+Input:
+.Fa vi_name
+.Pq previous name or empty ,
+.Fa vi_name_size ,
+.Fa vi_vendor .
+.Pp
+Output:
+.Fa vi_name
+.Pq next name ,
+.Fa vi_name_size
+.Pq actual ,
+.Fa vi_vendor .
+.El
+.Sh ERRORS
+The ioctls may return the following errors:
+.Bl -tag -width Er
+.It Er EINVAL
+An argument was invalid
+.Pq NULL name, odd name size, size exceeds limits, unterminated UCS-2 name .
+.It Er ENOENT
+The variable was not found
+.Pq Dv EFIIOC_VAR_GET
+or there are no more variables
+.Pq Dv EFIIOC_VAR_NEXT .
+.It Er EOVERFLOW
+The supplied buffer was too small; the required size has been written
+back to the
+.Vt efi_var_ioc_t
+structure.
+.It Er EPERM
+.Dv EFIIOC_VAR_SET
+was attempted without the
+.Sy PRIV_SYS_CONFIG
+privilege.
+.It Er EACCES
+Firmware rejected the operation due to a security policy violation.
+.It Er EFAULT
+A bad address was supplied.
+.It Er EIO
+Firmware returned an unexpected error.
+.It Er ENOTSUP
+The requested runtime service is not supported by firmware or has previously
+faulted and is now unavailable.
+.It Er EROFS
+The variable is write-protected.
+.It Er ENXIO
+UEFI Runtime Services are not available on this system.
+.El
+.Sh INTERFACE STABILITY
+Volatile
+.Sh SEE ALSO
+.Xr ioctl 2 ,
+.Xr privileges 7
+.Pp
+.Rs
+.%T Unified Extensible Firmware Interface Specification
+.%N Version 2.10
+.%O Section 8.2
+.Re
+.Sh NOTES
+The
+.Pa /dev/efi
+device is only present on systems with UEFI firmware that provides
+Runtime Services.
+Not all UEFI implementations support all variable operations.
+.Pp
+Variable names use UCS-2 encoding
+.Pq 16-bit characters
+but sizes are specified in bytes.
