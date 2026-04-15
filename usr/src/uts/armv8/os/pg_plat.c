@@ -138,3 +138,13 @@ pg_plat_hw_rank(pghw_type_t hw1, pghw_type_t hw2)
 	else
 		return (hw2);
 }
+
+/*
+ * Set the PPTT physical address for topology parsing.
+ *
+ * This is a no-op on FDT platforms.
+ */
+void
+pg_plat_set_pptt(uint64_t pptt_pa __unused)
+{
+}

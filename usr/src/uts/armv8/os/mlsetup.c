@@ -219,6 +219,13 @@ mlsetup(struct regs *rp, struct xboot_info *xbp)
 
 	cpu_vm_data_init(CPU);
 
+	/*
+	 * Pass the PPTT physical address to the PG platform layer before
+	 * pg_cpu_bootstrap() runs.  This comes from dboot via xboot_info.
+	 */
+	extern void pg_plat_set_pptt(uint64_t);
+	pg_plat_set_pptt(xbp->bi_acpi_pptt);
+
 	pg_cpu_bootstrap(CPU);
 
 	/* Get value of boot_ncpus. */
