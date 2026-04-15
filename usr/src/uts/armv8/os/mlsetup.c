@@ -238,11 +238,13 @@ mlsetup(struct regs *rp, struct xboot_info *xbp)
 
 	/*
 	 * Pass firmware table pointers to the lgroup platform layer before
-	 * lgrp_init runs.  These values are all 0 on FDT platforms.
+	 * lgrp_init runs.  These values are all 0 on FDT platforms and
+	 * at least some are non-zero on ACPI platforms.
 	 */
 	extern void lgrp_plat_set_fw_tables(uint64_t, uint64_t,
 	    uint64_t, uint64_t);
-	lgrp_plat_set_fw_tables(0, 0, 0, 0);
+	lgrp_plat_set_fw_tables(xbp->bi_acpi_srat, xbp->bi_acpi_slit,
+	    xbp->bi_acpi_msct, xbp->bi_acpi_pptt);
 
 	/*
 	 * lgroup framework initialization. This must be done prior
