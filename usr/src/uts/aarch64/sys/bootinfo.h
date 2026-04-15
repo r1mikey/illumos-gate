@@ -116,6 +116,10 @@ struct xboot_info {
 	uint64_t		bi_framebuffer;
 	uint64_t		bi_hyp_stubs;
 	uint64_t		bi_cpuinfo;
+	uint64_t		bi_acpi_srat;
+	uint64_t		bi_acpi_slit;
+	uint64_t		bi_acpi_msct;
+	uint64_t		bi_acpi_pptt;
 	xbi_bsvc_uart_type_t	bi_bsvc_uart_type;
 	uint32_t		bi_cpuinfo_cnt;
 	uint32_t		bi_pcierc_cnt;
