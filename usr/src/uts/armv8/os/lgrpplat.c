@@ -55,6 +55,16 @@ lgrp_plat_init(lgrp_init_stages_t stage)
 }
 
 void
+lgrp_plat_set_acpi_tables(uint64_t srat, uint64_t slit, uint64_t msct,
+    uint64_t pptt)
+{
+	/*
+	 * UMA stub: no ACPI table processing.
+	 * Overridden by sbbr/os/lgrpplat.c on ACPI platforms.
+	 */
+}
+
+void
 lgrp_plat_probe(void)
 {
 }

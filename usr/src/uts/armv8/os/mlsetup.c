@@ -115,6 +115,8 @@ mlsetup(struct regs *rp, struct xboot_info *xbp)
 	extern char t0stack[];
 	extern struct classfuncs sys_classfuncs;
 	extern disp_t cpu0_disp;
+	extern void lgrp_plat_set_acpi_tables(uint64_t, uint64_t,
+	    uint64_t, uint64_t);
 
 	/*
 	 * initialize cpu_self
@@ -228,6 +230,13 @@ mlsetup(struct regs *rp, struct xboot_info *xbp)
 	 * values for boot_ncpus, boot_max_ncpus and max_ncpus.
 	 */
 	cpuinfo_bootstrap(CPU, xbp);
+
+	/*
+	 * Pass ACPI table pointers to the lgroup platform layer before
+	 * lgrp_init() runs.  These values will all be 0 on FDT platforms.
+	 */
+	lgrp_plat_set_acpi_tables(xbp->bi_acpi_srat, xbp->bi_acpi_slit,
+	    xbp->bi_acpi_msct, xbp->bi_acpi_pptt);
 
 	/*
 	 * lgroup framework initialization. This must be done prior
