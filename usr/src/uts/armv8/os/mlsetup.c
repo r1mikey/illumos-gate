@@ -232,7 +232,7 @@ mlsetup(struct regs *rp, struct xboot_info *xbp)
 	 * Initialise the PG platform layer before pg_cpu_bootstrap runs.
 	 */
 	extern void pg_plat_set_fw(uint64_t);
-	pg_plat_set_fw(0);
+	pg_plat_set_fw(xbp->bi_acpi_pptt);
 
 	pg_cpu_bootstrap(CPU);
 
