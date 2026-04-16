@@ -71,6 +71,7 @@
 #include <sys/sunddi.h>
 #include <sys/ddifm.h>
 #include <sys/ndifm.h>
+#include <sys/platmod.h>
 #include <sys/fm/util.h>
 #include <sys/hotplug/pci/pcie_hp.h>
 #include <io/pci/pci_tools_ext.h>
@@ -78,6 +79,7 @@
 #include <sys/obpdefs.h>
 
 #include <pcierc.h>
+
 
 /*
  * Helper Macros
@@ -239,6 +241,24 @@ pcierc_attach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 
 	if (cmd == DDI_RESUME) {
 		return (DDI_SUCCESS);
+	}
+
+	/*
+	 * Negotiate PCIe root complex ownership with firmware via
+	 * platform-specific mechanisms (_OSC on ACPI).
+	 *
+	 * This tells the firmware the OS is taking control of this root
+	 * complex, which may cause it to quiesce devices it was managing
+	 * (e.g. xHCI used for USB console).  Not applicable to all firmware
+	 * types.
+	 */
+	if (&plat_pcierc_takeover) {
+		int tr;
+		if ((tr = plat_pcierc_takeover(devi)) != DDI_SUCCESS) {
+			dev_err(devi, CE_WARN,
+			    "Failed to take control of root"
+			    " complex from firmware.");
+		}
 	}
 
 	/*
