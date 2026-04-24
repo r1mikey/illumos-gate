@@ -484,6 +484,25 @@ static uint_t hubd_device_delay = 1000000;
 static uint_t hubd_retry_enumerate = HUBD_PORT_RETRY;
 
 /*
+ * USB 3.0 Port Link State values (xHCI PORTSC PLS field, bits 5-8).
+ * These are encoded into the raw port status word stored in h_port_raw[]
+ * by hubd_status_uniform() via the xHCI root hub get-status handler.
+ */
+#define	HUBD_SS_PLS_U0		0	/* link active */
+#define	HUBD_SS_PLS_DISABLED	4	/* port disabled */
+#define	HUBD_SS_PLS_RXDETECT	5	/* waiting for device connection */
+#define	HUBD_SS_PLS_INACTIVE	6	/* SS.Inactive - needs warm reset */
+#define	HUBD_SS_PLS_POLLING	7	/* link training in progress */
+#define	HUBD_SS_PLS_COMPLIANCE	10	/* compliance mode - needs warm reset */
+
+/*
+ * Warm reset timeout in microseconds.  Warm reset involves a full PHY
+ * reset and link re-training, which takes longer than hot reset.
+ * Linux uses 800ms (HUB_RESET_TIMEOUT); we match that.
+ */
+#define	HUBD_SS_WARM_RESET_DELAY	800000
+
+/*
  * Stale hotremoved device cleanup delay
  */
 #define	HUBD_STALE_DIP_CLEANUP_DELAY	5000000
@@ -529,6 +548,9 @@ static int hubd_set_hub_depth(hubd_t *hubd);
 static int hubd_get_hub_status_words(hubd_t *hubd, uint16_t *status);
 
 static int hubd_reset_port(hubd_t *hubd, usb_port_t port);
+
+static boolean_t hubd_ss_warm_reset_required(hubd_t *hubd, usb_port_t port);
+static int hubd_ss_warm_reset_port(hubd_t *hubd, usb_port_t port);
 
 static int hubd_get_hub_status(hubd_t *hubd);
 
@@ -4277,11 +4299,32 @@ hubd_handle_port_connect(hubd_t *hubd, usb_port_t port)
 
 			/* continue only if port is still connected */
 			if (status & PORT_STATUS_CCS) {
+				/*
+				 * Hot reset failed with device still
+				 * connected.  On a USB 3.0 root hub port
+				 * that is in SS.Inactive, Compliance
+				 * Mode, or stuck in Polling, a hot reset
+				 * can never succeed — try a warm (BH)
+				 * reset instead.
+				 */
+				if (hubd_ss_warm_reset_required(hubd, port)) {
+					USB_DPRINTF_L2(DPRINT_MASK_HOTPLUG,
+					    hubd->h_log_handle,
+					    "port%d: hot reset failed with "
+					    "PLS requiring warm reset, "
+					    "attempting BH reset", port);
+					rval = hubd_ss_warm_reset_port(hubd,
+					    port);
+					if (rval == USB_SUCCESS)
+						goto port_reset_done;
+				}
 				continue;
 			}
 
 			/* carry on regardless */
 		}
+
+port_reset_done:
 
 		/*
 		 * according to USB 2.0 spec section 11.24.2.7.1.2
@@ -4777,6 +4820,247 @@ hubd_status_uniform(hubd_t *hubd, usb_port_t port, uint16_t *status,
 		else
 			*speed = USBA_FULL_SPEED_DEV;
 	}
+}
+
+
+/*
+ * hubd_ss_warm_reset_required:
+ *	Check whether a USB 3.0 SuperSpeed root hub port needs a warm
+ *	(BH) reset.  After a failed hot reset or link training failure,
+ *	the port link state may be SS.Inactive (PLS=6), Compliance
+ *	Mode (PLS=10), or stuck in Polling (PLS=7).  In any of these
+ *	states, only a warm reset can recover the link — hot reset
+ *	will fail indefinitely.
+ *
+ *	Note: Polling is normally a transient state during link training,
+ *	but this function is only called after a hot reset has already
+ *	failed, at which point a stuck Polling state is unrecoverable
+ *	without a warm reset.
+ *
+ *	Returns B_TRUE if warm reset is needed, B_FALSE otherwise.
+ *	Only meaningful for SS root hub ports; always returns B_FALSE
+ *	for USB 2.x hubs and external SS hubs.
+ */
+static boolean_t
+hubd_ss_warm_reset_required(hubd_t *hubd, usb_port_t port)
+{
+	uint16_t pls;
+
+	/* Only applicable to SuperSpeed root hub ports */
+	if (hubd->h_usba_device->usb_port_status < USBA_SUPER_SPEED_DEV)
+		return (B_FALSE);
+	if (!usba_is_root_hub(hubd->h_dip))
+		return (B_FALSE);
+
+	/*
+	 * Extract the Port Link State from the raw xHCI status word.
+	 * The PLS is in bits 5-8 of the raw status, matching the xHCI
+	 * PORTSC encoding.  This was stored by hubd_status_uniform().
+	 */
+	pls = (hubd->h_port_raw[port] >> 5) & 0xF;
+
+	return (pls == HUBD_SS_PLS_INACTIVE || pls == HUBD_SS_PLS_POLLING ||
+	    pls == HUBD_SS_PLS_COMPLIANCE);
+}
+
+
+/*
+ * hubd_ss_warm_reset_port:
+ *	Issue a USB 3.0 Warm Reset (BH Port Reset) on a SuperSpeed root
+ *	hub port.  This resets the PHY and link layer, forcing link
+ *	training to restart from scratch.  Required when the port is in
+ *	SS.Inactive or Compliance Mode, where hot reset cannot recover.
+ *
+ *	Modelled after hubd_reset_port() but uses CFS_BH_PORT_RESET and
+ *	waits for PORT_CHANGE_BHPR with an 800ms timeout (matching Linux's
+ *	HUB_RESET_TIMEOUT) to allow time for full PHY reset and link
+ *	re-training.
+ *
+ *	Caller must hold HUBD_MUTEX.
+ */
+static int
+hubd_ss_warm_reset_port(hubd_t *hubd, usb_port_t port)
+{
+	int	rval;
+	usb_cr_t completion_reason;
+	usb_cb_flags_t cb_flags;
+	usb_port_mask_t port_mask = 1 << port;
+	mblk_t	*data;
+	uint16_t status;
+	uint16_t change;
+	clock_t	delta;
+	boolean_t first;
+
+	USB_DPRINTF_L2(DPRINT_MASK_PORT, hubd->h_log_handle,
+	    "hubd_ss_warm_reset_port: port=%d", port);
+
+	ASSERT(mutex_owned(HUBD_MUTEX(hubd)));
+
+	hubd->h_port_reset_wait |= port_mask;
+
+	mutex_exit(HUBD_MUTEX(hubd));
+
+	if ((rval = usb_pipe_sync_ctrl_xfer(hubd->h_dip,
+	    hubd->h_default_pipe,
+	    HUB_HANDLE_PORT_FEATURE_TYPE,
+	    USB_REQ_SET_FEATURE,
+	    CFS_BH_PORT_RESET,
+	    port,
+	    0,
+	    NULL, 0,
+	    &completion_reason, &cb_flags, 0)) != USB_SUCCESS) {
+		USB_DPRINTF_L2(DPRINT_MASK_PORT, hubd->h_log_handle,
+		    "warm reset port%d failed (%d 0x%x %d)",
+		    port, completion_reason, cb_flags, rval);
+
+		mutex_enter(HUBD_MUTEX(hubd));
+
+		return (USB_FAILURE);
+	}
+
+	mutex_enter(HUBD_MUTEX(hubd));
+
+	USB_DPRINTF_L4(DPRINT_MASK_PORT, hubd->h_log_handle,
+	    "waiting on cv for warm reset completion");
+
+	/*
+	 * Wait for port status change event with 800ms timeout.
+	 * Warm reset involves a full PHY reset and LFPS-based link
+	 * re-training, which can take substantially longer than a
+	 * hot reset.
+	 */
+	delta = drv_usectohz(HUBD_SS_WARM_RESET_DELAY);
+
+	first = B_TRUE;
+	for (;;) {
+		if (delta < 0) {
+			rval = USB_FAILURE;
+			break;
+		}
+
+		if (first == B_FALSE)
+			hubd->h_port_reset_wait |= port_mask;
+		else
+			first = B_FALSE;
+
+		hubd_start_polling(hubd, HUBD_ALWAYS_START_POLLING);
+
+		delta = cv_reltimedwait(&hubd->h_cv_reset_port,
+		    &hubd->h_mutex, delta, TR_CLOCK_TICK);
+		if (delta < 0)
+			hubd->h_port_reset_wait &= ~port_mask;
+
+		hubd_stop_polling(hubd);
+
+		data = NULL;
+
+		/* check status to determine whether warm reset completed */
+		mutex_exit(HUBD_MUTEX(hubd));
+		if ((rval = usb_pipe_sync_ctrl_xfer(hubd->h_dip,
+		    hubd->h_default_pipe,
+		    HUB_GET_PORT_STATUS_TYPE,
+		    USB_REQ_GET_STATUS,
+		    0,
+		    port,
+		    GET_STATUS_LENGTH,
+		    &data, 0,
+		    &completion_reason, &cb_flags, 0)) != USB_SUCCESS) {
+			USB_DPRINTF_L2(DPRINT_MASK_PORT,
+			    hubd->h_log_handle,
+			    "get status port%d failed (%d 0x%x %d)",
+			    port, completion_reason, cb_flags, rval);
+
+			if (data) {
+				freemsg(data);
+				data = NULL;
+			}
+			mutex_enter(HUBD_MUTEX(hubd));
+
+			continue;
+		}
+
+		status = (*(data->b_rptr + 1) << 8) | *(data->b_rptr);
+		change = (*(data->b_rptr + 3) << 8) | *(data->b_rptr + 2);
+
+		freemsg(data);
+
+		hubd_status_uniform(hubd, port, &status, NULL);
+
+		/* continue only if port is still connected */
+		if (!(status & PORT_STATUS_CCS)) {
+			delta = -1;
+			mutex_enter(HUBD_MUTEX(hubd));
+
+			break;
+		}
+
+		if (status & PORT_STATUS_PRS) {
+			USB_DPRINTF_L3(DPRINT_MASK_PORT, hubd->h_log_handle,
+			    "port%d warm reset active", port);
+			mutex_enter(HUBD_MUTEX(hubd));
+
+			continue;
+		} else {
+			USB_DPRINTF_L3(DPRINT_MASK_PORT, hubd->h_log_handle,
+			    "port%d warm reset inactive", port);
+		}
+
+		/*
+		 * Acknowledge warm reset completion (PORT_CHANGE_BHPR).
+		 */
+		if (change & PORT_CHANGE_BHPR) {
+			USB_DPRINTF_L3(DPRINT_MASK_PORT, hubd->h_log_handle,
+			    "clearing feature CFS_C_BH_PORT_RESET");
+
+			if (usb_pipe_sync_ctrl_xfer(hubd->h_dip,
+			    hubd->h_default_pipe,
+			    HUB_HANDLE_PORT_FEATURE_TYPE,
+			    USB_REQ_CLEAR_FEATURE,
+			    CFS_C_BH_PORT_RESET,
+			    port,
+			    0,
+			    NULL, 0,
+			    &completion_reason, &cb_flags, 0) != USB_SUCCESS) {
+				USB_DPRINTF_L2(DPRINT_MASK_PORT,
+				    hubd->h_log_handle,
+				    "clear feature CFS_C_BH_PORT_RESET"
+				    " port%d failed (%d 0x%x %d)",
+				    port, completion_reason, cb_flags, rval);
+			}
+		}
+
+		/*
+		 * A warm reset also generates a hot reset completion;
+		 * acknowledge that too.
+		 */
+		if (change & PORT_CHANGE_PRSC) {
+			USB_DPRINTF_L3(DPRINT_MASK_PORT, hubd->h_log_handle,
+			    "clearing feature CFS_C_PORT_RESET (warm)");
+
+			if (usb_pipe_sync_ctrl_xfer(hubd->h_dip,
+			    hubd->h_default_pipe,
+			    HUB_HANDLE_PORT_FEATURE_TYPE,
+			    USB_REQ_CLEAR_FEATURE,
+			    CFS_C_PORT_RESET,
+			    port,
+			    0,
+			    NULL, 0,
+			    &completion_reason, &cb_flags, 0) != USB_SUCCESS) {
+				USB_DPRINTF_L2(DPRINT_MASK_PORT,
+				    hubd->h_log_handle,
+				    "clear feature CFS_C_PORT_RESET"
+				    " port%d failed (%d 0x%x %d)",
+				    port, completion_reason, cb_flags, rval);
+			}
+		}
+
+		rval = USB_SUCCESS;
+		mutex_enter(HUBD_MUTEX(hubd));
+
+		break;
+	}
+
+	return (rval);
 }
 
 
