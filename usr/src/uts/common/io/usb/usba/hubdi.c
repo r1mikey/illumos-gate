@@ -4051,6 +4051,58 @@ hubd_hotplug_thread(void *arg)
 			}
 
 			/*
+			 * For SuperSpeed root hub ports, check for
+			 * stuck link training without CCS.  When a
+			 * device connects, the xHCI port starts link
+			 * training (PLS=Polling) but CCS is not set
+			 * until training completes (PLS=U0).  If
+			 * training fails, the port stays in Polling,
+			 * SS.Inactive, or Compliance Mode without
+			 * CCS, and the device falls back to the
+			 * Hi-Speed companion port.  A warm (BH) reset
+			 * can recover the SS link and allow SuperSpeed
+			 * enumeration.
+			 */
+			if (!(status & PORT_STATUS_CCS) &&
+			    !was_connected &&
+			    hubd_ss_warm_reset_required(hubd, port)) {
+				USB_DPRINTF_L2(DPRINT_MASK_HOTPLUG,
+				    hubd->h_log_handle,
+				    "port%d: SS link stuck without "
+				    "CCS (raw=0x%x) - attempting "
+				    "warm reset recovery",
+				    port, hubd->h_port_raw[port]);
+
+				if (hubd_ss_warm_reset_port(hubd,
+				    port) == USB_SUCCESS) {
+					/*
+					 * Re-read port status after
+					 * warm reset to see if the
+					 * link came up.
+					 */
+					(void) hubd_determine_port_status(
+					    hubd, port, &status,
+					    &change, NULL,
+					    HUBD_ACK_ALL_CHANGES);
+					if (status & PORT_STATUS_CCS) {
+						online_child |=
+						    (hubd_handle_port_connect(
+						    hubd, port) ==
+						    USB_SUCCESS);
+					} else {
+						USB_DPRINTF_L2(
+						    DPRINT_MASK_HOTPLUG,
+						    hubd->h_log_handle,
+						    "port%d: warm reset "
+						    "completed but no CCS"
+						    " - device may use HS "
+						    "companion port",
+						    port);
+					}
+				}
+			}
+
+			/*
 			 * Check if any port is coming out of suspend
 			 */
 			if (change & PORT_CHANGE_PSSC) {
