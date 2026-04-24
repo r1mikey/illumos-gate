@@ -5363,6 +5363,37 @@ hubd_disable_port(hubd_t *hubd, usb_port_t port)
 		return (USB_FAILURE);
 	}
 
+	/*
+	 * For SuperSpeed root hub ports, clearing PORT_ENABLE leaves the
+	 * port in PLS=Disabled (4).  A disabled SS port cannot detect new
+	 * device connections — it needs to be in PLS=RxDetect (5) to
+	 * listen for LFPS signaling.  Transition the port to RxDetect so
+	 * it can detect future device connections.
+	 *
+	 * The PLS value goes in the upper byte of wIndex; the port number
+	 * goes in the lower byte.  The xHCI root hub set-feature handler
+	 * for CFS_PORT_LINK_STATE writes XHCI_PS_PLS_SET(val) | XHCI_PS_LWS
+	 * to PORTSC.
+	 */
+	if (hubd->h_usba_device->usb_port_status >= USBA_SUPER_SPEED_DEV &&
+	    usba_is_root_hub(hubd->h_dip)) {
+		if (usb_pipe_sync_ctrl_xfer(hubd->h_dip,
+		    hubd->h_default_pipe,
+		    HUB_HANDLE_PORT_FEATURE_TYPE,
+		    USB_REQ_SET_FEATURE,
+		    CFS_PORT_LINK_STATE,
+		    port | (HUBD_SS_PLS_RXDETECT << 8),
+		    0,
+		    NULL, 0,
+		    &completion_reason, &cb_flags, 0) != USB_SUCCESS) {
+			USB_DPRINTF_L2(DPRINT_MASK_PORT,
+			    hubd->h_log_handle,
+			    "set PLS=RxDetect port%d failed "
+			    "(%d 0x%x %d)",
+			    port, completion_reason, cb_flags, rval);
+		}
+	}
+
 	mutex_enter(HUBD_MUTEX(hubd));
 
 	return (USB_SUCCESS);
