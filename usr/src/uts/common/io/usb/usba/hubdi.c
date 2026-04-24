@@ -4285,6 +4285,39 @@ hubd_handle_port_connect(hubd_t *hubd, usb_port_t port)
 	delay(settling_time);
 	mutex_enter(HUBD_MUTEX(hubd));
 
+	/*
+	 * For SuperSpeed root hub ports, check if the link is actively
+	 * training (PLS=Polling).  If so, wait for training to complete
+	 * before attempting a reset, as resetting during link training
+	 * can interfere with the PHY negotiation.  Wait up to 200ms,
+	 * polling every 20ms.  Linux performs a similar debounce when
+	 * it detects the Polling link state.
+	 */
+	if (hubd->h_usba_device->usb_port_status >= USBA_SUPER_SPEED_DEV &&
+	    usba_is_root_hub(hubd->h_dip)) {
+		int poll_retry;
+
+		for (poll_retry = 0; poll_retry < 10; poll_retry++) {
+			uint16_t pls;
+
+			(void) hubd_determine_port_status(hubd, port,
+			    &status, &change, &speed, 0);
+			pls = (hubd->h_port_raw[port] >> 5) & 0xF;
+
+			if (pls != HUBD_SS_PLS_POLLING)
+				break;
+
+			USB_DPRINTF_L3(DPRINT_MASK_HOTPLUG,
+			    hubd->h_log_handle,
+			    "port%d PLS=Polling, waiting for link "
+			    "training (%d)", port, poll_retry);
+
+			mutex_exit(HUBD_MUTEX(hubd));
+			delay(drv_usectohz(20000));	/* 20ms */
+			mutex_enter(HUBD_MUTEX(hubd));
+		}
+	}
+
 	/* calculate 600 ms delay time */
 	time_delay = (6 * drv_usectohz(hubd_device_delay)) / 10;
 
