@@ -2043,8 +2043,8 @@ map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
  * FREE               -        P      N+C    N+C
  * GETPRI             -        C      N      N
  * SETPRI             -        C      N      N
- * ADDISR             -        P      N+C    N+C
- * REMISR             -        P      N+C    N+C
+ * ADDISR             -        C      N+C    N+C
+ * REMISR             -        C      N+C    N+C
  * DUPVEC             -        -      -      N
  * ENABLE             -        C      N+C    N+C
  * DISABLE            -        C      N+C    N+C
@@ -2111,12 +2111,12 @@ i_ddi_intr_get_route(dev_info_t *dip, ddi_intr_op_t op,
 		case DDI_INTROP_NINTRS:		/* fallthrough */
 		case DDI_INTROP_NAVAIL:		/* fallthrough */
 		case DDI_INTROP_ALLOC:		/* fallthrough */
-		case DDI_INTROP_FREE:		/* fallthrough */
-		case DDI_INTROP_ADDISR:		/* fallthrough */
-		case DDI_INTROP_REMISR:
+		case DDI_INTROP_FREE:
 			return (IR_NEXUS);
 		case DDI_INTROP_GETPRI:		/* fallthrough */
 		case DDI_INTROP_SETPRI:		/* fallthrough */
+		case DDI_INTROP_ADDISR:		/* fallthrough */
+		case DDI_INTROP_REMISR:		/* fallthrough */
 		case DDI_INTROP_ENABLE:		/* fallthrough */
 		case DDI_INTROP_DISABLE:	/* fallthrough */
 		case DDI_INTROP_GETCAP:		/* fallthrough */

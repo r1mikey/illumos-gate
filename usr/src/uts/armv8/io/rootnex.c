@@ -1222,22 +1222,21 @@ rootnex_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 		    "for rdip = 0x%p, hdlp = 0x%p, inum = 0x%x\n",
 		    rdip, hdlp, hdlp->ih_inum));
 		break;
-	case DDI_INTROP_ADDISR:		/* fallthrough */
-	case DDI_INTROP_REMISR:
-		break;
 	/*
 	 * Verbs that route to the controller.
 	 */
-	case DDI_INTROP_GETPRI:
-	case DDI_INTROP_SETPRI:
-	case DDI_INTROP_ENABLE:
-	case DDI_INTROP_DISABLE:
-	case DDI_INTROP_GETCAP:
-	case DDI_INTROP_SETCAP:
-	case DDI_INTROP_SETMASK:
-	case DDI_INTROP_CLRMASK:
-	case DDI_INTROP_GETPENDING:
-	case DDI_INTROP_GETTARGET:
+	case DDI_INTROP_GETPRI:		/* fallthrough */
+	case DDI_INTROP_SETPRI:		/* fallthrough */
+	case DDI_INTROP_ADDISR:		/* fallthrough */
+	case DDI_INTROP_REMISR:		/* fallthrough */
+	case DDI_INTROP_ENABLE:		/* fallthrough */
+	case DDI_INTROP_DISABLE:	/* fallthrough */
+	case DDI_INTROP_GETCAP:		/* fallthrough */
+	case DDI_INTROP_SETCAP:		/* fallthrough */
+	case DDI_INTROP_SETMASK:	/* fallthrough */
+	case DDI_INTROP_CLRMASK:	/* fallthrough */
+	case DDI_INTROP_GETPENDING:	/* fallthrough */
+	case DDI_INTROP_GETTARGET:	/* fallthrough */
 	case DDI_INTROP_SETTARGET:
 		DDI_INTR_NEXDBG((CE_CONT, "rootnex_intr_ops: op 0x%x "
 		    "for rdip = 0x%p, hdlp = 0x%p, inum = 0x%x -> controller\n",
