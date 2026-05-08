@@ -1143,26 +1143,24 @@ rootnex_map_handle(ddi_map_req_t *mp)
  *
  * Operations dispatched with a temporary handle are those that are involved
  * in the ALLOC path, namely GETPRI, GETCAP and ALLOC.  Of these, GETCAP can
- * only be sensibly answered by the controller, leaving GETPRI and ALLOC for
- * implementation by the root nexus.  GETPRI uses the resource's
- * `interrupt-priorities' property to retrieve the appropriate priority for
- * a given inum, falling back to a system default (5).  ALLOC is very nearly a
- * no-op for FIXED interrupts, simply echoing the requested number of interrupts
- * back as the count allocated.
+ * only be sensibly answered by the controller, while GETPRI needs to route to
+ * the controller to do shared vector checks, ALLOC for implementation by the
+ * root nexus.  ALLOC is very nearly a no-op for FIXED interrupts, simply
+ * echoing the requested number of interrupts back as the count allocated.
  *
  * Operations dispatched with a full handle that the root nexus is authoritative
- * for are: FREE, SETPRI, ADDISR and REMISR.  The FREE operation is a no-op,
- * given how lightweight the ALLOC operation is.  The SETPRI operation simply
- * sets the requested priority onto the handle after ensuring that the priority
- * is no greater than LOCK_LEVEL.  ADDISR and REMISR run after the framework
- * has already stored/cleared the ISR function pointer and arguments to/from the
- * handle, and serve as notifications of these operations - some platforms may
- * expect controller drivers to manage more state, but on Arm platforms it is
- * expected that platform-level FIXED interrupts use the syspic interface and
- * autovect, so no further processing is required.
+ * for are: FREE, ADDISR and REMISR.  The FREE operation is a no-op,
+ * given how lightweight the ALLOC operation is.  ADDISR and REMISR run after
+ * the framework has already stored/cleared the ISR function pointer and
+ * arguments to/from the handle, and serve as notifications of these
+ * operations - some platforms may expect controller drivers to manage more
+ * state, but on Arm platforms it is expected that platform-level FIXED
+ * interrupts use the syspic interface and autovect, so no further processing
+ * is required.
  *
- * Other FIXED operations (ENABLE, DISABLE, GETCAP, SETCAP, SETMASK, CLRMASK,
- * GETPENDING, GETTARGET and SETTARGET) are routed to the controller.
+ * Other FIXED operations (ENABLE, DISABLE, GETPRI, SETPRI, GETCAP, SETCAP,
+ * SETMASK, CLRMASK, GETPENDING, GETTARGET and SETTARGET) are routed to the
+ * controller.
  *
  * Interrupt operations that do not apply to FIXED interrupts (DUPVEC,
  * BLOCKENABLE, BLOCKDISABLE and GETPOOL) are rejected.
@@ -1224,31 +1222,14 @@ rootnex_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 		    "for rdip = 0x%p, hdlp = 0x%p, inum = 0x%x\n",
 		    rdip, hdlp, hdlp->ih_inum));
 		break;
-	case DDI_INTROP_GETPRI:
-		if (hdlp->ih_pri == 0) {
-			hdlp->ih_pri = i_ddi_get_intr_pri(rdip, hdlp->ih_inum);
-		}
-
-		*(int *)result = hdlp->ih_pri;
-		DDI_INTR_NEXDBG((CE_CONT, "rootnex_intr_ops: GETPRI "
-		    "for rdip = 0x%p, hdlp = 0x%p, inum = 0x%x is 0x%x\n",
-		    rdip, hdlp, hdlp->ih_inum, *(int *)result));
-		break;
-	case DDI_INTROP_SETPRI:
-		DDI_INTR_NEXDBG((CE_CONT, "rootnex_intr_ops: SETPRI "
-		    "for rdip = 0x%p, hdlp = 0x%p, inum = 0x%x, is 0x%x\n",
-		    rdip, hdlp, hdlp->ih_inum, *(int *)result));
-		if (*(int *)result > LOCK_LEVEL)
-			return (DDI_FAILURE);
-
-		hdlp->ih_pri = *(int *)result;
-		break;
 	case DDI_INTROP_ADDISR:		/* fallthrough */
 	case DDI_INTROP_REMISR:
 		break;
 	/*
 	 * Verbs that route to the controller.
 	 */
+	case DDI_INTROP_GETPRI:
+	case DDI_INTROP_SETPRI:
 	case DDI_INTROP_ENABLE:
 	case DDI_INTROP_DISABLE:
 	case DDI_INTROP_GETCAP:

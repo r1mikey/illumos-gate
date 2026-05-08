@@ -2041,8 +2041,8 @@ map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
  * NAVAIL             -        P      N+C    N+C
  * ALLOC              -        P      N+C    N+C
  * FREE               -        P      N+C    N+C
- * GETPRI             -        P      N      N
- * SETPRI             -        P      N      N
+ * GETPRI             -        C      N      N
+ * SETPRI             -        C      N      N
  * ADDISR             -        P      N+C    N+C
  * REMISR             -        P      N+C    N+C
  * DUPVEC             -        -      -      N
@@ -2112,11 +2112,11 @@ i_ddi_intr_get_route(dev_info_t *dip, ddi_intr_op_t op,
 		case DDI_INTROP_NAVAIL:		/* fallthrough */
 		case DDI_INTROP_ALLOC:		/* fallthrough */
 		case DDI_INTROP_FREE:		/* fallthrough */
-		case DDI_INTROP_GETPRI:		/* fallthrough */
-		case DDI_INTROP_SETPRI:		/* fallthrough */
 		case DDI_INTROP_ADDISR:		/* fallthrough */
 		case DDI_INTROP_REMISR:
 			return (IR_NEXUS);
+		case DDI_INTROP_GETPRI:		/* fallthrough */
+		case DDI_INTROP_SETPRI:		/* fallthrough */
 		case DDI_INTROP_ENABLE:		/* fallthrough */
 		case DDI_INTROP_DISABLE:	/* fallthrough */
 		case DDI_INTROP_GETCAP:		/* fallthrough */
@@ -2234,7 +2234,7 @@ i_ddi_intr_ops(dev_info_t *dip, dev_info_t *rdip, ddi_intr_op_t op,
 
 		if (hdlp->ih_private == NULL &&
 		    route == IR_CONTROLLER &&
-		    op == DDI_INTROP_GETCAP) {
+		    (op == DDI_INTROP_GETCAP || op == DDI_INTROP_GETPRI)) {
 			/*
 			 * This is a controller operation that may happen on a
 			 * temporary handle that has no ih_private object.
