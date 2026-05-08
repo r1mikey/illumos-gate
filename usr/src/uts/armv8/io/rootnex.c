@@ -1142,25 +1142,11 @@ rootnex_map_handle(ddi_map_req_t *mp)
  * when the interrupt type is FIXED.
  *
  * Operations dispatched with a temporary handle are those that are involved
- * in the ALLOC path, namely GETPRI, GETCAP and ALLOC.  Of these, GETCAP can
- * only be sensibly answered by the controller, while GETPRI needs to route to
- * the controller to do shared vector checks, ALLOC for implementation by the
- * root nexus.  ALLOC is very nearly a no-op for FIXED interrupts, simply
- * echoing the requested number of interrupts back as the count allocated.
+ * in the ALLOC path, namely GETPRI, GETCAP and ALLOC.
  *
- * Operations dispatched with a full handle that the root nexus is authoritative
- * for are: FREE, ADDISR and REMISR.  The FREE operation is a no-op,
- * given how lightweight the ALLOC operation is.  ADDISR and REMISR run after
- * the framework has already stored/cleared the ISR function pointer and
- * arguments to/from the handle, and serve as notifications of these
- * operations - some platforms may expect controller drivers to manage more
- * state, but on Arm platforms it is expected that platform-level FIXED
- * interrupts use the syspic interface and autovect, so no further processing
- * is required.
- *
- * Other FIXED operations (ENABLE, DISABLE, GETPRI, SETPRI, GETCAP, SETCAP,
- * SETMASK, CLRMASK, GETPENDING, GETTARGET and SETTARGET) are routed to the
- * controller.
+ * Operations dispatched with a full handle are: FREE, ADDISR and REMISR,
+ * ENABLE, DISABLE, GETPRI, SETPRI, GETCAP, SETCAP, SETMASK, CLRMASK,
+ * GETPENDING, GETTARGET and SETTARGET - all are routed to the controller.
  *
  * Interrupt operations that do not apply to FIXED interrupts (DUPVEC,
  * BLOCKENABLE, BLOCKDISABLE and GETPOOL) are rejected.
@@ -1208,6 +1194,9 @@ rootnex_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 		break;
 	/*
 	 * Verbs that route to the controller.
+	 *
+	 * We should never see SETCAP, but forward it anyway since we're not
+	 * supposed to have an opinion at this point in the tree.
 	 */
 	case DDI_INTROP_ALLOC:		/* fallthrough */
 	case DDI_INTROP_FREE:		/* fallthrough */

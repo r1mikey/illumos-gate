@@ -1916,6 +1916,7 @@ gicv3_intr_ops(dev_info_t *dip, dev_info_t *rdip,
 	case DDI_INTROP_SETCAP:		/* fallthrough */
 	case DDI_INTROP_SETMASK:	/* fallthrough */
 	case DDI_INTROP_CLRMASK:
+		/* SETCAP should have been filtered out by routing */
 		DDI_INTR_NEXDBG((CE_CONT, "gicv3_intr_ops: "
 		    "dip 0x%p, hdlp 0x%p, type 0x%x, inum 0x%x, op 0x%x "
 		    "unsupported\n",
