@@ -2227,11 +2227,6 @@ i_ddi_intr_ops(dev_info_t *dip, dev_info_t *rdip, ddi_intr_op_t op,
 	}
 
 	if (hdlp->ih_type == DDI_INTR_TYPE_FIXED) {
-		/* XXXARM: why do we feel we need to do this? */
-		if (hdlp->ih_pri == 0) {
-			hdlp->ih_pri = i_ddi_get_intr_pri(rdip, hdlp->ih_inum);
-		}
-
 		if (hdlp->ih_private == NULL &&
 		    route == IR_CONTROLLER &&
 		    (op == DDI_INTROP_GETCAP || op == DDI_INTROP_GETPRI)) {

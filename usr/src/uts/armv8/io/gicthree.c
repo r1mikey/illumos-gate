@@ -1751,6 +1751,7 @@ gicv3_intr_ops(dev_info_t *dip, dev_info_t *rdip,
 			hdlp->ih_pri = i_ddi_get_intr_pri(rdip, hdlp->ih_inum);
 		}
 
+		ASSERT3U(hdlp->ih_pri, !=, 0);
 		*(int *)result = hdlp->ih_pri;
 		DDI_INTR_NEXDBG((CE_CONT, "gicv3_intr_ops: GETPRI "
 		    "for rdip = 0x%p, hdlp = 0x%p, inum = 0x%x, "
@@ -1796,6 +1797,7 @@ gicv3_intr_ops(dev_info_t *dip, dev_info_t *rdip,
 			return (DDI_FAILURE);
 		}
 
+		ASSERT3U(*(int *)result, !=, 0);
 		hdlp->ih_pri = *(int *)result;
 		break;
 	}
@@ -1827,6 +1829,7 @@ gicv3_intr_ops(dev_info_t *dip, dev_info_t *rdip,
 		    ((sense & 0xff) == 1) ? B_TRUE : B_FALSE;
 		VERIFY3P(gc, !=, NULL);
 		gicv3_config_irq(gc, hdlp->ih_vector, state->si_edge_triggered);
+		ASSERT3U(hdlp->ih_pri, !=, 0);
 		state->si_prio = hdlp->ih_pri;
 
 		DDI_INTR_NEXDBG((CE_CONT, "gicv3_intr_ops: ENABLE "
@@ -1866,6 +1869,7 @@ gicv3_intr_ops(dev_info_t *dip, dev_info_t *rdip,
 		}
 
 		hdlp->ih_vector = intid;
+		ASSERT3U(hdlp->ih_pri, !=, 0);
 
 		DDI_INTR_NEXDBG((CE_CONT, "gicv3_intr_ops: DISABLE "
 		    "dip 0x%p, hdlp 0x%p, type 0x%x, inum 0x%x, op 0x%x, "
