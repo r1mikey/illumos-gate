@@ -1206,25 +1206,11 @@ rootnex_intr_ops(dev_info_t *pdip, dev_info_t *rdip, ddi_intr_op_t intr_op,
 		    "for rdip = 0x%p is 0x%x\n",
 		    intr_op, rdip, *(int *)result));
 		break;
-	case DDI_INTROP_ALLOC:
-		if (hdlp->ih_pri == 0) {
-			hdlp->ih_pri = i_ddi_get_intr_pri(rdip, hdlp->ih_inum);
-		}
-
-		*(int *)result = hdlp->ih_scratch1;
-
-		DDI_INTR_NEXDBG((CE_CONT, "rootnex_intr_ops: ALLOC "
-		    "for rdip = 0x%p, inum = 0x%x, result is 0x%x for 0x%x\n",
-		    rdip, hdlp->ih_inum, *(int *)result, hdlp->ih_scratch1));
-		break;
-	case DDI_INTROP_FREE:
-		DDI_INTR_NEXDBG((CE_CONT, "rootnex_intr_ops: FREE "
-		    "for rdip = 0x%p, hdlp = 0x%p, inum = 0x%x\n",
-		    rdip, hdlp, hdlp->ih_inum));
-		break;
 	/*
 	 * Verbs that route to the controller.
 	 */
+	case DDI_INTROP_ALLOC:		/* fallthrough */
+	case DDI_INTROP_FREE:		/* fallthrough */
 	case DDI_INTROP_GETPRI:		/* fallthrough */
 	case DDI_INTROP_SETPRI:		/* fallthrough */
 	case DDI_INTROP_ADDISR:		/* fallthrough */

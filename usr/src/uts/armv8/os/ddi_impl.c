@@ -2039,8 +2039,8 @@ map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
  * SUPPORTED_TYPES    N        -      -      -
  * NINTRS             -        P      N      N
  * NAVAIL             -        P      N+C    N+C
- * ALLOC              -        P      N+C    N+C
- * FREE               -        P      N+C    N+C
+ * ALLOC              -        C      N+C    N+C
+ * FREE               -        C      N+C    N+C
  * GETPRI             -        C      N      N
  * SETPRI             -        C      N      N
  * ADDISR             -        C      N+C    N+C
@@ -2109,10 +2109,10 @@ i_ddi_intr_get_route(dev_info_t *dip, ddi_intr_op_t op,
 	} else if (hdlp->ih_type == DDI_INTR_TYPE_FIXED) {
 		switch (op) {
 		case DDI_INTROP_NINTRS:		/* fallthrough */
-		case DDI_INTROP_NAVAIL:		/* fallthrough */
-		case DDI_INTROP_ALLOC:		/* fallthrough */
-		case DDI_INTROP_FREE:
+		case DDI_INTROP_NAVAIL:
 			return (IR_NEXUS);
+		case DDI_INTROP_ALLOC:		/* fallthrough */
+		case DDI_INTROP_FREE:		/* fallthrough */
 		case DDI_INTROP_GETPRI:		/* fallthrough */
 		case DDI_INTROP_SETPRI:		/* fallthrough */
 		case DDI_INTROP_ADDISR:		/* fallthrough */
@@ -2229,7 +2229,9 @@ i_ddi_intr_ops(dev_info_t *dip, dev_info_t *rdip, ddi_intr_op_t op,
 	if (hdlp->ih_type == DDI_INTR_TYPE_FIXED) {
 		if (hdlp->ih_private == NULL &&
 		    route == IR_CONTROLLER &&
-		    (op == DDI_INTROP_GETCAP || op == DDI_INTROP_GETPRI)) {
+		    (op == DDI_INTROP_GETCAP ||
+		    op == DDI_INTROP_GETPRI ||
+		    op == DDI_INTROP_ALLOC)) {
 			/*
 			 * This is a controller operation that may happen on a
 			 * temporary handle that has no ih_private object.
