@@ -2024,58 +2024,238 @@ map_interrupt(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp)
 	return (par);
 }
 
+/*
+ * Verb Routing Table
+ *
+ * P = platform   C = controller   N = nexus
+ * x = not supported               - = invalid
+ *
+ * N+C operations resolve via device tree parent walks
+ * so that the nexus can augment operations and use
+ * helpers to invoke the controller operations.
+ *
+ *                    UNKNOWN  FIXED  MSI    MSI-X
+ *                    -------  -----  ---    -----
+ * SUPPORTED_TYPES    N        -      -      -
+ * NINTRS             -        P      N      N
+ * NAVAIL             -        P      N+C    N+C
+ * ALLOC              -        P      N+C    N+C
+ * FREE               -        P      N+C    N+C
+ * GETPRI             -        P      N      N
+ * SETPRI             -        P      N      N
+ * ADDISR             -        P      N+C    N+C
+ * REMISR             -        P      N+C    N+C
+ * DUPVEC             -        -      -      N
+ * ENABLE             -        C      N+C    N+C
+ * DISABLE            -        C      N+C    N+C
+ * BLOCKENABLE        -        -      N+C    N+C
+ * BLOCKDISABLE       -        -      N+C    N+C
+ * GETCAP             -        C      N+C    N+C
+ * SETCAP             -        x      x      x
+ * SETMASK            -        C      N+C    N+C
+ * CLRMASK            -        C      N+C    N+C
+ * GETPENDING         -        C      N+C    N+C
+ * GETTARGET          -        C      C      C
+ * SETTARGET          -        C      C      C
+ * GETPOOL            -        -      C      C
+ *
+ * BLOCKENABLE/BLOCKDISABLE are only supported when the controller has
+ * DDI_INTR_FLAG_BLOCK in its capabilities.  The verbs only make sense
+ * for MSI-X, but are also routed for MSI.
+ *
+ * SETMASK/CLRMASK are only supported when the controller has
+ * DDI_INTR_FLAG_MASKABLE in its capabilities, but a PCI host bridge
+ * may support these for MSI/MSI-X even if the underlying MSI controller
+ * does not.
+ *
+ * GETPENDING is only supported when the controller has DDI_INTR_FLAG_PENDING in
+ * its capabilities. For MSI/MSI-X interrupts routed through a PCI host bridge,
+ * this may be supported by the host bridge even if the underlying MSI
+ * controller does not support it.
+ *
+ * SETCAP is unused through the tree and implementations should simply return
+ * DDI_ENOTSUP for this operation.  The framework does this so that
+ * implementations don't need to.
+ *
+ * ADDISR/REMISR are effectively unused because DDI does the work one would
+ * expect them to do (stores/clears the handler and arguments). The operations
+ * are more of a notification that this has happened and could be used to
+ * maintain an incredibly complex cascaded controller.
+ *
+ * GETPOOL is unique to MSI/MSI-X, and is the integration point for Interrupt
+ * Resource Management.
+ *
+ * DUPVEC is unique to MSI-X.
+ */
+
+typedef enum {
+	IR_INVALID	= 0,
+	IR_UNSUPPORTED	= 1,
+	IR_NEXUS	= 2,
+	IR_CONTROLLER	= 3,
+} i_ddi_introp_route_t;
+
+static i_ddi_introp_route_t
+i_ddi_intr_get_route(dev_info_t *dip, ddi_intr_op_t op,
+    ddi_intr_handle_impl_t *hdlp)
+{
+	if (dip == NULL || hdlp == NULL)
+		return (IR_INVALID);
+
+	if (hdlp->ih_type == DDI_INTR_TYPE_UNKNOWN) {
+		if (op == DDI_INTROP_SUPPORTED_TYPES)
+			return (IR_NEXUS);
+		return (IR_UNSUPPORTED);
+	} else if (hdlp->ih_type == DDI_INTR_TYPE_FIXED) {
+		switch (op) {
+		case DDI_INTROP_NINTRS:		/* fallthrough */
+		case DDI_INTROP_NAVAIL:		/* fallthrough */
+		case DDI_INTROP_ALLOC:		/* fallthrough */
+		case DDI_INTROP_FREE:		/* fallthrough */
+		case DDI_INTROP_GETPRI:		/* fallthrough */
+		case DDI_INTROP_SETPRI:		/* fallthrough */
+		case DDI_INTROP_ADDISR:		/* fallthrough */
+		case DDI_INTROP_REMISR:
+			return (IR_NEXUS);
+		case DDI_INTROP_ENABLE:		/* fallthrough */
+		case DDI_INTROP_DISABLE:	/* fallthrough */
+		case DDI_INTROP_GETCAP:		/* fallthrough */
+		case DDI_INTROP_SETMASK:	/* fallthrough */
+		case DDI_INTROP_CLRMASK:	/* fallthrough */
+		case DDI_INTROP_GETPENDING:	/* fallthrough */
+		case DDI_INTROP_GETTARGET:	/* fallthrough */
+		case DDI_INTROP_SETTARGET:
+			return (IR_CONTROLLER);
+		default:
+			return (IR_UNSUPPORTED);
+		}
+	} else if (DDI_INTR_IS_MSI_OR_MSIX(hdlp->ih_type)) {
+		switch (op) {
+		/*
+		 * Nexus-only operations
+		 */
+		case DDI_INTROP_NINTRS:		/* fallthrough */
+		case DDI_INTROP_GETPRI:		/* fallthrough */
+		case DDI_INTROP_SETPRI:
+			return (IR_NEXUS);
+		/*
+		 * Nexus+controller operations
+		 */
+		case DDI_INTROP_NAVAIL:		/* fallthrough */
+		case DDI_INTROP_ALLOC:		/* fallthrough */
+		case DDI_INTROP_FREE:		/* fallthrough */
+		case DDI_INTROP_ADDISR:		/* fallthrough */
+		case DDI_INTROP_REMISR:		/* fallthrough */
+		case DDI_INTROP_ENABLE:		/* fallthrough */
+		case DDI_INTROP_DISABLE:	/* fallthrough */
+		case DDI_INTROP_BLOCKENABLE:	/* fallthrough */
+		case DDI_INTROP_BLOCKDISABLE:	/* fallthrough */
+		case DDI_INTROP_GETCAP:		/* fallthrough */
+		case DDI_INTROP_SETMASK:	/* fallthrough */
+		case DDI_INTROP_CLRMASK:	/* fallthrough */
+		case DDI_INTROP_GETPENDING:
+			return (IR_NEXUS);
+		/*
+		 * Controller-only operations
+		 */
+		case DDI_INTROP_GETTARGET:	/* fallthrough */
+		case DDI_INTROP_SETTARGET:	/* fallthrough */
+		case DDI_INTROP_GETPOOL:
+			return (IR_CONTROLLER);
+		default:
+			if (op == DDI_INTROP_DUPVEC &&
+			    hdlp->ih_type == DDI_INTR_TYPE_MSIX)
+				return (IR_NEXUS);	/* MSI-X nexus only */
+			return (IR_UNSUPPORTED);
+		}
+	}
+
+	return (IR_UNSUPPORTED);
+}
+
 int
 i_ddi_intr_ops(dev_info_t *dip, dev_info_t *rdip, ddi_intr_op_t op,
     ddi_intr_handle_impl_t *hdlp, void * result)
 {
-	dev_info_t	*pdip = ddi_get_parent(dip);
-	int		ret = DDI_FAILURE;
+	dev_info_t		*pdip;
+	int			ret;
+	i_ddi_introp_route_t	route;
+	ihdl_plat_t		*priv;
+	boolean_t		priv_owned = B_FALSE;
 
 	ASSERT(RW_WRITE_HELD(&hdlp->ih_rwlock));
+	ret = DDI_FAILURE;
+	pdip = NULL;
 
-	/*
-	 * If we don't know the interrupt type yet, we can't tell which path
-	 * it must take to an interrupt controller.
-	 *
-	 * These are, by definition, in the group of verbs that operate on the
-	 * system, and are passed up the device tree.
-	 *
-	 * It is in fact, true that we cannot try to map an interrupt that
-	 * has not been configured even this far.
-	 */
-	if (hdlp->ih_type == DDI_INTR_TYPE_UNKNOWN) {
-		if (pdip == NULL)
-			return (DDI_FAILURE);
-
-		return (process_intr_ops(pdip, rdip, op, hdlp, result));
-	} else if (hdlp->ih_type == DDI_INTR_TYPE_FIXED) {
-		if (hdlp->ih_pri == 0)
-			hdlp->ih_pri = i_ddi_get_intr_pri(rdip, hdlp->ih_inum);
+	if ((route = i_ddi_intr_get_route(dip, op, hdlp)) == IR_INVALID) {
+		dev_err(dip, CE_WARN,
+		    "%s%d: no interrupt route for %s%d, op 0x%x, inum 0x%x",
+		    ddi_node_name(dip), ddi_get_instance(dip),
+		    ddi_node_name(rdip), ddi_get_instance(rdip),
+		    op, hdlp->ih_inum);
+		goto done;
 	}
 
-	/*
-	 * These operations are verbs specific per-interrupt controller (or,
-	 * in fact, a hierarchy of them in the case of, for eg, GPIO), map the
-	 * handle onto its interrupt parent and call it to perform any
-	 * necessary programming.
-	 *
-	 * Other operations are verbs acting upon the system itself, and
-	 * follow the device tree to the root nexus.
-	 *
-	 * For MSI/MSI-X, ADDISR/REMISR/GETTARGET/SETTARGET route through
-	 * map_msi() directly to the MSI controller.  ALLOC/FREE and
-	 * ENABLE/DISABLE are handled by the PCI nexus (pci_common_intr_ops)
-	 * which performs PCI-level setup/register programming and then calls
-	 * i_ddi_msi_alloc/free/enable/disable to reach the MSI controller.
-	 *
-	 * For FIXED, controller-verbs route through map_interrupt() to
-	 * the interrupt domain, and ALLOC/FREE pass up the device tree.
-	 */
-	switch (op) {
-	case DDI_INTROP_ADDISR:
-	case DDI_INTROP_REMISR:
-	case DDI_INTROP_GETTARGET:
-	case DDI_INTROP_SETTARGET:
+	if (route == IR_UNSUPPORTED) {
+		DDI_INTR_IMPLDBG((CE_CONT, "i_ddi_intr_ops: unsupported route "
+		    "for dip 0x%p (%s%d), rdip 0x%p (%s%d), "
+		    "op 0x%x, inum 0x%x\n",
+		    dip, ddi_node_name(dip), ddi_get_instance(dip),
+		    rdip, ddi_node_name(rdip), ddi_get_instance(rdip),
+		    op, hdlp->ih_inum));
+		ret = DDI_ENOTSUP;
+		goto done;
+	}
+
+	if (hdlp->ih_type == DDI_INTR_TYPE_UNKNOWN) {
+		VERIFY3U(route, ==, IR_NEXUS);
+		if ((pdip = ddi_get_parent(dip)) == NULL) {
+			DDI_INTR_IMPLDBG((CE_CONT,
+			    "i_ddi_intr_ops: %s%d: no parent node (looking past"
+			    " root?) for rdip %s%d, op 0x%x\n",
+			    ddi_node_name(dip), ddi_get_instance(dip),
+			    ddi_node_name(rdip), ddi_get_instance(rdip), op));
+			return (DDI_FAILURE);
+		}
+
+		ret = process_intr_ops(pdip, rdip, op, hdlp, result);
+		DDI_INTR_IMPLDBG((CE_CONT, "i_ddi_intr_ops: %s%d result 0x%x "
+		    "for op 0x%x on rdip %s%d\n",
+		    ddi_node_name(dip), ddi_get_instance(dip), *(int *)result,
+		    op, ddi_node_name(rdip), ddi_get_instance(rdip)));
+		goto done;
+	}
+
+	if (hdlp->ih_type == DDI_INTR_TYPE_FIXED) {
+		/* XXXARM: why do we feel we need to do this? */
+		if (hdlp->ih_pri == 0) {
+			hdlp->ih_pri = i_ddi_get_intr_pri(rdip, hdlp->ih_inum);
+		}
+
+		if (hdlp->ih_private == NULL &&
+		    route == IR_CONTROLLER &&
+		    op == DDI_INTROP_GETCAP) {
+			/*
+			 * This is a controller operation that may happen on a
+			 * temporary handle that has no ih_private object.
+			 *
+			 * In particular, this condition holds when the
+			 * handle itself is being allocated.
+			 *
+			 * Rather than special-casing all of the lookup code,
+			 * just temporarily put an object in place.
+			 */
+			i_ddi_alloc_intr_phdl(hdlp);
+			priv_owned = B_TRUE;
+			DDI_INTR_IMPLDBG((CE_CONT, "i_ddi_intr_ops: %s%d "
+			    "allocated temporary phdl for "
+			    "op 0x%x on rdip %s%d\n",
+			    ddi_node_name(dip), ddi_get_instance(dip),
+			    op, ddi_node_name(rdip), ddi_get_instance(rdip)));
+		}
+	}
+
+	if (route == IR_CONTROLLER) {
 		if (DDI_INTR_IS_MSI_OR_MSIX(hdlp->ih_type)) {
 			if ((pdip = map_msi(dip, hdlp)) == NULL) {
 				dev_err(dip, CE_WARN, "could not find "
@@ -2083,69 +2263,30 @@ i_ddi_intr_ops(dev_info_t *dip, dev_info_t *rdip, ddi_intr_op_t op,
 				goto done;
 			}
 		} else {
-			/*
-			 * FIXED: determine the interrupt domain via
-			 * interrupt-map / interrupt-parent.
-			 */
+			ASSERT3U(hdlp->ih_type, ==, DDI_INTR_TYPE_FIXED);
 			if ((pdip = map_interrupt(dip, hdlp)) == NULL) {
 				dev_err(dip, CE_WARN, "could not find "
 				    "interrupt domain");
 				goto done;
 			}
 		}
-		break;
-	case DDI_INTROP_ENABLE:
-	case DDI_INTROP_DISABLE:
-	case DDI_INTROP_BLOCKENABLE:
-	case DDI_INTROP_BLOCKDISABLE:
-		/*
-		 * For MSI/MSI-X, ENABLE/DISABLE flow through the PCI
-		 * nexus (pci_common_intr_ops) which programs the PCI
-		 * MSI/MSI-X registers and then calls i_ddi_msi_enable/
-		 * disable to reach the MSI controller.
-		 * For FIXED, route through map_interrupt().
-		 */
-		if (!DDI_INTR_IS_MSI_OR_MSIX(hdlp->ih_type)) {
-			if ((pdip = map_interrupt(dip, hdlp)) == NULL) {
-				dev_err(dip, CE_WARN, "could not find "
-				    "interrupt domain");
-				goto done;
-			}
+
+	} else {
+		VERIFY3U(route, ==, IR_NEXUS);
+		if ((pdip = ddi_get_parent(dip)) == NULL) {
+			dev_err(dip, CE_WARN, "bus walk passed root node");
+			goto done;
 		}
-		break;
 	}
 
 	ret = process_intr_ops(pdip, rdip, op, hdlp, result);
+	if (route == IR_CONTROLLER) {
+		ndi_rele_devi(pdip);
+	}
 
 done:
 	/*
-	 * Operations which were mapped toward an interrupt controller must
-	 * now release their hold on the controller.
-	 */
-	switch (op) {
-	case DDI_INTROP_ADDISR:
-	case DDI_INTROP_REMISR:
-	case DDI_INTROP_GETTARGET:
-	case DDI_INTROP_SETTARGET:
-		if (pdip != NULL)
-			ndi_rele_devi(pdip);
-		break;
-	case DDI_INTROP_ENABLE:
-	case DDI_INTROP_DISABLE:
-	case DDI_INTROP_BLOCKENABLE:
-	case DDI_INTROP_BLOCKDISABLE:
-		if (!DDI_INTR_IS_MSI_OR_MSIX(hdlp->ih_type) &&
-		    pdip != NULL)
-			ndi_rele_devi(pdip);
-		break;
-	}
-
-	/*
-	 * The unit interrupt descriptor in the platform private data is
-	 * specific to a single pass of FIXED interrupt mapping and must
-	 * be cleared on the way back down the tree.
-	 *
-	 * For FIXED interrupts, ih_vector is also transient (re-derived
+	 * For FIXED interrupts, ih_vector is transient (re-derived
 	 * each call via map_interrupt/unitintr).
 	 *
 	 * For MSI/MSI-X, ih_vector is the LPI INTID set during ENABLE
@@ -2153,13 +2294,27 @@ done:
 	 * the platform private data are persistent for the handle's
 	 * lifetime - do not clear them here.
 	 */
-	if (!DDI_INTR_IS_MSI_OR_MSIX(hdlp->ih_type))
+	if (hdlp->ih_type == DDI_INTR_TYPE_FIXED) {
 		hdlp->ih_vector = 0;
+	}
 
-	ihdl_plat_t *priv = hdlp->ih_private;
-	if (priv != NULL) {
+	/*
+	 * The unit interrupt descriptor in the platform private data is
+	 * specific to a single pass of FIXED interrupt mapping and must
+	 * be cleared on the way back down the tree.
+	 */
+	if ((priv = hdlp->ih_private) != NULL) {
 		i_ddi_free_unitintr(priv->ip_unitintr);
 		priv->ip_unitintr = NULL;
+	}
+
+	if (priv_owned) {
+		i_ddi_free_intr_phdl(hdlp);
+		DDI_INTR_IMPLDBG((CE_CONT, "i_ddi_intr_ops: %s%d "
+		    "freed temporary phdl for "
+		    "op 0x%x on rdip %s%d\n",
+		    ddi_node_name(dip), ddi_get_instance(dip),
+		    op, ddi_node_name(rdip), ddi_get_instance(rdip)));
 	}
 
 	return (ret);
