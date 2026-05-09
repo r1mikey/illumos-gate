@@ -619,7 +619,7 @@ MISC_KMODS	+= usba usba10 usbs49_fw
 #MISC_KMODS	+= bootdev
 #MISC_KMODS	+= dadk
 #MISC_KMODS	+= gda
-#MISC_KMODS	+= hpcsvc
+MISC_KMODS	+= hpcsvc
 
 MISC_KMODS	+= klmmod klmops
 
