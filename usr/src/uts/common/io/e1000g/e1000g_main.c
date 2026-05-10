@@ -758,7 +758,12 @@ e1000g_regs_map(struct e1000g *Adapter)
 		if (rnumber < 0) {
 			E1000G_DEBUGLOG_0(Adapter, CE_WARN,
 			    "No io space is found");
+#if defined(__aarch64__)
+			hw->io_base = 0;
+			break;
+#else
 			goto regs_map_fail;
+#endif
 		}
 
 		/* get io space size */
@@ -776,7 +781,12 @@ e1000g_regs_map(struct e1000g *Adapter)
 		    &osdep->io_reg_handle)) != DDI_SUCCESS) {
 			E1000G_DEBUGLOG_0(Adapter, CE_WARN,
 			    "ddi_regs_map_setup for io space failed");
+#if defined(__aarch64__)
+			hw->io_base = 0;
+			break;
+#else
 			goto regs_map_fail;
+#endif
 		}
 		break;
 	default:

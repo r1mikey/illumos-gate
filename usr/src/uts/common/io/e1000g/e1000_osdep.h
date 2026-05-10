@@ -225,7 +225,8 @@ struct e1000g_osdep {
 #define	E1000_MUTEX_TRYLOCK(mutex)	mutex_tryenter(mutex)
 #define	E1000_MUTEX_UNLOCK(mutex)	mutex_exit(mutex)
 
-#ifdef __sparc	/* on SPARC, use only memory-mapped routines */
+#if defined(__sparc) || defined(__aarch64__)
+/* on SPARC and Arm, use only memory-mapped routines */
 #define	E1000_WRITE_REG_IO	E1000_WRITE_REG
 #else	/* on x86, use port io routines */
 #define	E1000_WRITE_REG_IO(a, reg, val)	{ \
@@ -236,7 +237,7 @@ struct e1000g_osdep {
 	    (uint32_t *)((a)->io_base + 4), \
 	    val); \
 }
-#endif	/* __sparc */
+#endif	/* __sparc || __aarch64__ */
 
 #ifdef __cplusplus
 }
