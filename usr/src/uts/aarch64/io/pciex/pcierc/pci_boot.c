@@ -27,105 +27,94 @@
  */
 
 /*
- * PCI bus enumeration and device programming are done in several passes. The
- * following is a high level overview of this process.
+ * PCI bus enumeration and device programming.  Two paths are available,
+ * selected by the pci_boot_trust_firmware tuneable (default: trust).
+ *
+ * Reallocate path (pci_boot_trust_firmware == 0)
+ * -----------------------------------------------
+ * Enumerates in two passes, then reprograms all bridges and BARs
+ * from scratch using the busra allocator.
  *
  * pci_enumerate()
- *				The main entry point to PCI bus enumeration is
- *				pci_enumerate(). This function is invoked
- *				twice, once to set up the PCI portion of the
- *				device tree, and then a second time to
- *				reprogram devices.
+ *				The main entry point to PCI bus enumeration.
  *   pci_setup_tree()
- *	enumerate_bus_devs(CONFIG_INFO)
- *	    <foreach bus>
+ *	enumerate_bus_devs(CONFIG_INFO)		[recursive]
+ *	    <foreach dev/func on bus>
  *	        process_devfunc(CONFIG_INFO)
  *	            <set up most device properties>
- *				The next stage is to enumerate the bus and set
- *				up the bulk of the properties for each device.
- *				This is where the generic properties such as
- *				'device-id' are created.
+ *				Enumerate the bus and set up the bulk of the
+ *				properties for each device.
  *		    <if PPB device>
- *			add_ppb_props()
- *				For a PCI-to-PCI bridge (ppb) device, any
+ *		    add_ppb_props(CONFIG_INFO)
+ *				For a PCI-to-PCI bridge (ppb) device, firmware
  *				memory ranges for IO, memory or pre-fetchable
- *				memory that have been programmed by the system
- *				firmware (BIOS/EFI) are retrieved and stored in
- *				bus-specific lists (pci_bus_res[bus].io_avail,
- *				mem_avail and pmem_avail). The contents of
- *				these lists are used to set the initial 'ranges'
- *				property on the ppb device. Later, as children
- *				are found for this bridge, resources will be
- *				removed from these avail lists as necessary.
- *
- *				If the IO or memory ranges have not been
- *				programmed by this point, indicated by the
- *				appropriate bit in the control register being
- *				unset or, in the memory case only, by the base
- *				address being 0, then the range is explicitly
- *				disabled here by setting base > limit for
- *				the resource. Since a zero address is
- *				technically valid for the IO case, the base
- *				address is not checked for IO.
- *
- *				This is an initial pass so the ppb devices will
- *				still be reprogrammed later in fix_ppb_res().
- *		    <else>
- *			<add to list of non-PPB devices for the bus>
- *				Any non-PPB device on the bus is recorded in a
- *				bus-specific list, to be set up later.
+ *				memory are retrieved and recorded for the
+ *				initial 'ranges' property.  These are
+ *				informational only -- all bridges are
+ *				reprogrammed from scratch.
+ *		    enumerate_bus_devs(CONFIG_INFO)  [recurse into secbus]
+ *		    <add to list of devices for the bus>
  *		    add_reg_props(CONFIG_INFO)
- *				The final step in this phase is to add the
- *				initial 'reg' and 'assigned-addresses'
- *				properties to all devices. At the same time,
- *				any IO or memory ranges which have been
- *				assigned to the bus are moved from the avail
- *				list to the corresponding used one.
- * ...
- *				The second bus enumeration pass is to take care
- *				of any devices that were not set up by the
- *				system firmware. These devices were flagged
- *				during the first pass. This pass is bracketed
- *				by the same pci fix application and removal as
- *				the first.
+ *				Record BAR sizes in mem_size/io_size/mem64_size.
+ *	    <accumulate bus requirements on unwind>
+ *				Bottom-up: compute per-bus mem_required,
+ *				io_required, mem64_required, num_hp_bridges
+ *				from local BAR sizes + child bridge needs.
+ *
  *   pci_reprogram()
- *	pci_prd_root_complex_iter()
- *				The platform is asked to tell us of all root
- *				complexes that it knows about (e.g. using the
- *				_BBN method via ACPI). This will include buses
- *				that we've already discovered and those that we
- *				potentially haven't. Anything that has not been
- *				previously discovered (or inferred to exist) is
- *				then added to the system.
  *	<foreach ROOT bus>
  *	    populate_bus_res()
- *				Find resources associated with this root bus
- *				based on what the platform provides through the
- *				pci platform interfaces defined in
- *				sys/plat/pci_prd.h. On i86pc this is driven by
- *				ACPI and BIOS tables.
- *	<foreach bus>
- *	    fix_ppb_res()
- *				Reprogram pci(e) bridges.
- *	    enumerate_bus_devs(CONFIG_NEW)
- *		<foreach non-PPB device on the bus>
- *		    add_reg_props(CONFIG_NEW)
- *				Using the list of non-PPB devices on the bus
- *				which was assembled during the first pass, add
- *				or update the 'reg' and 'assigned-address'
- *				properties for these devices. Assign and program
- *				resources into the device. This can result in
- *				these properties changing from their previous
- *				values.
- *	<foreach bus>
- *	    add_bus_available_prop()
- *				Finally, the 'available' properties is set on
- *				each device, representing that device's final
- *				unallocated (available) IO and memory ranges.
+ *				Seed RC busra resource maps from
+ *				the RC's "ranges" and "bus-range" properties.
+ *	    allocate_all_bridges()
+ *				Compute global per-hotplug-bridge spare, then
+ *				recursively allocate bridge windows and
+ *				reprogram device BARs in a single pass.
+ *				For each bus (root or behind a bridge):
+ *		    reprogram_bus_devs()
+ *				Drain the devlist, assigning device BARs via
+ *				ndi_ra_alloc() from the bus dip's busra map.
+ *		    allocate_bridge_resources()	[recurse into children]
+ *				Program bridge window, seed child busra,
+ *				then reprogram + recurse on the child bus.
+ *
+ * Trust-firmware path (default)
+ * ------------------------------
+ * Single-pass enumeration that accepts firmware (UEFI/EDK2) resource
+ * assignments.  Bridge windows and device BARs are read (not written)
+ * and claimed from busra so that the "available" property is maintained
+ * and HPC drivers see correctly pre-seeded resource maps.
+ *
+ *   pci_trust_firmware()
+ *	<foreach ROOT bus>
+ *	    populate_bus_res()
+ *				Same as reallocate path.
+ *	    <exclude low addresses>
+ *	    add_bus_range_prop()
+ *	enumerate_bus_devs(CONFIG_TRUST)	[recursive]
+ *	    <foreach dev/func on bus>
+ *	        process_devfunc(CONFIG_TRUST)
+ *	            <set up device properties, set_devpm_d0>
+ *		    <if PPB device>
+ *		    add_ppb_props(CONFIG_TRUST)
+ *				Read firmware bridge windows, claim from
+ *				parent busra via ALLOC_SPECIFIED, seed
+ *				child busra maps.  No config writes.
+ *		    enumerate_bus_devs(CONFIG_TRUST) [recurse into secbus]
+ *		    add_reg_props(CONFIG_TRUST)
+ *				BAR probe (write-ones/read/restore) to get
+ *				sizes, then claim firmware addresses from
+ *				busra.  No BAR reprogramming.
+ *	    <requirement accumulation skipped>
+ *	    <devlist build skipped>
+ *
+ *  The busra framework maintains the "available" property on each dip
+ *  automatically as resources are allocated and freed -- no separate
+ *  add_bus_available_prop() pass is needed.  The pci_resource_setup()
+ *  call in HPC drivers becomes a no-op since maps are pre-seeded.
  */
 
 #include <sys/ddi.h>
-#include <sys/memlist.h>
 #include <sys/obpdefs.h>
 #include <sys/sunddi.h>
 #include <sys/sunndi.h>
@@ -134,40 +123,32 @@
 #include <sys/pci.h>
 #include <sys/pci_cfgacc.h>
 #include <sys/pci_impl.h>
-#include <sys/pci_memlist.h>
 #include <sys/pci_props.h>
 #include <sys/pcie_impl.h>
 #include <sys/plat/pci_prd.h>
+#include <sys/pci_bar_relocate.h>
 
-#define	dcmn_err	if (pci_boot_debug != 0) cmn_err
+#define	ddev_err	if (pci_boot_debug != 0) dev_err
 #define	bus_debug(bus)	(pci_boot_debug != 0 && pci_debug_bus_start != -1 && \
 	    pci_debug_bus_end != -1 && (bus) >= pci_debug_bus_start && \
 	    (bus) <= pci_debug_bus_end)
-#define	dump_memlists(pbr, tag, bus)				\
-	if (bus_debug((bus))) dump_memlists_impl(pbr, (tag), (bus))
-#define	MSGHDR		"!pci_boot: %s[%02x/%02x/%x]: "
+#define	MSGHDR		"pci_boot: %s[%02x/%02x/%x]: "
 
 typedef enum {
 	CONFIG_INFO,
-	CONFIG_UPDATE,
 	CONFIG_NEW,
+	CONFIG_TRUST,
 } config_phase_t;
 
+/*
+ * Minimum bridge window alignments per the PCIe spec (Type 1 header
+ * base/limit register encoding).  These are also the smallest useful
+ * allocation units, so we use them as the low-address exclusion size
+ * (to keep address 0 out of the allocator) and as the bound base for
+ * 32-bit non-prefetchable MEM allocations.
+ */
 #define	PPB_IO_ALIGNMENT	0x1000		/* 4K aligned */
 #define	PPB_MEM_ALIGNMENT	0x100000	/* 1M aligned */
-
-/* round down _at least once_ to nearest power of two */
-static inline uint_t
-lowerp2(uint_t align)
-{
-	uint_t i = 0;
-
-	while (align >>= 1) {
-		i++;
-	}
-
-	return (1 << i);
-}
 
 /*
  * Determining the size of a PCI BAR is done by writing all 1s to the base
@@ -183,7 +164,7 @@ lowerp2(uint_t align)
 typedef enum {
 	RES_IO,
 	RES_MEM,
-	RES_PMEM
+	RES_MEM64
 } mem_res_t;
 
 /*
@@ -213,110 +194,319 @@ struct pci_devfunc {
 };
 
 static uchar_t max_dev_pci = PCI_MAX_DEVICES;
-int pci_boot_maxbus;
 
+/*
+ * Debugging aid: set pci_boot_debug to non-zero to enable debug messages, and
+ * optionally set pci_debug_bus_start and pci_debug_bus_end to restrict messages
+ * to a specific bus or bus range.
+ *
+ * Do this using /etc/system, adding or modifying lines like the following:
+ *   set pcierc:pci_boot_debug=1
+ *   set pcierc:pci_debug_bus_start=42
+ *   set pcierc:pci_debug_bus_end=84
+ */
 int pci_boot_debug = 0;
 int pci_debug_bus_start = 0;
 int pci_debug_bus_end = PCI_MAX_BUS_NUM - 1;
+
+/*
+ * Trust-firmware mode: accept PCI resource assignments made by firmware
+ * instead of reprogramming bridges and BARs from scratch.
+ *
+ * When enabled (non-zero, the default), pci_enumerate walks the bus
+ * tree once, reads the firmware-programmed bridge windows and device
+ * BARs, claims them from the busra resource maps, and sets devinfo
+ * properties - but does not write config space except for the
+ * non-destructive BAR-sizing probe (write-ones/read/restore).
+ *
+ * Set to 0 via /etc/system to revert to full reallocation:
+ *   set pcierc:pci_boot_trust_firmware=0
+ *
+ * Per-segment override: set the "pci-boot-reallocate" property on
+ * the root nexus node as an integer array of PCI segment group
+ * numbers (from "linux,pci-domain") whose root complexes should use
+ * the reallocation path regardless of the global tuneable.
+ *
+ * When pci-boot-reallocate has one array entry and that entry is
+ * 0xffffffff (UINT32_MAX), then the effect is the same as tuning
+ * this global via /etc/system.
+ */
+int pci_boot_trust_firmware = 1;
 
 extern dev_info_t *pcie_get_rc_dip(dev_info_t *);
 
 /*
  * Module prototypes
  */
-static void enumerate_bus_devs(dev_info_t *, uchar_t,
+static void enumerate_bus_devs(dev_info_t *, uint32_t, uint32_t, uchar_t,
     struct pci_bus_resource *, config_phase_t);
-static void process_devfunc(dev_info_t *, struct pci_bus_resource *,
-    uchar_t, uchar_t, uchar_t, config_phase_t);
+static void reprogram_bus_devs(dev_info_t *, uchar_t,
+    struct pci_bus_resource *);
+static int process_devfunc(dev_info_t *, uint32_t, uint32_t,
+    struct pci_bus_resource *, uchar_t, uchar_t, uchar_t, config_phase_t);
 static void add_reg_props(dev_info_t *, dev_info_t *,
     struct pci_bus_resource *, uchar_t, uchar_t, uchar_t, config_phase_t);
-static void add_ppb_props(dev_info_t *, dev_info_t *, struct pci_bus_resource *,
-    uchar_t, uchar_t, uchar_t, boolean_t, boolean_t);
+static boolean_t add_ppb_props(dev_info_t *, dev_info_t *, uint32_t, uint32_t,
+    struct pci_bus_resource *, uchar_t, uchar_t, uchar_t, boolean_t,
+    boolean_t, config_phase_t);
 static void add_bus_range_prop(struct pci_bus_resource *, int);
-static void add_ranges_prop(struct pci_bus_resource *, int, boolean_t);
-static void add_bus_available_prop(struct pci_bus_resource *, int);
-static void alloc_res_array(struct pci_bus_resource **, size_t);
-static void pci_memlist_remove_list(struct memlist **, struct memlist *);
-static void populate_bus_res(dev_info_t *, struct pci_bus_resource *,
-    uchar_t);
-static void pci_reprogram(dev_info_t *, struct pci_bus_resource *);
-static void dip_bus_range(dev_info_t *, int *);
+static void add_ranges_prop(dev_info_t *, struct pci_bus_resource *, int);
 
-static void
-dump_memlists_impl(struct pci_bus_resource *pci_bus_res, const char *tag,
-    int bus)
+static boolean_t populate_bus_res(dev_info_t *, struct pci_bus_resource *,
+    uchar_t);
+static void pci_reprogram(dev_info_t *, uint32_t, uint32_t,
+    struct pci_bus_resource *);
+static void dip_bus_range(dev_info_t *, int *);
+static boolean_t pci_boot_should_reallocate(dev_info_t *);
+static void pci_trust_firmware(dev_info_t *, uint32_t, uint32_t,
+    struct pci_bus_resource *);
+
+static uint64_t
+pci_bus_mem_to_cpu(dev_info_t *dip, uint64_t bus_addr, uint64_t size)
 {
-	printf("Memlist dump at %s - bus %x\n", tag, bus);
-	if (pci_bus_res[bus].io_used != NULL) {
-		printf("    io_used ");
-		pci_memlist_dump(pci_bus_res[bus].io_used);
+	uint64_t cpu_addr;
+
+	if (i_ddi_bus_to_cpu(dip, bus_addr, size, &cpu_addr) != DDI_SUCCESS) {
+		dev_err(dip, CE_PANIC, "pci_boot: untranslatable bus address "
+		    "0x%lx with size 0x%lx", bus_addr, size);
 	}
-	if (pci_bus_res[bus].io_avail != NULL) {
-		printf("    io_avail ");
-		pci_memlist_dump(pci_bus_res[bus].io_avail);
-	}
-	if (pci_bus_res[bus].mem_used != NULL) {
-		printf("    mem_used ");
-		pci_memlist_dump(pci_bus_res[bus].mem_used);
-	}
-	if (pci_bus_res[bus].mem_avail != NULL) {
-		printf("    mem_avail ");
-		pci_memlist_dump(pci_bus_res[bus].mem_avail);
-	}
-	if (pci_bus_res[bus].pmem_used != NULL) {
-		printf("    pmem_used ");
-		pci_memlist_dump(pci_bus_res[bus].pmem_used);
-	}
-	if (pci_bus_res[bus].pmem_avail != NULL) {
-		printf("    pmem_avail ");
-		pci_memlist_dump(pci_bus_res[bus].pmem_avail);
-	}
+
+	return (cpu_addr);
 }
 
 /*
  * Enumerate all PCI devices
  */
 static void
-pci_setup_tree(dev_info_t *dip, struct pci_bus_resource *pci_bus_res)
+pci_setup_tree(dev_info_t *dip, uint32_t minbus, uint32_t maxbus,
+    struct pci_bus_resource *pci_bus_res)
 {
-	for (uint_t i = 0; i <= pci_boot_maxbus; i++) {
-		pci_bus_res[i].par_bus = NO_PAR_BUS;
-		pci_bus_res[i].sub_bus = i;
-	}
-
-	int busrng[2];
-
-	dip_bus_range(dip, busrng);
-
-	VERIFY3P(pci_bus_res[busrng[0]].dip, ==, NULL);
+	VERIFY3P(pci_bus_res[minbus].dip, ==, NULL);
 
 	/*
 	 * The first bus is _our_ bus, others in the range
 	 * are available to subordinate bridges.
 	 */
-	pci_bus_res[busrng[0]].dip = dip;
+	pci_bus_res[minbus].dip = dip;
 
-	for (int i = busrng[0]; i <= busrng[1]; i++) {
-		enumerate_bus_devs(dip, i, pci_bus_res, CONFIG_INFO);
-	}
+	/*
+	 * Enumerate devices starting from our own bus (minbus) and extending
+	 * as far as maxbus, which is the highest bus number allocated to
+	 * this segment.
+	 */
+	enumerate_bus_devs(dip, minbus, maxbus, minbus, pci_bus_res,
+	    CONFIG_INFO);
 }
 
+/*
+ * Determine whether this RC should use the reallocate (reprogram-from-scratch)
+ * path instead of trusting firmware assignments.
+ *
+ * Returns B_TRUE if reallocation is requested, B_FALSE to trust firmware.
+ *
+ * Decision order:
+ * 1. If the global tuneable pci_boot_trust_firmware is 0, always reallocate.
+ * 2. If the machine is in our "never trust" list, always reallocate.
+ * 3. If the root nexus has a "pci-boot-reallocate" integer array property
+ *    listing PCI segment group numbers, and this RC's segment (from the
+ *    "linux,pci-domain" property) appears in that list, reallocate.
+ * 4. Otherwise, trust firmware.
+ */
+static boolean_t
+pci_boot_should_reallocate(dev_info_t *rcdip)
+{
+	int *segs;
+	uint_t nsegs;
+	int domain;
+	size_t i;
+	char *root_node_name;
+	static const char *never_trust_names[] = {
+		"RaspberryPi,4",
+	};
+	static const size_t never_trust_names_size =
+	    ARRAY_SIZE(never_trust_names);
+
+	if (pci_boot_trust_firmware == 0) {
+		ddev_err(rcdip, CE_NOTE,
+		    "pci_boot: trust-firmware globally disabled, "
+		    "using reallocate path");
+		return (B_TRUE);
+	}
+
+	if ((root_node_name = ddi_get_name(ddi_root_node())) != NULL) {
+		for (i = 0; i < never_trust_names_size; ++i) {
+			const char *n = never_trust_names[i];
+			if (n != NULL && strcmp(n, root_node_name) == 0) {
+				ddev_err(rcdip, CE_NOTE,
+				    "pci_boot: trust-firmware disabled by "
+				    "root node name match (%s), using "
+				    "reallocate path",
+				    root_node_name);
+				return (B_TRUE);
+			}
+		}
+	}
+
+	domain = ddi_prop_get_int(DDI_DEV_T_ANY, rcdip,
+	    DDI_PROP_DONTPASS, "linux,pci-domain", 0);
+
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, ddi_root_node(),
+	    DDI_PROP_DONTPASS, "pci-boot-reallocate",
+	    &segs, &nsegs) == DDI_PROP_SUCCESS) {
+		/*
+		 * A single-entry list containing UINT32_MAX is a
+		 * wildcard: reallocate every segment.
+		 */
+		if (nsegs == 1 && (uint32_t)segs[0] == UINT32_MAX) {
+			ddi_prop_free(segs);
+			ddev_err(rcdip, CE_NOTE,
+			    "pci_boot: pci-boot-reallocate wildcard, "
+			    "using reallocate path");
+			return (B_TRUE);
+		}
+
+		for (uint_t i = 0; i < nsegs; i++) {
+			if (segs[i] == domain) {
+				ddi_prop_free(segs);
+				ddev_err(rcdip, CE_NOTE,
+				    "pci_boot: segment %d in "
+				    "pci-boot-reallocate list, "
+				    "using reallocate path", domain);
+				return (B_TRUE);
+			}
+		}
+		ddi_prop_free(segs);
+	}
+
+	ddev_err(rcdip, CE_NOTE,
+	    "pci_boot: segment %d using trust-firmware path", domain);
+	return (B_FALSE);
+}
+
+/*
+ * Trust-firmware enumeration path.
+ *
+ * Walk the bus tree in a single pass, reading firmware-programmed bridge
+ * windows and device BARs, claiming them from busra resource maps, and
+ * setting devinfo properties -- without reprogramming config space.
+ */
+static void
+pci_trust_firmware(dev_info_t *rcdip, uint32_t minbus, uint32_t maxbus,
+    struct pci_bus_resource *pci_bus_res)
+{
+	int bus;
+
+	VERIFY3P(pci_bus_res[minbus].dip, ==, NULL);
+	pci_bus_res[minbus].dip = rcdip;
+
+	/*
+	 * Seed root-bus busra resource maps from the RC's "ranges"
+	 * and "bus-range" properties, exclude low addresses, and
+	 * set bus-range properties -- same as pci_reprogram(), but
+	 * done before enumeration so that the CONFIG_TRUST pass
+	 * can claim resources immediately.
+	 */
+	for (bus = minbus; bus <= maxbus; bus++) {
+		if (pci_bus_res[bus].par_bus != NO_PAR_BUS)
+			continue;
+		if (pci_bus_res[bus].dip == NULL)
+			continue;
+
+		if (!populate_bus_res(rcdip, pci_bus_res, bus))
+			continue;
+
+		/*
+		 * Exclude the low address range from the busra maps.
+		 * Reserve one minimum allocation unit at address zero
+		 * for each resource type -- same as pci_reprogram().
+		 */
+		{
+			ndi_ra_request_t req = {0};
+			uint64_t ra_base, ra_len;
+
+			req.ra_flags = NDI_RA_ALLOC_SPECIFIED;
+			req.ra_addr = 0x0;
+			req.ra_len = PPB_MEM_ALIGNMENT;
+			(void) ndi_ra_alloc(rcdip, &req, &ra_base, &ra_len,
+			    NDI_RA_TYPE_MEM, 0);
+			(void) ndi_ra_alloc(rcdip, &req, &ra_base, &ra_len,
+			    NDI_RA_TYPE_MEM64, 0);
+
+			req.ra_len = PPB_IO_ALIGNMENT;
+			(void) ndi_ra_alloc(rcdip, &req, &ra_base, &ra_len,
+			    NDI_RA_TYPE_IO, 0);
+		}
+
+		add_bus_range_prop(pci_bus_res, bus);
+	}
+
+	/*
+	 * Single-pass enumeration: walk the bus tree, set up devinfo
+	 * properties, claim firmware BAR/bridge resources from busra.
+	 */
+	enumerate_bus_devs(rcdip, minbus, maxbus, minbus, pci_bus_res,
+	    CONFIG_TRUST);
+}
+
+/*
+ * Primary entry-point for PCI enumeration, resource allocation and programming.
+ */
 void
 pci_enumerate(dev_info_t *dip)
 {
 	struct pci_bus_resource *pci_bus_res;
+	uint32_t maxbus;
+	uint32_t i;
+	size_t busres_size;
+	int busrng[2];
 
-	pci_boot_maxbus = pci_prd_max_bus();
+	maxbus = pci_prd_max_bus();
+	busres_size = (maxbus + 1) * sizeof (struct pci_bus_resource);
+	pci_bus_res = kmem_zalloc(busres_size, KM_SLEEP);
+	ASSERT3P(pci_bus_res, !=, NULL);
 
-	alloc_res_array(&pci_bus_res, pci_boot_maxbus);
-	pci_setup_tree(dip, pci_bus_res);
-	pci_reprogram(dip, pci_bus_res);
+	for (i = 0; i <= maxbus; i++) {
+		pci_bus_res[i].par_bus = NO_PAR_BUS;
+		pci_bus_res[i].sub_bus = i;
+	}
+
+	dip_bus_range(dip, busrng);
+	if (busrng[0] < 0 || busrng[1] < 0) {
+		dev_err(dip, CE_WARN, "pci_boot: bus-range contains "
+		    "negative value [%d, %d], skipping RC",
+		    busrng[0], busrng[1]);
+		kmem_free(pci_bus_res, busres_size);
+		return;
+	}
+	if (busrng[0] > busrng[1]) {
+		dev_err(dip, CE_WARN, "pci_boot: bus-range inverted "
+		    "[%d, %d], skipping RC",
+		    busrng[0], busrng[1]);
+		kmem_free(pci_bus_res, busres_size);
+		return;
+	}
+	if ((uint32_t)busrng[1] > maxbus) {
+		dev_err(dip, CE_WARN, "pci_boot: bus-range end %d exceeds "
+		    "max bus %u, skipping RC",
+		    busrng[1], maxbus);
+		kmem_free(pci_bus_res, busres_size);
+		return;
+	}
+
+	if (pci_boot_should_reallocate(dip)) {
+		pci_setup_tree(dip, busrng[0], busrng[1], pci_bus_res);
+		pci_reprogram(dip, busrng[0], busrng[1], pci_bus_res);
+	} else {
+		pci_trust_firmware(dip, busrng[0], busrng[1], pci_bus_res);
+	}
+
+	kmem_free(pci_bus_res, busres_size);
 }
 
 /*
  * Retrieve, or default, the "bus-range" property.
  */
-void
+static void
 dip_bus_range(dev_info_t *dip, int *busrng)
 {
 	int *bus_prop;
@@ -332,250 +522,10 @@ dip_bus_range(dev_info_t *dip, int *busrng)
 		busrng[0] = bus_prop[0];
 		busrng[1] = bus_prop[1];
 		ddi_prop_free(bus_prop);
+	} else {
+		dev_err(dip, CE_WARN, "pci_boot: bus-range property "
+		    "missing, defaulting to [0, %d]", busrng[1]);
 	}
-}
-
-/*
- * Remove the resources which are already used by devices under a subtractive
- * bridge from the bus's resources lists, because they're not available, and
- * shouldn't be allocated to other buses.  This is necessary because tracking
- * resources for subtractive bridges is not complete.  (Subtractive bridges only
- * track some of their claimed resources, not "the rest of the address space" as
- * they should, so that allocation to peer non-subtractive PPBs is easier.  We
- * need a fully-capable global resource allocator).
- */
-static void
-remove_subtractive_res(struct pci_bus_resource *pci_bus_res)
-{
-	int i, j;
-	struct memlist *list;
-
-	for (i = 0; i <= pci_boot_maxbus; i++) {
-		if (pci_bus_res[i].subtractive) {
-			/* remove used io ports */
-			list = pci_bus_res[i].io_used;
-			while (list) {
-				for (j = 0; j <= pci_boot_maxbus; j++)
-					(void) pci_memlist_remove(
-					    &pci_bus_res[j].io_avail,
-					    list->ml_address, list->ml_size);
-				list = list->ml_next;
-			}
-			/* remove used mem resource */
-			list = pci_bus_res[i].mem_used;
-			while (list) {
-				for (j = 0; j <= pci_boot_maxbus; j++) {
-					(void) pci_memlist_remove(
-					    &pci_bus_res[j].mem_avail,
-					    list->ml_address, list->ml_size);
-					(void) pci_memlist_remove(
-					    &pci_bus_res[j].pmem_avail,
-					    list->ml_address, list->ml_size);
-				}
-				list = list->ml_next;
-			}
-			/* remove used prefetchable mem resource */
-			list = pci_bus_res[i].pmem_used;
-			while (list) {
-				for (j = 0; j <= pci_boot_maxbus; j++) {
-					(void) pci_memlist_remove(
-					    &pci_bus_res[j].pmem_avail,
-					    list->ml_address, list->ml_size);
-					(void) pci_memlist_remove(
-					    &pci_bus_res[j].mem_avail,
-					    list->ml_address, list->ml_size);
-				}
-				list = list->ml_next;
-			}
-		}
-	}
-}
-
-/*
- * Set up (or complete the setup of) the bus_avail resource list
- */
-static void
-setup_bus_res(struct pci_bus_resource *pci_bus_res, int bus)
-{
-	uchar_t par_bus;
-
-	if (pci_bus_res[bus].dip == NULL)	/* unused bus */
-		return;
-
-	/*
-	 * Set up bus_avail if not already filled in by populate_bus_res()
-	 */
-	if (pci_bus_res[bus].bus_avail == NULL) {
-		ASSERT(pci_bus_res[bus].sub_bus >= bus);
-		pci_memlist_insert(&pci_bus_res[bus].bus_avail, bus,
-		    pci_bus_res[bus].sub_bus - bus + 1);
-	}
-
-	ASSERT(pci_bus_res[bus].bus_avail != NULL);
-
-	/*
-	 * Remove resources from parent bus node if this is not a
-	 * root bus.
-	 */
-	par_bus = pci_bus_res[bus].par_bus;
-	if (par_bus != NO_PAR_BUS) {
-		ASSERT(pci_bus_res[par_bus].bus_avail != NULL);
-		pci_memlist_remove_list(&pci_bus_res[par_bus].bus_avail,
-		    pci_bus_res[bus].bus_avail);
-	}
-
-	/* remove self from bus_avail */;
-	(void) pci_memlist_remove(&pci_bus_res[bus].bus_avail, bus, 1);
-}
-
-/*
- * Return the bus from which resources should be allocated. A device under a
- * subtractive PPB can allocate resources from its parent bus if there are no
- * resources available on its own bus, so iterate up the chain until resources
- * are found or the root is reached.
- */
-static uchar_t
-resolve_alloc_bus(struct pci_bus_resource *pci_bus_res, uchar_t bus,
-    mem_res_t type)
-{
-	while (pci_bus_res[bus].subtractive) {
-		if (type == RES_IO && pci_bus_res[bus].io_avail != NULL)
-			break;
-		if (type == RES_MEM && pci_bus_res[bus].mem_avail != NULL)
-			break;
-		if (type == RES_PMEM && pci_bus_res[bus].pmem_avail != NULL)
-			break;
-		/* Has the root bus been reached? */
-		if (pci_bus_res[bus].par_bus == NO_PAR_BUS)
-			break;
-		bus = pci_bus_res[bus].par_bus;
-	}
-
-	return (bus);
-}
-
-/*
- * Each root port has a record of the number of PCIe bridges that is under it
- * and the amount of memory that is has available which is not otherwise
- * required for BARs.
- *
- * This function finds the root port for a given bus and returns the amount of
- * spare memory that is available for allocation to any one of its bridges.
- */
-static uint64_t
-get_per_bridge_avail(struct pci_bus_resource *pci_bus_res, uchar_t bus)
-{
-	uchar_t par_bus;
-
-	par_bus = pci_bus_res[bus].par_bus;
-	while (par_bus != NO_PAR_BUS) {
-		bus = par_bus;
-		par_bus = pci_bus_res[par_bus].par_bus;
-	}
-
-	if (pci_bus_res[bus].mem_buffer == 0 ||
-	    pci_bus_res[bus].num_bridge == 0) {
-		return (0);
-	}
-
-	return (pci_bus_res[bus].mem_buffer / pci_bus_res[bus].num_bridge);
-}
-
-static uint64_t
-lookup_parbus_res(struct pci_bus_resource *pci_bus_res, uchar_t parbus,
-    uint64_t size, uint64_t align, mem_res_t type)
-{
-	struct memlist **list;
-	uint64_t addr;
-
-	parbus = resolve_alloc_bus(pci_bus_res, parbus, type);
-
-	switch (type) {
-	case RES_IO:
-		list = &pci_bus_res[parbus].io_avail;
-		break;
-	case RES_MEM:
-		list = &pci_bus_res[parbus].mem_avail;
-		break;
-	case RES_PMEM:
-		list = &pci_bus_res[parbus].pmem_avail;
-		break;
-	default:
-		panic("Invalid resource type %d", type);
-	}
-
-	if (*list == NULL)
-		return (0);
-
-	addr = pci_memlist_find(list, size, align);
-
-	return (addr);
-}
-
-/*
- * Allocate a resource from the parent bus
- */
-static uint64_t
-get_parbus_res(struct pci_bus_resource *pci_bus_res, uchar_t parbus,
-    uchar_t bus, uint64_t size, uint64_t align, mem_res_t type)
-{
-	struct memlist **par_avail, **par_used, **avail, **used;
-	uint64_t addr;
-
-	parbus = resolve_alloc_bus(pci_bus_res, parbus, type);
-
-	switch (type) {
-	case RES_IO:
-		par_avail = &pci_bus_res[parbus].io_avail;
-		par_used = &pci_bus_res[parbus].io_used;
-		avail = &pci_bus_res[bus].io_avail;
-		used = &pci_bus_res[bus].io_used;
-		break;
-	case RES_MEM:
-		par_avail = &pci_bus_res[parbus].mem_avail;
-		par_used = &pci_bus_res[parbus].mem_used;
-		avail = &pci_bus_res[bus].mem_avail;
-		used = &pci_bus_res[bus].mem_used;
-		break;
-	case RES_PMEM:
-		par_avail = &pci_bus_res[parbus].pmem_avail;
-		par_used = &pci_bus_res[parbus].pmem_used;
-		avail = &pci_bus_res[bus].pmem_avail;
-		used = &pci_bus_res[bus].pmem_used;
-		break;
-	default:
-		panic("Invalid resource type %d", type);
-	}
-
-	/* Return any existing resources to the parent bus */
-	pci_memlist_subsume(used, avail);
-	for (struct memlist *m = *avail; m != NULL; m = m->ml_next) {
-		(void) pci_memlist_remove(par_used, m->ml_address, m->ml_size);
-		pci_memlist_insert(par_avail, m->ml_address, m->ml_size);
-	}
-	pci_memlist_free_all(avail);
-
-	addr = lookup_parbus_res(pci_bus_res, parbus, size, align, type);
-
-	/*
-	 * The system may have provided a 64-bit non-PF memory region to the
-	 * parent bus, but we cannot use that for programming a bridge. Since
-	 * the memlists are kept sorted by base address and searched in order,
-	 * then if we received a 64-bit address here we know that the request
-	 * is unsatisfiable from the available 32-bit ranges.
-	 */
-	if (type == RES_MEM &&
-	    (addr >= UINT32_MAX || addr >= UINT32_MAX - size)) {
-		return (0);
-	}
-
-	if (addr != 0) {
-		pci_memlist_insert(par_used, addr, size);
-		(void) pci_memlist_remove(par_avail, addr, size);
-		pci_memlist_insert(avail, addr, size);
-	}
-
-	return (addr);
 }
 
 /*
@@ -588,6 +538,7 @@ get_pci_cap(dev_info_t *rcdip, uchar_t bus, uchar_t dev, uchar_t func,
 	uint8_t curcap, cap_id_loc;
 	uint16_t status;
 	int location = -1;
+	int attempts = PCI_CAP_MAX_PTR;
 
 	/*
 	 * Need to check the Status register for ECP support first.
@@ -602,8 +553,8 @@ get_pci_cap(dev_info_t *rcdip, uchar_t bus, uchar_t dev, uchar_t func,
 	cap_id_loc = pci_cfgacc_get8(rcdip, PCI_GETBDF(bus, dev, func),
 	    PCI_CONF_CAP_PTR);
 
-	/* Walk the list of capabilities */
-	while (cap_id_loc && cap_id_loc != (uint8_t)-1) {
+	/* Walk the list of capabilities, with a safety limit */
+	while (cap_id_loc && cap_id_loc != (uint8_t)-1 && attempts-- > 0) {
 		curcap = pci_cfgacc_get8(rcdip, PCI_GETBDF(bus, dev, func),
 		    cap_id_loc);
 
@@ -615,6 +566,35 @@ get_pci_cap(dev_info_t *rcdip, uchar_t bus, uchar_t dev, uchar_t func,
 		    cap_id_loc + 1);
 	}
 	return (location);
+}
+
+/*
+ * Determine whether a PCIe bridge has hot-plug capability by reading the
+ * Slot Capabilities register directly from config space.  We cannot rely
+ * on the devinfo "hotplug-capable" property because pcie_init_bus() has
+ * not yet run at pci_boot enumeration time.  Conventional PCI bridges
+ * (no PCIe capability) are never hot-plug capable.
+ */
+static boolean_t
+bridge_is_hotplug_capable(dev_info_t *rcdip, uchar_t bus, uchar_t dev,
+    uchar_t func)
+{
+	int cap_ptr;
+	uint16_t pciecap;
+	uint32_t slotcap;
+
+	cap_ptr = get_pci_cap(rcdip, bus, dev, func, PCI_CAP_ID_PCI_E);
+	if (cap_ptr == -1)
+		return (B_FALSE);
+
+	pciecap = pci_cfgacc_get16(rcdip, PCI_GETBDF(bus, dev, func),
+	    (uint16_t)cap_ptr + PCIE_PCIECAP);
+	if ((pciecap & PCIE_PCIECAP_SLOT_IMPL) == 0)
+		return (B_FALSE);
+
+	slotcap = pci_cfgacc_get32(rcdip, PCI_GETBDF(bus, dev, func),
+	    (uint16_t)cap_ptr + PCIE_SLOTCAP);
+	return ((slotcap & PCIE_SLOTCAP_HP_CAPABLE) != 0);
 }
 
 static void
@@ -666,7 +646,7 @@ set_ppb_res(dev_info_t *rcdip, dev_info_t *dip, uchar_t bus, uchar_t dev,
 		tag = "MEM";
 		break;
 
-	case RES_PMEM: {
+	case RES_MEM64: {
 		pci_cfgacc_put16(rcdip, PCI_GETBDF(bus, dev, func),
 		    PCI_BCNF_PF_BASE_LOW,
 		    (uint16_t)((base >> PCI_BCNF_MEM_SHIFT) &
@@ -688,7 +668,7 @@ set_ppb_res(dev_info_t *rcdip, dev_info_t *dip, uchar_t bus, uchar_t dev,
 			VERIFY0(limit >> 32);
 		}
 
-		tag = "PMEM";
+		tag = "MEM64";
 		break;
 	}
 
@@ -697,10 +677,10 @@ set_ppb_res(dev_info_t *rcdip, dev_info_t *dip, uchar_t bus, uchar_t dev,
 	}
 
 	if (base > limit) {
-		dcmn_err(CE_NOTE, MSGHDR "DISABLE %4s range",
+		ddev_err(rcdip, CE_NOTE, MSGHDR "DISABLE %4s range",
 		    ddi_node_name(dip), bus, dev, func, tag);
 	} else {
-		dcmn_err(CE_NOTE,
+		ddev_err(rcdip, CE_NOTE,
 		    MSGHDR "PROGRAM %4s range 0x%lx ~ 0x%lx",
 		    ddi_node_name(dip), bus, dev, func, tag, base, limit);
 	}
@@ -744,7 +724,7 @@ fetch_ppb_res(dev_info_t *rcdip, uchar_t bus, uchar_t dev, uchar_t func,
 		VERIFY0(base >> 32);
 		break;
 
-	case RES_PMEM:
+	case RES_MEM64:
 		val = pci_cfgacc_get16(rcdip, PCI_GETBDF(bus, dev, func),
 		    PCI_BCNF_PF_LIMIT_LOW);
 		limit = ((val & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT) |
@@ -770,57 +750,196 @@ fetch_ppb_res(dev_info_t *rcdip, uchar_t bus, uchar_t dev, uchar_t func,
 	*limitp = limit;
 }
 
+
 /*
- * Assign valid resources to PCI(e) bridges.
+ * Allocate a single resource type for a bridge window from the parent's
+ * busra map, seed the bridge's own busra map, and program the bridge
+ * window registers.  Returns B_TRUE on success, B_FALSE if allocation
+ * failed entirely (bridge window will be disabled).
+ *
+ * If allocp is non-NULL, the actual allocated window size is stored
+ * there on success (0 on failure).
+ */
+static boolean_t
+alloc_bridge_res_type(dev_info_t *rcdip, dev_info_t *parent_dip,
+    dev_info_t *bridge_dip, struct pci_bus_resource *pci_bus_res,
+    uchar_t bus, uchar_t dev, uchar_t func, uchar_t secbus,
+    mem_res_t type, uint64_t mandatory, uint64_t hp_spare,
+    char *ra_type, uint64_t *allocp)
+{
+	uint64_t window, base, len;
+	ndi_ra_request_t req = {0};
+	uint64_t align;
+	int rv;
+	uint64_t disable_base, disable_limit;
+
+	if (allocp != NULL)
+		*allocp = 0;
+
+	if (type == RES_IO) {
+		align = PPB_IO_ALIGNMENT;
+		disable_base = PPB_DISABLE_IORANGE_BASE;
+		disable_limit = PPB_DISABLE_IORANGE_LIMIT;
+	} else {
+		align = PPB_MEM_ALIGNMENT;
+		disable_base = PPB_DISABLE_MEMRANGE_BASE;
+		disable_limit = PPB_DISABLE_MEMRANGE_LIMIT;
+	}
+
+	if (mandatory == 0 && hp_spare == 0) {
+		/* No resources needed at all; disable the window */
+		set_ppb_res(rcdip, bridge_dip, bus, dev, func, type,
+		    disable_base, disable_limit);
+		return (B_TRUE);
+	}
+
+	window = P2ROUNDUP(mandatory + hp_spare, align);
+	req.ra_len = window;
+	req.ra_align_mask = align - 1;
+
+	/*
+	 * Non-prefetchable MEM must be in the 32-bit address space.
+	 */
+	if (type == RES_MEM) {
+		req.ra_flags = NDI_RA_ALLOC_BOUNDED;
+		req.ra_boundbase = PPB_MEM_ALIGNMENT;
+		req.ra_boundlen = (uint64_t)UINT32_MAX -
+		    PPB_MEM_ALIGNMENT + 1;
+	}
+
+	rv = ndi_ra_alloc(parent_dip, &req, &base, &len, ra_type, 0);
+
+	/*
+	 * If the full window (mandatory + spare) fails, retry with just
+	 * mandatory.  This sheds hotplug spare first.
+	 */
+	if (rv != NDI_SUCCESS && hp_spare > 0) {
+		window = P2ROUNDUP(mandatory, align);
+		if (window == 0)
+			window = align;
+		req.ra_len = window;
+		req.ra_align_mask = align - 1;
+		rv = ndi_ra_alloc(parent_dip, &req, &base, &len,
+		    ra_type, 0);
+	}
+
+	/*
+	 * If MEM64 allocation failed, fall back to bounded MEM.
+	 */
+	if (rv != NDI_SUCCESS &&
+	    strcmp(ra_type, NDI_RA_TYPE_MEM64) == 0) {
+		ra_type = NDI_RA_TYPE_MEM;
+		req.ra_flags = NDI_RA_ALLOC_BOUNDED;
+		req.ra_boundbase = PPB_MEM_ALIGNMENT;
+		req.ra_boundlen = (uint64_t)UINT32_MAX -
+		    PPB_MEM_ALIGNMENT + 1;
+
+		req.ra_len = P2ROUNDUP(mandatory + hp_spare, align);
+		if (req.ra_len == 0)
+			req.ra_len = align;
+		req.ra_align_mask = align - 1;
+		rv = ndi_ra_alloc(parent_dip, &req, &base, &len,
+		    ra_type, 0);
+
+		if (rv != NDI_SUCCESS && hp_spare > 0) {
+			req.ra_len = P2ROUNDUP(mandatory, align);
+			if (req.ra_len == 0)
+				req.ra_len = align;
+			rv = ndi_ra_alloc(parent_dip, &req, &base, &len,
+			    ra_type, 0);
+		}
+	}
+
+	if (rv != NDI_SUCCESS) {
+		dev_err(rcdip, CE_NOTE, "!"
+		    MSGHDR "failed to allocate %s window (need 0x%lx)",
+		    ddi_node_name(bridge_dip), bus, dev, func,
+		    type == RES_IO ? "I/O" :
+		    type == RES_MEM ? "MEM" : "MEM64", mandatory);
+		set_ppb_res(rcdip, bridge_dip, bus, dev, func, type,
+		    disable_base, disable_limit);
+		return (B_FALSE);
+	}
+
+	/* Seed this bridge's busra map */
+	(void) ndi_ra_free(bridge_dip, base, len, ra_type, 0);
+
+	/* Program bridge window registers */
+	set_ppb_res(rcdip, bridge_dip, bus, dev, func, type,
+	    base, base + len - 1);
+
+	ddev_err(rcdip, CE_NOTE,
+	    MSGHDR "allocated %s "
+	    "window 0x%lx ~ 0x%lx (req 0x%lx + spare 0x%lx)",
+	    ddi_node_name(bridge_dip), bus, dev, func,
+	    type == RES_IO ? "I/O" : type == RES_MEM ? "MEM" :
+	    strcmp(ra_type, NDI_RA_TYPE_MEM64) == 0 ? "MEM64" : "MEM(64fb)",
+	    base, base + len - 1, mandatory, hp_spare);
+
+	if (allocp != NULL)
+		*allocp = len;
+
+	return (B_TRUE);
+}
+
+/*
+ * Recursive top-down bridge resource allocation via busra.
+ *
+ * For each bridge (identified by its secondary bus number), allocate
+ * IO/MEM/MEM64 windows from the parent's busra map, seed the bridge's
+ * own map, program bridge registers, then recurse into child bridges.
+ *
+ * per_hp_mem/per_hp_io/per_hp_mem64 are the per-hotplug-bridge spare
+ * amounts, computed by the caller from the parent's actual available
+ * resources.  Each level recomputes these for its children based on
+ * the actual allocated window size minus descendant requirements.
  */
 static void
-fix_ppb_res(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
-    uchar_t secbus, boolean_t prog_sub)
+allocate_bridge_resources(dev_info_t *rcdip, uint32_t minbus, uint32_t maxbus,
+    struct pci_bus_resource *pci_bus_res, uchar_t secbus,
+    uint64_t per_hp_mem, uint64_t per_hp_io, uint64_t per_hp_mem64)
 {
-	uchar_t bus, dev, func;
-	uchar_t parbus, subbus;
-	struct {
-		uint64_t base;
-		uint64_t limit;
-		uint64_t size;
-		uint64_t align;
-	} io, mem, pmem;
-	uint64_t addr = 0;
-	int *regp = NULL;
-	uint_t reglen, buscount;
-	int rv, cap_ptr, physhi;
-	dev_info_t *dip;
+	struct pci_bus_resource *pbr = &pci_bus_res[secbus];
+	uchar_t parbus, bus, dev, func;
+	dev_info_t *parent_dip, *bridge_dip;
+	int *regp;
+	uint_t reglen;
+	int rv, cap_ptr, i;
 	uint16_t cmd_reg;
+	boolean_t has_io, has_mem, has_mem64;
+	uint64_t mem_spare, io_spare, mem64_spare;
+	uint64_t alloc_mem = 0, alloc_io = 0, alloc_mem64 = 0;
+	uint64_t child_per_hp_mem = 0, child_per_hp_io = 0;
+	uint64_t child_per_hp_mem64 = 0;
+	uint64_t child_mem_mandatory = 0, child_io_mandatory = 0;
+	uint64_t child_mem64_mandatory = 0, child_hp = 0;
 
-	/* skip root (peer) PCI busses */
-	if (pci_bus_res[secbus].par_bus == NO_PAR_BUS)
-		return;
-
-	/* skip subtractive PPB when prog_sub is not TRUE */
-	if (pci_bus_res[secbus].subtractive && !prog_sub)
+	/* skip root (peer) PCI buses */
+	if (pbr->par_bus == NO_PAR_BUS)
 		return;
 
 	/* some entries may be empty due to discontiguous bus numbering */
-	dip = pci_bus_res[secbus].dip;
-	if (dip == NULL)
+	bridge_dip = pbr->dip;
+	if (bridge_dip == NULL)
 		return;
 
-	rv = ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    OBP_REG, &regp, &reglen);
+	parbus = pbr->par_bus;
+	parent_dip = pci_bus_res[parbus].dip;
+	ASSERT3P(parent_dip, !=, NULL);
+
+	rv = ddi_prop_lookup_int_array(DDI_DEV_T_ANY, bridge_dip,
+	    DDI_PROP_DONTPASS, OBP_REG, &regp, &reglen);
 	if (rv != DDI_PROP_SUCCESS || reglen == 0)
 		return;
-	physhi = regp[0];
+	func = (uchar_t)PCI_REG_FUNC_G(regp[0]);
+	dev = (uchar_t)PCI_REG_DEV_G(regp[0]);
+	bus = (uchar_t)PCI_REG_BUS_G(regp[0]);
 	ddi_prop_free(regp);
 
-	func = (uchar_t)PCI_REG_FUNC_G(physhi);
-	dev = (uchar_t)PCI_REG_DEV_G(physhi);
-	bus = (uchar_t)PCI_REG_BUS_G(physhi);
-
-	dump_memlists(pci_bus_res, "fix_ppb_res start bus", bus);
-	dump_memlists(pci_bus_res, "fix_ppb_res start secbus", secbus);
+	ASSERT3U(bus, ==, parbus);
 
 	/*
-	 * If pcie bridge, check to see if link is enabled
+	 * If PCIe bridge, check to see if link is disabled.
 	 */
 	cap_ptr = get_pci_cap(rcdip, bus, dev, func, PCI_CAP_ID_PCI_E);
 	if (cap_ptr != -1) {
@@ -828,500 +947,588 @@ fix_ppb_res(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
 		    PCI_GETBDF(bus, dev, func),
 		    (uint16_t)cap_ptr + PCIE_LINKCTL);
 		if ((reg & PCIE_LINKCTL_LINK_DISABLE) != 0) {
-			dcmn_err(CE_NOTE, MSGHDR "link is disabled",
-			    ddi_node_name(dip), bus, dev, func);
+			ddev_err(rcdip, CE_NOTE,
+			    MSGHDR "link disabled, skipping",
+			    ddi_node_name(bridge_dip),
+			    bus, dev, func);
 			return;
 		}
 	}
 
-	subbus = pci_cfgacc_get8(rcdip, PCI_GETBDF(bus, dev, func),
-	    PCI_BCNF_SUBBUS);
-	parbus = pci_bus_res[secbus].par_bus;
-	ASSERT(parbus == bus);
+	/* Set up busra maps for this bridge */
+	(void) ndi_ra_map_setup(bridge_dip, NDI_RA_TYPE_MEM);
+	(void) ndi_ra_map_setup(bridge_dip, NDI_RA_TYPE_IO);
+	(void) ndi_ra_map_setup(bridge_dip, NDI_RA_TYPE_MEM64);
+	(void) ndi_ra_map_setup(bridge_dip, NDI_RA_TYPE_PCI_BUSNUM);
+
+	/*
+	 * Allocate this bridge's bus number range [secbus..sub_bus] from
+	 * the parent's BUSNUM map, then seed our own map with the free
+	 * subordinate numbers (excluding secbus itself, which is our
+	 * secondary bus and not available for further allocation).
+	 */
+	{
+		ndi_ra_request_t bus_req = {0};
+		uint64_t bus_base, bus_len;
+
+		bus_req.ra_flags = NDI_RA_ALLOC_SPECIFIED;
+		bus_req.ra_addr = (uint64_t)secbus;
+		bus_req.ra_len = (uint64_t)(pbr->sub_bus - secbus + 1);
+		rv = ndi_ra_alloc(parent_dip, &bus_req, &bus_base,
+		    &bus_len, NDI_RA_TYPE_PCI_BUSNUM, 0);
+		if (rv != NDI_SUCCESS) {
+			dev_err(rcdip, CE_WARN,
+			    MSGHDR "failed to allocate BUSNUM range "
+			    "[0x%02x..0x%02x], skipping subtree",
+			    ddi_node_name(bridge_dip), bus, dev, func,
+			    secbus, pbr->sub_bus);
+			/*
+			 * Disable all three bridge windows so that
+			 * firmware-programmed windows do not remain
+			 * active for a subtree we cannot manage.
+			 * Disabling the first-level bridge cuts off
+			 * the entire sub-tree.
+			 */
+			set_ppb_res(rcdip, bridge_dip, bus, dev, func,
+			    RES_IO, PPB_DISABLE_IORANGE_BASE,
+			    PPB_DISABLE_IORANGE_LIMIT);
+			set_ppb_res(rcdip, bridge_dip, bus, dev, func,
+			    RES_MEM, PPB_DISABLE_MEMRANGE_BASE,
+			    PPB_DISABLE_MEMRANGE_LIMIT);
+			set_ppb_res(rcdip, bridge_dip, bus, dev, func,
+			    RES_MEM64, PPB_DISABLE_MEMRANGE_BASE,
+			    PPB_DISABLE_MEMRANGE_LIMIT);
+			return;
+		}
+
+		if (pbr->sub_bus > secbus) {
+			(void) ndi_ra_free(bridge_dip,
+			    (uint64_t)(secbus + 1),
+			    (uint64_t)(pbr->sub_bus - secbus),
+			    NDI_RA_TYPE_PCI_BUSNUM, 0);
+		}
+	}
+
+	/*
+	 * Calculate hotplug spare for this bridge's subtree.
+	 * The bridge gets spare proportional to its num_hp_bridges count,
+	 * using the per-hp values computed by our parent.
+	 */
+	mem_spare = pbr->num_hp_bridges * per_hp_mem;
+	io_spare = pbr->num_hp_bridges * per_hp_io;
+	mem64_spare = pbr->num_hp_bridges * per_hp_mem64;
+
 	cmd_reg = pci_cfgacc_get16(rcdip, PCI_GETBDF(bus, dev, func),
 	    PCI_CONF_COMM);
 
-	buscount = subbus - secbus + 1;
-
-	dcmn_err(CE_NOTE, MSGHDR
-	    "secbus 0x%x existing sizes I/O 0x%x, MEM 0x%lx, PMEM 0x%lx",
-	    ddi_node_name(dip), bus, dev, func, secbus,
-	    pci_bus_res[secbus].io_size, pci_bus_res[secbus].mem_size,
-	    pci_bus_res[secbus].pmem_size);
-
 	/*
-	 * The bridge is going to be allocated the greater of:
-	 *  - 512 bytes per downstream bus;
-	 *  - the amount required by its current children.
-	 * rounded up to the next 4K.
+	 * Subtractive bridges get a nominal window for busra bookkeeping.
+	 * They forward everything not claimed by siblings, so the window
+	 * size is somewhat arbitrary.
 	 */
-	io.size = MAX(pci_bus_res[secbus].io_size, buscount * 0x200);
+	if (pbr->subtractive) {
+		uint64_t sub_mem = P2ROUNDUP(
+		    MAX(pbr->mem_required, PPB_MEM_ALIGNMENT),
+		    PPB_MEM_ALIGNMENT);
+		uint64_t sub_io = P2ROUNDUP(
+		    MAX(pbr->io_required, PPB_IO_ALIGNMENT),
+		    PPB_IO_ALIGNMENT);
 
-	/*
-	 * We'd like to assign some extra memory to the bridge in case there
-	 * is anything hotplugged underneath later.
-	 *
-	 * We use the information gathered earlier relating to the number of
-	 * bridges that must share the resource of this bus' root port, and how
-	 * much memory is available that isn't already accounted for to
-	 * determine how much to use.
-	 *
-	 * At least the existing `mem_size` must be allocated as that has been
-	 * gleaned from enumeration.
-	 */
-	uint64_t avail = get_per_bridge_avail(pci_bus_res, bus);
+		(void) alloc_bridge_res_type(rcdip, parent_dip, bridge_dip,
+		    pci_bus_res, bus, dev, func, secbus,
+		    RES_MEM, sub_mem, 0, NDI_RA_TYPE_MEM, NULL);
+		(void) alloc_bridge_res_type(rcdip, parent_dip, bridge_dip,
+		    pci_bus_res, bus, dev, func, secbus,
+		    RES_IO, sub_io, 0, NDI_RA_TYPE_IO, NULL);
 
-	mem.size = 0;
-	if (avail > 0) {
-		/* Try 32MiB first, then adjust down until it fits */
-		for (uint_t i = 32; i > 0; i >>= 1) {
-			if (avail >= buscount * PPB_MEM_ALIGNMENT * i) {
-				mem.size = buscount * PPB_MEM_ALIGNMENT * i;
-				dcmn_err(CE_NOTE, MSGHDR
-				    "Allocating %uMiB",
-				    ddi_node_name(dip), bus, dev, func, i);
-				break;
-			}
-		}
-	}
-	mem.size = MAX(pci_bus_res[secbus].mem_size, mem.size);
-
-	/*
-	 * For the PF memory range, illumos has not historically handed out
-	 * any additional memory to bridges. However there are some
-	 * hotpluggable devices which need 64-bit PF space and so we now always
-	 * attempt to allocate at least 32 MiB. If there is enough space
-	 * available from a parent then we will increase this to 512MiB.
-	 * If we're later unable to find memory to satisfy this, we just move
-	 * on and are no worse off than before.
-	 */
-	pmem.size = MAX(pci_bus_res[secbus].pmem_size,
-	    buscount * PPB_MEM_ALIGNMENT * 32);
-
-	/*
-	 * Check if the parent bus could allocate a 64-bit sized PF
-	 * range and bump the minimum pmem.size to 512MB if so.
-	 */
-	if (lookup_parbus_res(pci_bus_res, parbus, 1ULL << 32,
-	    PPB_MEM_ALIGNMENT, RES_PMEM) > 0) {
-		pmem.size = MAX(pci_bus_res[secbus].pmem_size,
-		    buscount * PPB_MEM_ALIGNMENT * 512);
+		add_ranges_prop(rcdip, pci_bus_res, secbus);
+		goto recurse;
 	}
 
 	/*
-	 * I/O space needs to be 4KiB aligned, Memory space needs to be 1MiB
-	 * aligned.
-	 *
-	 * We calculate alignment as the largest power of two less than the
-	 * the sum of all children's size requirements, because this will
-	 * align to the size of the largest child request within that size
-	 * (which is always a power of two).
+	 * Normal (non-subtractive) bridge: allocate IO, MEM, and MEM64.
+	 * Capture the actual allocated window sizes for child spare
+	 * computation below.
 	 */
-	io.size = P2ROUNDUP(io.size, PPB_IO_ALIGNMENT);
-	mem.size = P2ROUNDUP(mem.size, PPB_MEM_ALIGNMENT);
-	pmem.size = P2ROUNDUP(pmem.size, PPB_MEM_ALIGNMENT);
+	has_io = alloc_bridge_res_type(rcdip, parent_dip, bridge_dip,
+	    pci_bus_res, bus, dev, func, secbus,
+	    RES_IO, pbr->io_required, io_spare, NDI_RA_TYPE_IO,
+	    &alloc_io);
 
-	io.align = lowerp2(io.size);
-	mem.align = lowerp2(mem.size);
-	pmem.align = lowerp2(pmem.size);
+	has_mem = alloc_bridge_res_type(rcdip, parent_dip, bridge_dip,
+	    pci_bus_res, bus, dev, func, secbus,
+	    RES_MEM, pbr->mem_required, mem_spare, NDI_RA_TYPE_MEM,
+	    &alloc_mem);
 
-	/* Subtractive bridge */
-	if (pci_bus_res[secbus].subtractive && prog_sub) {
-		/*
-		 * We program an arbitrary amount of I/O and memory resource
-		 * for the subtractive bridge so that child dynamic-resource-
-		 * allocating devices (such as Cardbus bridges) have a chance
-		 * of success.  Until we have full-tree resource rebalancing,
-		 * dynamic resource allocation (thru busra) only looks at the
-		 * parent bridge, so all PPBs must have some allocatable
-		 * resource.  For non-subtractive bridges, the resources come
-		 * from the base/limit register "windows", but subtractive
-		 * bridges often don't program those (since they don't need to).
-		 * If we put all the remaining resources on the subtractive
-		 * bridge, then peer non-subtractive bridges can't allocate
-		 * more space (even though this is probably most correct).
-		 * If we put the resources only on the parent, then allocations
-		 * from children of subtractive bridges will fail without
-		 * special-case code for bypassing the subtractive bridge.
-		 * This solution is the middle-ground temporary solution until
-		 * we have fully-capable resource allocation.
-		 */
+	has_mem64 = alloc_bridge_res_type(rcdip, parent_dip, bridge_dip,
+	    pci_bus_res, bus, dev, func, secbus,
+	    RES_MEM64, pbr->mem64_required, mem64_spare,
+	    NDI_RA_TYPE_MEM64, &alloc_mem64);
 
-		/*
-		 * Add an arbitrary I/O resource to the subtractive PPB
-		 */
-		if (pci_bus_res[secbus].io_avail == NULL) {
-			addr = get_parbus_res(pci_bus_res, parbus, secbus,
-			    io.size, io.align, RES_IO);
-			if (addr != 0) {
-				add_ranges_prop(pci_bus_res, secbus, B_TRUE);
+	add_ranges_prop(rcdip, pci_bus_res, secbus);
 
-				dcmn_err(CE_NOTE,
-				    MSGHDR "PROGRAM  I/O range 0x%lx ~ 0x%lx "
-				    "(subtractive bridge)",
-				    ddi_node_name(dip), bus, dev, func,
-				    addr, addr + io.size - 1);
-			}
-		}
-		/*
-		 * Add an arbitrary memory resource to the subtractive PPB
-		 */
-		if (pci_bus_res[secbus].mem_avail == NULL) {
-			addr = get_parbus_res(pci_bus_res, parbus, secbus,
-			    mem.size, mem.align, RES_MEM);
-			if (addr != 0) {
-				add_ranges_prop(pci_bus_res, secbus, B_TRUE);
-
-				dcmn_err(CE_NOTE,
-				    MSGHDR "PROGRAM  MEM range 0x%lx ~ 0x%lx "
-				    "(subtractive bridge)",
-				    ddi_node_name(dip), bus, dev, func,
-				    addr, addr + mem.size - 1);
-			}
-		}
-
-		goto cmd_enable;
-	}
-
-	/*
-	 * Retrieve the various configured ranges from the bridge.
-	 */
-
-	fetch_ppb_res(rcdip, bus, dev, func, RES_IO, &io.base, &io.limit);
-	fetch_ppb_res(rcdip, bus, dev, func, RES_MEM, &mem.base, &mem.limit);
-	fetch_ppb_res(rcdip, bus, dev, func, RES_PMEM, &pmem.base, &pmem.limit);
-
-	/*
-	 * Reprogram IO:
-	 */
-	if (pci_bus_res[secbus].io_used != NULL) {
-		pci_memlist_subsume(&pci_bus_res[secbus].io_used,
-		    &pci_bus_res[secbus].io_avail);
-	}
-
-	/* get new io ports from parent bus */
-	addr = get_parbus_res(pci_bus_res, parbus, secbus,
-	    io.size, io.align, RES_IO);
-	if (addr != 0) {
-		io.base = addr;
-		io.limit = addr + io.size - 1;
-	}
-
-	/* reprogram PPB regs */
-	set_ppb_res(rcdip, pci_bus_res[bus].dip, bus, dev, func,
-	    RES_IO, io.base, io.limit);
-	add_ranges_prop(pci_bus_res, secbus, B_TRUE);
-
-	/*
-	 * Reprogram memory
-	 */
-	/* Mem range */
-	if (pci_bus_res[secbus].mem_used != NULL) {
-		pci_memlist_subsume(&pci_bus_res[secbus].mem_used,
-		    &pci_bus_res[secbus].mem_avail);
-	}
-
-	/* get new mem resource from parent bus */
-	addr = get_parbus_res(pci_bus_res, parbus, secbus,
-	    mem.size, mem.align, RES_MEM);
-	if (addr != 0) {
-		mem.base = addr;
-		mem.limit = addr + mem.size - 1;
-	}
-
-	/* Prefetch mem */
-	if (pci_bus_res[secbus].pmem_used != NULL) {
-		pci_memlist_subsume(&pci_bus_res[secbus].pmem_used,
-		    &pci_bus_res[secbus].pmem_avail);
-	}
-
-	/* get new mem resource from parent bus */
-	addr = get_parbus_res(pci_bus_res, parbus, secbus,
-	    pmem.size, pmem.align, RES_PMEM);
-	if (addr != 0) {
-		pmem.base = addr;
-		pmem.limit = addr + pmem.size - 1;
-	}
-
-	set_ppb_res(rcdip, pci_bus_res[bus].dip,
-	    bus, dev, func,
-	    RES_MEM, mem.base, mem.limit);
-	set_ppb_res(rcdip, pci_bus_res[bus].dip,
-	    bus, dev, func,
-	    RES_PMEM, pmem.base, pmem.limit);
-	add_ranges_prop(pci_bus_res, secbus, B_TRUE);
-
-cmd_enable:
-	dump_memlists(pci_bus_res, "fix_ppb_res end bus", bus);
-	dump_memlists(pci_bus_res, "fix_ppb_res end secbus", secbus);
-
-	if (pci_bus_res[secbus].io_avail != NULL)
+	/* Enable IO/MEM access as appropriate */
+	if (has_io)
 		cmd_reg |= PCI_COMM_IO | PCI_COMM_ME;
-	if (pci_bus_res[secbus].mem_avail != NULL ||
-	    pci_bus_res[secbus].pmem_avail != NULL) {
+	if (has_mem || has_mem64)
 		cmd_reg |= PCI_COMM_MAE | PCI_COMM_ME;
-	}
 	pci_cfgacc_put16(rcdip, PCI_GETBDF(bus, dev, func),
 	    PCI_CONF_COMM, cmd_reg);
-}
 
-void
-pci_reprogram(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res)
-{
-	int i;
-	int bus;
+recurse:
+	/*
+	 * Reprogram device BARs on this bus.  The bridge window has
+	 * been established and busra is seeded, so devices can allocate
+	 * resources immediately.
+	 */
+	reprogram_bus_devs(rcdip, secbus, pci_bus_res);
+	pci_prd_slot_name(secbus, pci_bus_res[secbus].dip);
 
 	/*
-	 * Do root-bus resource discovery
+	 * Compute local per-hp spare for child bridges.
+	 *
+	 * The spare available at this level is the difference between
+	 * what we actually got allocated and what our descendants
+	 * require (mem_required already includes all descendant needs).
+	 * Dividing that among the hotplug-capable bridges in our
+	 * subtree gives a right-sized spare that naturally decreases
+	 * at deeper levels where less resource is available.
 	 */
-	for (bus = 0; bus <= pci_boot_maxbus; bus++) {
-		/* skip non-root (peer) PCI busses */
+	for (i = minbus; i <= maxbus; i++) {
+		if (pci_bus_res[i].par_bus != secbus ||
+		    pci_bus_res[i].dip == NULL)
+			continue;
+		child_mem_mandatory += P2ROUNDUP(
+		    pci_bus_res[i].mem_required, PPB_MEM_ALIGNMENT);
+		child_io_mandatory += P2ROUNDUP(
+		    pci_bus_res[i].io_required, PPB_IO_ALIGNMENT);
+		child_mem64_mandatory += P2ROUNDUP(
+		    pci_bus_res[i].mem64_required, PPB_MEM_ALIGNMENT);
+		child_hp += pci_bus_res[i].num_hp_bridges;
+	}
+
+	if (child_hp > 0) {
+		uint64_t mem_free, io_free, mem64_free;
+
+		mem_free = alloc_mem > pbr->mem_required ?
+		    alloc_mem - pbr->mem_required : 0;
+		io_free = alloc_io > pbr->io_required ?
+		    alloc_io - pbr->io_required : 0;
+		mem64_free = alloc_mem64 > pbr->mem64_required ?
+		    alloc_mem64 - pbr->mem64_required : 0;
+
+		child_per_hp_mem = mem_free / child_hp;
+		child_per_hp_io = io_free / child_hp;
+		child_per_hp_mem64 = mem64_free / child_hp;
+
+		/*
+		 * Floor at one alignment unit and round down
+		 * to one alignment unit to avoid over-fitting
+		 * and subsequent resource starvation.
+		 */
+		if (child_per_hp_mem < PPB_MEM_ALIGNMENT)
+			child_per_hp_mem = PPB_MEM_ALIGNMENT;
+		child_per_hp_mem = P2ALIGN(child_per_hp_mem,
+		    PPB_MEM_ALIGNMENT);
+		if (child_per_hp_mem * child_hp > mem_free)
+			child_per_hp_mem = 0;
+
+		if (child_per_hp_io < PPB_IO_ALIGNMENT)
+			child_per_hp_io = PPB_IO_ALIGNMENT;
+		child_per_hp_io = P2ALIGN(child_per_hp_io,
+		    PPB_IO_ALIGNMENT);
+		if (child_per_hp_io * child_hp > io_free)
+			child_per_hp_io = 0;
+
+		if (child_per_hp_mem64 < PPB_MEM_ALIGNMENT)
+			child_per_hp_mem64 = PPB_MEM_ALIGNMENT;
+		child_per_hp_mem64 = P2ALIGN(child_per_hp_mem64,
+		    PPB_MEM_ALIGNMENT);
+		if (child_per_hp_mem64 * child_hp > mem64_free)
+			child_per_hp_mem64 = 0;
+	}
+
+	/* Recurse into child bridges with locally-computed spare */
+	for (i = minbus; i <= maxbus; i++) {
+		if (pci_bus_res[i].par_bus == secbus &&
+		    pci_bus_res[i].dip != NULL) {
+			allocate_bridge_resources(rcdip,
+			    minbus, maxbus, pci_bus_res, i,
+			    child_per_hp_mem, child_per_hp_io,
+			    child_per_hp_mem64);
+		}
+	}
+}
+
+/*
+ * Allocate bridge windows and reprogram device BARs in a single
+ * recursive pass.  For each root bus, compute per-hotplug-bridge spare
+ * from that bus's own available resources and accumulated requirements,
+ * reprogram root bus device BARs, then recursively allocate child
+ * bridge windows -- reprogramming each bus's device BARs immediately
+ * after its busra map is seeded.
+ *
+ * Spare is computed per root bus, not globally, so that multi-segment
+ * systems with independent resource pools get correctly scoped spare.
+ * No maximum clamp is applied -- the available pool itself is the
+ * natural upper bound.  Each level of the recursion recomputes spare
+ * locally from its actual allocated window, so deep bridges get
+ * proportionally less spare without needing artificial limits.
+ */
+static void
+allocate_all_bridges(dev_info_t *rcdip, uint32_t minbus, uint32_t maxbus,
+    struct pci_bus_resource *pci_bus_res)
+{
+	int bus, i;
+
+	for (bus = minbus; bus <= maxbus; bus++) {
+		pci_ranges_t *rngs;
+		uint_t rnglen, nranges, ri;
+		uint64_t mem_avail = 0, io_avail = 0, mem64_avail = 0;
+		uint64_t per_hp_mem = 0, per_hp_io = 0, per_hp_mem64 = 0;
+		uint64_t mem_free, io_free, mem64_free;
+		uint64_t hp;
+
 		if (pci_bus_res[bus].par_bus != NO_PAR_BUS)
+			continue;
+		if (pci_bus_res[bus].dip == NULL)
 			continue;
 
 		/*
-		 * 1. find resources associated with this root bus
+		 * Compute available resources for this root bus from the
+		 * RC's ranges property.  Each root bus gets its own spare
+		 * computation so that multi-segment systems with separate
+		 * resource pools are handled correctly.
 		 */
-		populate_bus_res(rcdip, pci_bus_res, bus);
+		if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, rcdip,
+		    DDI_PROP_DONTPASS, OBP_RANGES,
+		    (int **)&rngs, &rnglen) == DDI_PROP_SUCCESS) {
+			nranges = CELLS_1275_TO_BYTES(rnglen) /
+			    sizeof (pci_ranges_t);
 
-		/*
-		 * 2. Exclude <1M address range here in case below reserved
-		 * ranges for BIOS data area, ROM area etc are wrongly reported
-		 * in ACPI resource producer entries for PCI root bus.
-		 *	00000000 - 000003FF	RAM
-		 *	00000400 - 000004FF	BIOS data area
-		 *	00000500 - 0009FFFF	RAM
-		 *	000A0000 - 000BFFFF	VGA RAM
-		 *	000C0000 - 000FFFFF	ROM area
-		 *
-		 * NB: This justification does not make sense on ARM, however
-		 * the PCI codebase contains assumptions that address 0, at
-		 * least, is invalid.  This is as good a place as any to make
-		 * it true.  We also remove I/O 0x0 for the same reason
-		 */
-		(void) pci_memlist_remove(&pci_bus_res[bus].mem_avail,
-		    0x0, 0x100000);
-		(void) pci_memlist_remove(&pci_bus_res[bus].pmem_avail,
-		    0x0, 0x100000);
-		(void) pci_memlist_remove(&pci_bus_res[bus].io_avail,
-		    0x0, 0x1);
+			for (ri = 0; ri < nranges; ri++) {
+				uint32_t addr_type =
+				    rngs[ri].child_high & PCI_ADDR_MASK;
+				uint64_t base =
+				    ((uint64_t)rngs[ri].child_mid << 32) |
+				    rngs[ri].child_low;
+				uint64_t size =
+				    ((uint64_t)rngs[ri].size_high << 32) |
+				    rngs[ri].size_low;
 
-		/*
-		 * 3. Calculate the amount of "spare" 32-bit memory so that we
-		 * can use that later to determine how much additional memory
-		 * to allocate to bridges in order that they have a better
-		 * chance of supporting a device being hotplugged under them.
-		 *
-		 * This is a root bus and the previous CONFIG_INFO pass has
-		 * populated `mem_size` with the sum of all of the BAR sizes
-		 * for all devices underneath, possibly adjusted up to allow
-		 * for alignment when it is later allocated. This pass has also
-		 * recorded the number of child bridges found under this bus in
-		 * `num_bridge`. To calculate the memory which can be used for
-		 * additional bridge allocations we sum up the contents of the
-		 * `mem_avail` list and subtract `mem_size`.
-		 *
-		 * When programming child bridges later in fix_ppb_res(), the
-		 * bridge count and spare memory values cached against the
-		 * relevant root port are used to determine how much memory to
-		 * be allocated.
-		 */
-		if (pci_bus_res[bus].num_bridge > 0) {
-			uint64_t mem = 0;
-
-			for (struct memlist *ml = pci_bus_res[bus].mem_avail;
-			    ml != NULL; ml = ml->ml_next) {
-				if (ml->ml_address < UINT32_MAX)
-					mem += ml->ml_size;
+				switch (addr_type) {
+				case PCI_ADDR_IO:
+					io_avail += size;
+					break;
+				case PCI_ADDR_MEM64:
+					/*
+					 * Altra Max and the Arm AGI CPU expose
+					 * 32bit memory ranges as 64bit.
+					 */
+					if (base + size - 1 <= UINT32_MAX) {
+						mem_avail += size;
+					} else {
+						mem64_avail += size;
+					}
+					break;
+				case PCI_ADDR_MEM32:
+					ASSERT3U(base, <=, UINT32_MAX);
+					mem_avail += size;
+					break;
+				default:
+					break;
+				}
 			}
 
-			if (mem > pci_bus_res[bus].mem_size)
-				mem -= pci_bus_res[bus].mem_size;
-			else
-				mem = 0;
-
-			pci_bus_res[bus].mem_buffer = mem;
-
-			dcmn_err(CE_NOTE,
-			    "Bus 0x%02x, bridges 0x%x, buffer mem 0x%lx",
-			    bus, pci_bus_res[bus].num_bridge, mem);
+			ddi_prop_free(rngs);
 		}
 
 		/*
-		 * 4. Remove used PCI and ISA resources from bus resource map
+		 * Compute per-hotplug-bridge spare for this root bus.
+		 * Use the root bus's accumulated requirements directly:
+		 * mem_required = mem_size (RC integrated device BARs) +
+		 * sum of P2ROUNDUP(child.mem_required), which accounts
+		 * for all descendants and root-complex integrated devices.
+		 *
+		 * Only a minimum floor is applied; no maximum clamp.  The
+		 * recursive allocator recomputes spare at each level from
+		 * the actual allocated window, so over-reservation at the
+		 * root naturally attenuates at depth.
 		 */
+		hp = pci_bus_res[bus].num_hp_bridges;
+		if (hp > 0) {
+			mem_free = mem_avail >
+			    pci_bus_res[bus].mem_required ?
+			    mem_avail - pci_bus_res[bus].mem_required : 0;
+			io_free = io_avail >
+			    pci_bus_res[bus].io_required ?
+			    io_avail - pci_bus_res[bus].io_required : 0;
+			mem64_free = mem64_avail >
+			    pci_bus_res[bus].mem64_required ?
+			    mem64_avail - pci_bus_res[bus].mem64_required : 0;
 
-		pci_memlist_remove_list(&pci_bus_res[bus].io_avail,
-		    pci_bus_res[bus].io_used);
-		pci_memlist_remove_list(&pci_bus_res[bus].mem_avail,
-		    pci_bus_res[bus].mem_used);
-		pci_memlist_remove_list(&pci_bus_res[bus].pmem_avail,
-		    pci_bus_res[bus].pmem_used);
-		pci_memlist_remove_list(&pci_bus_res[bus].mem_avail,
-		    pci_bus_res[bus].pmem_used);
-		pci_memlist_remove_list(&pci_bus_res[bus].pmem_avail,
-		    pci_bus_res[bus].mem_used);
-	}
+			per_hp_mem = mem_free / hp;
+			per_hp_io = io_free / hp;
+			per_hp_mem64 = mem64_free / hp;
 
-	/* add bus-range property for root/peer bus nodes */
-	for (i = 0; i <= pci_boot_maxbus; i++) {
-		/* create bus-range property on root/peer buses */
-		if (pci_bus_res[i].par_bus == NO_PAR_BUS)
-			add_bus_range_prop(pci_bus_res, i);
+			/*
+			 * Floor at one alignment unit, round down to
+			 * alignment to reduce resource exhaustion risk,
+			 * and disable spare if it would exceed available.
+			 */
+			if (per_hp_mem < PPB_MEM_ALIGNMENT)
+				per_hp_mem = PPB_MEM_ALIGNMENT;
+			per_hp_mem = P2ALIGN(per_hp_mem,
+			    PPB_MEM_ALIGNMENT);
+			if (per_hp_mem * hp > mem_free)
+				per_hp_mem = 0;
 
-		/* setup bus range resource on each bus */
-		setup_bus_res(pci_bus_res, i);
-	}
+			if (per_hp_io < PPB_IO_ALIGNMENT)
+				per_hp_io = PPB_IO_ALIGNMENT;
+			per_hp_io = P2ALIGN(per_hp_io,
+			    PPB_IO_ALIGNMENT);
+			if (per_hp_io * hp > io_free)
+				per_hp_io = 0;
 
-	remove_subtractive_res(pci_bus_res);
+			if (per_hp_mem64 < PPB_MEM_ALIGNMENT)
+				per_hp_mem64 = PPB_MEM_ALIGNMENT;
+			per_hp_mem64 = P2ALIGN(per_hp_mem64,
+			    PPB_MEM_ALIGNMENT);
+			if (per_hp_mem64 * hp > mem64_free)
+				per_hp_mem64 = 0;
 
-	/* reprogram the non-subtractive PPB */
-	for (i = 0; i <= pci_boot_maxbus; i++) {
-		fix_ppb_res(rcdip, pci_bus_res, i, B_FALSE);
-	}
+			ddev_err(rcdip, CE_NOTE,
+			    "pci_boot: bus 0x%02x hp_bridges %lu, "
+			    "per_hp: mem 0x%lx, io 0x%lx, mem64 0x%lx",
+			    bus, hp, per_hp_mem, per_hp_io,
+			    per_hp_mem64);
+		}
 
-	for (i = 0; i <= pci_boot_maxbus; i++) {
 		/*
-		 * Reprogram the subtractive PPB. At this time, all its
-		 * siblings should have got their resources already.
+		 * Reprogram root bus device BARs, then allocate and
+		 * reprogram child bridges recursively.  Non-subtractive
+		 * bridges are processed before subtractive ones.
 		 */
-		if (pci_bus_res[i].subtractive)
-			fix_ppb_res(rcdip, pci_bus_res, i, B_TRUE);
-		enumerate_bus_devs(rcdip, i, pci_bus_res, CONFIG_NEW);
-	}
+		reprogram_bus_devs(rcdip, (uchar_t)bus, pci_bus_res);
+		pci_prd_slot_name(bus, pci_bus_res[bus].dip);
 
-	/* All dev programmed, so we can create available prop */
-	for (i = 0; i <= pci_boot_maxbus; i++)
-		add_bus_available_prop(pci_bus_res, i);
+		for (i = minbus; i <= maxbus; i++) {
+			if (pci_bus_res[i].par_bus == bus &&
+			    pci_bus_res[i].dip != NULL &&
+			    !pci_bus_res[i].subtractive) {
+				allocate_bridge_resources(rcdip, minbus, maxbus,
+				    pci_bus_res, i, per_hp_mem, per_hp_io,
+				    per_hp_mem64);
+			}
+		}
+		for (i = minbus; i <= maxbus; i++) {
+			if (pci_bus_res[i].par_bus == bus &&
+			    pci_bus_res[i].dip != NULL &&
+			    pci_bus_res[i].subtractive) {
+				allocate_bridge_resources(rcdip, minbus, maxbus,
+				    pci_bus_res, i, per_hp_mem, per_hp_io,
+				    per_hp_mem64);
+			}
+		}
+	}
 }
 
-static struct memlist *
-find_resource(dev_info_t *rcdip, pci_prd_rsrc_t rsrc)
+static void
+pci_reprogram(dev_info_t *rcdip, uint32_t minbus, uint32_t maxbus,
+    struct pci_bus_resource *pci_bus_res)
 {
-	struct memlist *mlp = NULL;
+	int bus;
 
 	/*
-	 * Take _BUS from "bus-range", anything else can be derived from
-	 * "ranges"
+	 * Root-bus resource discovery: seed busra maps, exclude low
+	 * addresses, and set bus-range properties.
 	 */
-	if (rsrc == PCI_PRD_R_BUS) {
-		int busrng[2];
+	for (bus = minbus; bus <= maxbus; bus++) {
+		if (pci_bus_res[bus].par_bus != NO_PAR_BUS)
+			continue;
+		if (pci_bus_res[bus].dip == NULL)
+			continue;
 
-		dip_bus_range(rcdip, busrng);
-		pci_memlist_insert(&mlp, busrng[0],
-		    (busrng[1] - busrng[0] + 1));
-		return (mlp);
-	}
+		if (!populate_bus_res(rcdip, pci_bus_res, bus))
+			continue;
 
-	pci_ranges_t *rngs;
-	uint_t rnglen;
+		/*
+		 * Exclude the low address range from the busra maps.
+		 * Reserve one minimum allocation unit (one alignment
+		 * quantum) at address zero for each resource type.
+		 * The PCI codebase assumes address 0 is invalid.
+		 */
+		{
+			ndi_ra_request_t req = {0};
+			uint64_t ra_base, ra_len;
 
-	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, rcdip,
-	    DDI_PROP_DONTPASS,  OBP_RANGES,
-	    (int **)&rngs, &rnglen) != DDI_PROP_SUCCESS) {
-		dev_err(rcdip, CE_PANIC, "No ranges property");
-		return (NULL);
-	}
+			req.ra_flags = NDI_RA_ALLOC_SPECIFIED;
+			req.ra_addr = 0x0;
+			req.ra_len = PPB_MEM_ALIGNMENT;
+			(void) ndi_ra_alloc(rcdip, &req, &ra_base, &ra_len,
+			    NDI_RA_TYPE_MEM, 0);
+			(void) ndi_ra_alloc(rcdip, &req, &ra_base, &ra_len,
+			    NDI_RA_TYPE_MEM64, 0);
 
-	rnglen = CELLS_1275_TO_BYTES(rnglen);
-	rnglen /= sizeof (pci_ranges_t);
-
-	int i;
-
-	for (i = 0; i < rnglen; i++) {
-		if ((rsrc == PCI_PRD_R_IO) &&
-		    (rngs[i].child_high & PCI_ADDR_MASK) == PCI_ADDR_IO) {
-			break;
-		} else if ((rsrc == PCI_PRD_R_PREFETCH) &&
-		    (((rngs[i].child_high & PCI_ADDR_MASK) == PCI_ADDR_MEM32) ||
-		    ((rngs[i].child_high & PCI_ADDR_MASK) == PCI_ADDR_MEM64)) &&
-		    ((rngs[i].child_high & PCI_PREFETCH_B) != 0)) {
-			break;
-		} else if ((rsrc == PCI_PRD_R_MMIO) &&
-		    (((rngs[i].child_high & PCI_ADDR_MASK) == PCI_ADDR_MEM32) ||
-		    ((rngs[i].child_high & PCI_ADDR_MASK) == PCI_ADDR_MEM64)) &&
-		    ((rngs[i].child_high & PCI_PREFETCH_B) == 0)) {
-			break;
+			req.ra_len = PPB_IO_ALIGNMENT;
+			(void) ndi_ra_alloc(rcdip, &req, &ra_base, &ra_len,
+			    NDI_RA_TYPE_IO, 0);
 		}
+
+		add_bus_range_prop(pci_bus_res, bus);
 	}
 
-	if (i == rnglen)
-		return (NULL);
-
-	pci_memlist_insert(&mlp,
-	    ((uint64_t)rngs[i].child_mid << 32) | rngs[i].child_low,
-	    ((uint64_t)rngs[i].size_high << 32) | rngs[i].size_low);
-
-	ddi_prop_free(rngs);
-
-	return (mlp);
+	/*
+	 * Allocate bridge windows, reprogram device BARs, and assign
+	 * bus number ranges -- all in a single recursive pass.
+	 * allocate_all_bridges() reprograms root bus devices first,
+	 * then recurses into child bridges; each child bus's devices
+	 * are reprogrammed immediately after the bridge window is
+	 * established.
+	 */
+	allocate_all_bridges(rcdip, minbus, maxbus, pci_bus_res);
 }
 
 /*
  * populate bus resources
  */
-static void
+static boolean_t
 populate_bus_res(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
     uchar_t bus)
 {
-	pci_bus_res[bus].pmem_avail = find_resource(rcdip, PCI_PRD_R_PREFETCH);
-	pci_bus_res[bus].mem_avail = find_resource(rcdip, PCI_PRD_R_MMIO);
-	pci_bus_res[bus].io_avail = find_resource(rcdip, PCI_PRD_R_IO);
-	pci_bus_res[bus].bus_avail = find_resource(rcdip, PCI_PRD_R_BUS);
-
-	dump_memlists(pci_bus_res, "populate_bus_res", bus);
+	pci_ranges_t *rngs;
+	uint_t rnglen, nranges, i;
+	int busrng[2];
 
 	/*
-	 * attempt to initialize sub_bus from the largest range-end
-	 * in the bus_avail list
+	 * Seed busra resource maps on the RC dip.  The busra framework
+	 * (ndi_ra_alloc/ndi_ra_free) is the authoritative allocator for
+	 * bridge window and device BAR resources.  We create maps for
+	 * each resource type and populate them from the RC's "ranges"
+	 * and "bus-range" properties.
 	 */
-	if (pci_bus_res[bus].bus_avail != NULL) {
-		struct memlist *entry;
-		int current;
+	(void) ndi_ra_map_setup(rcdip, NDI_RA_TYPE_MEM);
+	(void) ndi_ra_map_setup(rcdip, NDI_RA_TYPE_IO);
+	(void) ndi_ra_map_setup(rcdip, NDI_RA_TYPE_MEM64);
+	(void) ndi_ra_map_setup(rcdip, NDI_RA_TYPE_PCI_BUSNUM);
 
-		entry = pci_bus_res[bus].bus_avail;
-		while (entry != NULL) {
-			current = entry->ml_address + entry->ml_size - 1;
-			if (current > pci_bus_res[bus].sub_bus)
-				pci_bus_res[bus].sub_bus = current;
-			entry = entry->ml_next;
+	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, rcdip,
+	    DDI_PROP_DONTPASS, OBP_RANGES,
+	    (int **)&rngs, &rnglen) != DDI_PROP_SUCCESS) {
+		dev_err(rcdip, CE_WARN, "pci_boot: no ranges property on "
+		    "RC, skipping bus 0x%02x", bus);
+		return (B_FALSE);
+	}
+
+	nranges = CELLS_1275_TO_BYTES(rnglen) / sizeof (pci_ranges_t);
+
+	for (i = 0; i < nranges; i++) {
+		uint32_t addr_type = rngs[i].child_high & PCI_ADDR_MASK;
+		uint64_t base = ((uint64_t)rngs[i].child_mid << 32) |
+		    rngs[i].child_low;
+		uint64_t size = ((uint64_t)rngs[i].size_high << 32) |
+		    rngs[i].size_low;
+
+		switch (addr_type) {
+		case PCI_ADDR_IO:
+			(void) ndi_ra_free(rcdip, base, size,
+			    NDI_RA_TYPE_IO, 0);
+			break;
+		case PCI_ADDR_MEM32:
+			(void) ndi_ra_free(rcdip, base, size,
+			    NDI_RA_TYPE_MEM, 0);
+			break;
+		case PCI_ADDR_MEM64:
+			if (base + size - 1 <= UINT32_MAX) {
+				/*
+				 * Sub-4G MEM64 range: seed MEM pool.
+				 *
+				 * Some firmware (e.g. Ampere Altra and the
+				 * Arm AGI CPU) describe 32-bit memory
+				 * apertures with QWordMemory/PCI_ADDR_MEM64.
+				 *
+				 * PPB non-PF windows and 32-bit BARs allocate
+				 * from NDI_RA_TYPE_MEM.
+				 */
+				(void) ndi_ra_free(rcdip, base, size,
+				    NDI_RA_TYPE_MEM, 0);
+			} else {
+				(void) ndi_ra_free(rcdip, base, size,
+				    NDI_RA_TYPE_MEM64, 0);
+			}
+			break;
+		default:
+			break;
 		}
 	}
+
+	ddi_prop_free(rngs);
+
+	/*
+	 * Seed bus number resources.  Read bus-range directly —
+	 * the property gives us exactly [first_bus, last_bus].
+	 * Exclude the root bus itself (already assigned) and seed
+	 * the remaining subordinate range into busra for bridge
+	 * allocation.
+	 */
+	dip_bus_range(rcdip, busrng);
+	pci_bus_res[bus].sub_bus = busrng[1];
+
+	if (busrng[1] > busrng[0]) {
+		(void) ndi_ra_free(rcdip, (uint64_t)(busrng[0] + 1),
+		    (uint64_t)(busrng[1] - busrng[0]),
+		    NDI_RA_TYPE_PCI_BUSNUM, 0);
+	}
+
+	return (B_TRUE);
 }
 
 /*
- * For any fixed configuration (often compatability) pci devices
- * and those with their own expansion rom, create device nodes
- * to hold the already configured device details.
+ * Reprogram device BARs for a single bus.  Drain the devlist built
+ * during CONFIG_INFO enumeration, calling add_reg_props(CONFIG_NEW) for
+ * each device.  Called from allocate_all_bridges() for root buses and
+ * from allocate_bridge_resources() for non-root buses, immediately
+ * after the bus's busra map is seeded.
  */
-void
-enumerate_bus_devs(dev_info_t *rcdip, uchar_t bus,
-    struct pci_bus_resource *pci_bus_res, config_phase_t config_op)
+static void
+reprogram_bus_devs(dev_info_t *rcdip, uchar_t bus,
+    struct pci_bus_resource *pci_bus_res)
 {
-	uchar_t dev, func, nfunc, header;
-	struct pci_devfunc *devlist = NULL, *entry;
+	struct pci_devfunc *devlist, *entry;
 
 	if (bus_debug(bus)) {
-		if (config_op == CONFIG_NEW) {
-			dcmn_err(CE_NOTE, "configuring pci bus 0x%x", bus);
-		} else {
-			dcmn_err(CE_NOTE, "enumerating pci bus 0x%x", bus);
-		}
+		ddev_err(rcdip, CE_NOTE,
+		    "pci_boot: configuring pci bus 0x%x", bus);
 	}
 
-	if (config_op == CONFIG_NEW) {
-		devlist = (struct pci_devfunc *)pci_bus_res[bus].privdata;
-		while (devlist) {
-			entry = devlist;
-			devlist = entry->next;
-			/* reprogram device(s) */
-			add_reg_props(rcdip, entry->dip,
-			    pci_bus_res, bus, entry->dev, entry->func,
-			    CONFIG_NEW);
-			kmem_free(entry, sizeof (*entry));
-		}
-		pci_bus_res[bus].privdata = NULL;
-		return;
+	devlist = (struct pci_devfunc *)pci_bus_res[bus].privdata;
+	while (devlist) {
+		entry = devlist;
+		devlist = entry->next;
+		add_reg_props(rcdip, entry->dip,
+		    pci_bus_res, bus, entry->dev, entry->func,
+		    CONFIG_NEW);
+		kmem_free(entry, sizeof (*entry));
+	}
+	pci_bus_res[bus].privdata = NULL;
+}
+
+/*
+ * Recursively enumerate all PCI devices on and below the given bus.
+ * For each bridge discovered, recurse into its secondary bus.  On
+ * unwind, accumulate resource requirements (BAR sizes + child bridge
+ * needs) and count hotplug-capable bridges.
+ */
+static void
+enumerate_bus_devs(dev_info_t *rcdip, uint32_t minbus, uint32_t maxbus,
+    uchar_t bus, struct pci_bus_resource *pci_bus_res,
+    config_phase_t config_op)
+{
+	uchar_t dev, func, nfunc, header;
+
+	if (bus_debug(bus)) {
+		ddev_err(rcdip, CE_NOTE,
+		    "pci_boot: enumerating pci bus 0x%x", bus);
 	}
 
 	for (dev = 0; dev < max_dev_pci; dev++) {
@@ -1331,9 +1538,11 @@ enumerate_bus_devs(dev_info_t *rcdip, uchar_t bus,
 			    PCI_GETBDF(bus, dev, func), PCI_CONF_VENID);
 			ushort_t devid = pci_cfgacc_get16(rcdip,
 			    PCI_GETBDF(bus, dev, func), PCI_CONF_DEVID);
-			if ((venid != 0xffff) && (venid != 0x0))
-				dcmn_err(CE_CONT, "pci%x,%x at %x:%x:%x\n",
+			if ((venid != 0xffff) && (venid != 0x0)) {
+				ddev_err(rcdip, CE_NOTE,
+				    "pci_boot: pci%x,%x at %x:%x:%x",
 				    venid, devid, bus, dev, func);
+			}
 			if ((venid == 0xffff) || (venid == 0)) {
 				/* no function at this address */
 				continue;
@@ -1342,7 +1551,8 @@ enumerate_bus_devs(dev_info_t *rcdip, uchar_t bus,
 			header = pci_cfgacc_get8(rcdip,
 			    PCI_GETBDF(bus, dev, func), PCI_CONF_HEADER);
 			if (header == 0xff) {
-				dcmn_err(CE_CONT, "%x:%x:%x has no header\n",
+				ddev_err(rcdip, CE_NOTE,
+				    "pci_boot: %x:%x:%x has no header",
 				    bus, dev, func);
 				continue; /* illegal value */
 			}
@@ -1357,54 +1567,113 @@ enumerate_bus_devs(dev_info_t *rcdip, uchar_t bus,
 				nfunc = 8;
 			}
 
-			if (config_op == CONFIG_INFO) {
-				/*
-				 * Create the node, unconditionally, on the
-				 * first pass only.  It may still need
-				 * resource assignment, which will be
-				 * done on the second, CONFIG_NEW, pass.
-				 */
-				process_devfunc(rcdip, pci_bus_res, bus, dev,
-				    func, config_op);
+			{
+				int secbus;
 
+				/*
+				 * Create the node.  It may still need
+				 * resource assignment, which will be
+				 * done by reprogram_bus_devs().
+				 */
+				secbus = process_devfunc(rcdip,
+				    minbus, maxbus, pci_bus_res,
+				    bus, dev, func, config_op);
+
+				/*
+				 * If this device is a bridge, recurse into
+				 * the secondary bus immediately.  By the time
+				 * process_devfunc returns, add_ppb_props has
+				 * already set up pci_bus_res[secbus].
+				 */
+				if (secbus > (int)bus &&
+				    (uchar_t)secbus >= minbus &&
+				    (uchar_t)secbus <= maxbus) {
+					enumerate_bus_devs(rcdip,
+					    minbus, maxbus,
+					    (uchar_t)secbus, pci_bus_res,
+					    config_op);
+				}
 			}
 		}
 	}
 
-	/* percolate bus used resources up through parents to root */
-	if (config_op == CONFIG_INFO) {
-		int	par_bus;
+	/*
+	 * All devices on this bus and all child bridge subtrees have
+	 * now been enumerated.  Accumulate the resource requirements
+	 * for this bus: start with the BAR sizes gathered during
+	 * CONFIG_INFO, then add each child bridge's requirements
+	 * (rounded up to bridge window alignment), and count
+	 * hotplug-capable bridges.
+	 *
+	 * Because we recurse depth-first, child buses have already
+	 * completed their accumulation by the time we reach this
+	 * point -- leaves-first ordering is guaranteed by the
+	 * call stack.
+	 *
+	 * Skip for CONFIG_TRUST -- no reallocation pass follows,
+	 * so accumulated requirements are unused.
+	 */
+	if (config_op != CONFIG_TRUST) {
+		struct pci_bus_resource *pbr = &pci_bus_res[bus];
+		int i;
 
-		par_bus = pci_bus_res[bus].par_bus;
-		while (par_bus != NO_PAR_BUS) {
-			pci_bus_res[par_bus].io_size +=
-			    pci_bus_res[bus].io_size;
-			pci_bus_res[par_bus].mem_size +=
-			    pci_bus_res[bus].mem_size;
-			pci_bus_res[par_bus].pmem_size +=
-			    pci_bus_res[bus].pmem_size;
+		pbr->mem_required = pbr->mem_size;
+		pbr->io_required = pbr->io_size;
+		pbr->mem64_required = pbr->mem64_size;
+		pbr->num_hp_bridges = 0;
 
-			if (pci_bus_res[bus].io_used != NULL) {
-				pci_memlist_merge(&pci_bus_res[bus].io_used,
-				    &pci_bus_res[par_bus].io_used);
-			}
+		for (i = minbus; i <= maxbus; i++) {
+			if (pci_bus_res[i].par_bus != bus)
+				continue;
+			if (pci_bus_res[i].dip == NULL)
+				continue;
 
-			if (pci_bus_res[bus].mem_used != NULL) {
-				pci_memlist_merge(&pci_bus_res[bus].mem_used,
-				    &pci_bus_res[par_bus].mem_used);
-			}
-
-			if (pci_bus_res[bus].pmem_used != NULL) {
-				pci_memlist_merge(&pci_bus_res[bus].pmem_used,
-				    &pci_bus_res[par_bus].pmem_used);
-			}
-
-			pci_bus_res[par_bus].num_bridge +=
-			    pci_bus_res[bus].num_bridge;
-
-			bus = par_bus;
-			par_bus = pci_bus_res[par_bus].par_bus;
+			pbr->mem_required += P2ROUNDUP(
+			    pci_bus_res[i].mem_required, PPB_MEM_ALIGNMENT);
+			pbr->io_required += P2ROUNDUP(
+			    pci_bus_res[i].io_required, PPB_IO_ALIGNMENT);
+			pbr->mem64_required += P2ROUNDUP(
+			    pci_bus_res[i].mem64_required, PPB_MEM_ALIGNMENT);
+			pbr->num_hp_bridges += pci_bus_res[i].num_hp_bridges;
 		}
+
+		/*
+		 * Check whether this bus's bridge is hotplug-capable.
+		 * Only bridges (not root buses) can be hotplug-capable.
+		 */
+		if (pbr->par_bus != NO_PAR_BUS) {
+			int *regp;
+			uint_t reglen;
+			uchar_t bbus, bdev, bfunc;
+			int rv;
+
+			rv = ddi_prop_lookup_int_array(DDI_DEV_T_ANY,
+			    pbr->dip, DDI_PROP_DONTPASS, OBP_REG,
+			    &regp, &reglen);
+			if (rv == DDI_PROP_SUCCESS && reglen > 0) {
+				bfunc = (uchar_t)PCI_REG_FUNC_G(regp[0]);
+				bdev = (uchar_t)PCI_REG_DEV_G(regp[0]);
+				bbus = (uchar_t)PCI_REG_BUS_G(regp[0]);
+				ddi_prop_free(regp);
+
+				if (bridge_is_hotplug_capable(rcdip, bbus,
+				    bdev, bfunc)) {
+					pbr->num_hp_bridges++;
+					ddev_err(rcdip, CE_NOTE,
+					    MSGHDR "hotplug-capable",
+					    ddi_node_name(pbr->dip),
+					    bbus, bdev, bfunc);
+				}
+			} else if (rv == DDI_PROP_SUCCESS) {
+				ddi_prop_free(regp);
+			}
+		}
+
+		ddev_err(rcdip, CE_NOTE,
+		    "pci_boot: bus 0x%02x requirements: "
+		    "mem 0x%lx, io 0x%lx, mem64 0x%lx, hp_bridges %u",
+		    bus, pbr->mem_required, pbr->io_required,
+		    pbr->mem64_required, pbr->num_hp_bridges);
 	}
 }
 
@@ -1416,6 +1685,7 @@ set_devpm_d0(dev_info_t *rcdip, uchar_t bus, uchar_t dev, uchar_t func)
 	uint8_t cap_ptr;
 	uint8_t cap_id;
 	uint16_t pmcsr;
+	int attempts = PCI_CAP_MAX_PTR;
 
 	status = pci_cfgacc_get16(rcdip, PCI_GETBDF(bus, dev, func),
 	    PCI_CONF_STAT);
@@ -1434,7 +1704,8 @@ set_devpm_d0(dev_info_t *rcdip, uchar_t bus, uchar_t dev, uchar_t func)
 	/*
 	 * Walk the capabilities list searching for a PM entry.
 	 */
-	while (cap_ptr != PCI_CAP_NEXT_PTR_NULL && cap_ptr >= PCI_CAP_PTR_OFF) {
+	while (cap_ptr != PCI_CAP_NEXT_PTR_NULL && cap_ptr >= PCI_CAP_PTR_OFF &&
+	    attempts-- > 0) {
 		cap_ptr &= PCI_CAP_PTR_MASK;
 		cap_id = pci_cfgacc_get8(rcdip, PCI_GETBDF(bus, dev, func),
 		    cap_ptr + PCI_CAP_ID);
@@ -1453,22 +1724,25 @@ set_devpm_d0(dev_info_t *rcdip, uchar_t bus, uchar_t dev, uchar_t func)
 
 }
 
-static void
-process_devfunc(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
+static int
+process_devfunc(dev_info_t *rcdip, uint32_t minbus, uint32_t maxbus,
+    struct pci_bus_resource *pci_bus_res,
     uchar_t bus, uchar_t dev, uchar_t func, config_phase_t config_op)
 {
 	pci_prop_data_t prop_data;
 	pci_prop_failure_t prop_ret;
 	dev_info_t *dip = NULL;
 	struct pci_devfunc *devlist = NULL, *entry = NULL;
+	int secbus = -1;
 	int power[2] = {1, 1};
 	pcie_req_id_t bdf;
 
 	prop_ret = pci_prop_data_fill(rcdip, NULL, bus, dev, func, &prop_data);
 	if (prop_ret != PCI_PROP_OK) {
-		cmn_err(CE_WARN, MSGHDR "failed to get basic PCI data: 0x%x",
+		dev_err(rcdip, CE_WARN,
+		    MSGHDR "failed to get basic PCI data: 0x%x",
 		    ddi_node_name(rcdip), bus, dev, func, prop_ret);
-		return;
+		return (-1);
 	}
 
 	VERIFY3P(pci_bus_res[bus].dip, !=, NULL);
@@ -1514,16 +1788,13 @@ process_devfunc(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
 		    DEVI_SID_NODEID, &dip);
 		prop_ret = pci_prop_name_node(dip, &prop_data);
 		if (prop_ret != PCI_PROP_OK) {
-			cmn_err(CE_WARN, MSGHDR "failed to set node "
+			dev_err(rcdip, CE_WARN, MSGHDR "failed to set node "
 			    "name: 0x%x; devinfo node not created",
 			    ddi_node_name(rcdip), bus, dev, func, prop_ret);
 			(void) ndi_devi_free(dip);
-			return;
+			return (-1);
 		}
 	}
-
-
-
 
 	bdf = PCI_GETBDF(bus, dev, func);
 
@@ -1538,18 +1809,19 @@ process_devfunc(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
 	}
 
 	/*
-	 * Go through and set all of the devinfo proprties on this function.
+	 * Go through and set all of the devinfo properties on this function.
 	 */
 	prop_ret = pci_prop_set_common_props(dip, &prop_data);
 	if (prop_ret != PCI_PROP_OK) {
-		cmn_err(CE_WARN, MSGHDR "failed to set properties: 0x%x; "
+		dev_err(rcdip, CE_WARN,
+		    MSGHDR "failed to set properties: 0x%x; "
 		    "devinfo node not created", ddi_node_name(rcdip), bus, dev,
 		    func, prop_ret);
 		if (pcie_get_rc_dip(dip) != NULL) {
 			pcie_fini_bus(dip, PCIE_BUS_FINAL);
 		}
 		(void) ndi_devi_free(dip);
-		return;
+		return (-1);
 	}
 
 	(void) ndi_prop_update_int_array(DDI_DEV_T_NONE, dip,
@@ -1562,14 +1834,27 @@ process_devfunc(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
 		boolean_t pciex = (prop_data.ppd_flags & PCI_PROP_F_PCIE) != 0;
 		boolean_t is_pci_bridge = pciex &&
 		    prop_data.ppd_pcie_type == PCIE_PCIECAP_DEV_TYPE_PCIE2PCI;
-		add_ppb_props(rcdip, dip, pci_bus_res, bus, dev, func, pciex,
-		    is_pci_bridge);
-	} else {
-		/*
-		 * Record the non-PPB devices on the bus for possible
-		 * reprogramming at 2nd bus enumeration.
-		 * Note: PPB reprogramming is done in fix_ppb_res()
-		 */
+		if (add_ppb_props(rcdip, dip, minbus, maxbus, pci_bus_res,
+		    bus, dev, func, pciex, is_pci_bridge, config_op)) {
+			secbus = (int)pci_cfgacc_get8(rcdip,
+			    PCI_GETBDF(bus, dev, func), PCI_BCNF_SECBUS);
+		}
+	}
+
+	/*
+	 * Record all devices on the bus for BAR reprogramming at the
+	 * 2nd (CONFIG_NEW) bus enumeration pass.  Bridge forwarding
+	 * windows are programmed separately in allocate_bridge_resources(),
+	 * but bridge device BARs (Type 1 header BAR0/BAR1) are parent-bus
+	 * resources and must be reprogrammed from the bus's busra pool
+	 * alongside leaf device BARs.  add_reg_props() handles the
+	 * Type 1 header correctly (PCI_BCNF_BASE_NUM limits probing to
+	 * BAR0/BAR1 only).
+	 *
+	 * Skip for CONFIG_TRUST -- no reprogram_bus_devs() pass follows,
+	 * so the devlist is unused.
+	 */
+	if (config_op != CONFIG_TRUST) {
 		devlist = (struct pci_devfunc *)pci_bus_res[bus].privdata;
 		entry = kmem_zalloc(sizeof (*entry), KM_SLEEP);
 		entry->dip = dip;
@@ -1581,7 +1866,8 @@ process_devfunc(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
 
 	prop_ret = pci_prop_set_compatible(dip, &prop_data);
 	if (prop_ret != PCI_PROP_OK) {
-		cmn_err(CE_WARN, MSGHDR "failed to set compatible property: "
+		dev_err(rcdip, CE_WARN,
+		    MSGHDR "failed to set compatible property: "
 		    "0x%x;  device may not bind to a driver",
 		    ddi_node_name(rcdip), bus, dev, func, prop_ret);
 	}
@@ -1590,22 +1876,25 @@ process_devfunc(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
 	add_reg_props(rcdip, dip, pci_bus_res, bus, dev, func,
 	    config_op);
 	(void) ndi_devi_bind_driver(dip, 0);
+
+	return (secbus);
 }
 
 /*
  * Where op is one of:
  *   CONFIG_INFO	- first pass, gather what is there.
- *   CONFIG_UPDATE	- second pass, adjust/allocate regions.
- *   CONFIG_NEW		- third pass, allocate regions.
+ *   CONFIG_NEW		- second pass, allocate regions.
  * Returns:
- *	-1	Skip this BAR
+ *	-1	Skip this BAR (BAR does not exist / size is 0)
+ *	 0	BAR exists but allocation failed; reg entry populated,
+ *		assigned-addresses entry skipped, BAR disabled in hardware
  *	 1	Properties have been assigned, reprogramming required
  */
 static int
 add_bar_reg_props(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
     config_phase_t op, uchar_t bus, uchar_t dev, uchar_t func, uint_t bar,
-    ushort_t offset, pci_regspec_t *regs, pci_regspec_t *assigned,
-    ushort_t *bar_sz)
+    ushort_t offset, ushort_t end, pci_regspec_t *regs,
+    pci_regspec_t *assigned, ushort_t *bar_sz)
 {
 	uint8_t baseclass;
 	uint32_t base, devloc;
@@ -1620,9 +1909,12 @@ add_bar_reg_props(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
 	 * Determine the size of the BAR by writing 0xffffffff to the base
 	 * register and reading the value back before restoring the original.
 	 *
-	 * For non-bridges, disable I/O and Memory access while doing this to
+	 * For non-bridges, disable I/O and Memory access while probing to
 	 * avoid difficulty with USB emulation (see OHCI spec1.0a appendix B
-	 * "Host Controller Mapping"). Doing this for bridges would have the
+	 * "Host Controller Mapping").  For 64-bit BARs the upper half must
+	 * also be probed under this disable -- decode is restored after both
+	 * halves are complete (IO branch) or after the 64/32-bit
+	 * determination (MEM branch).  Doing this for bridges would have the
 	 * side-effect of making the bridge transparent to secondary-bus
 	 * activity (see sections 4.1-4.3 of the PCI-PCI Bridge Spec V1.2).
 	 */
@@ -1639,17 +1931,19 @@ add_bar_reg_props(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
 	value = pci_cfgacc_get32(rcdip, PCI_GETBDF(bus, dev, func), offset);
 	pci_cfgacc_put32(rcdip, PCI_GETBDF(bus, dev, func), offset, base);
 
-	if (baseclass != PCI_CLASS_BRIDGE) {
-		pci_cfgacc_put16(rcdip, PCI_GETBDF(bus, dev, func),
-		    PCI_CONF_COMM, command);
-	}
-
 	/* I/O Space */
 	if ((base & PCI_BASE_SPACE_IO) != 0) {
-		struct memlist **io_avail = &pci_bus_res[bus].io_avail;
-		struct memlist **io_used = &pci_bus_res[bus].io_used;
-		boolean_t hard_decode = B_FALSE;
 		uint_t type, len;
+
+		/*
+		 * IO BARs are always 32-bit; the lower-half probe is
+		 * complete, so re-enable decode before proceeding.
+		 */
+		if (baseclass != PCI_CLASS_BRIDGE) {
+			pci_cfgacc_put16(rcdip,
+			    PCI_GETBDF(bus, dev, func),
+			    PCI_CONF_COMM, command);
+		}
 
 		*bar_sz = PCI_BAR_SZ_32;
 		value &= PCI_BASE_IO_ADDR_M;
@@ -1661,13 +1955,8 @@ add_bar_reg_props(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
 		}
 
 		regs->pci_phys_hi = PCI_ADDR_IO | devloc;
-		if (hard_decode) {
-			regs->pci_phys_hi |= PCI_RELOCAT_B;
-			regs->pci_phys_low = base & PCI_BASE_IO_ADDR_M;
-		} else {
-			regs->pci_phys_hi |= offset;
-			regs->pci_phys_low = 0;
-		}
+		regs->pci_phys_hi |= offset;
+		regs->pci_phys_low = 0;
 		assigned->pci_phys_hi = PCI_RELOCAT_B | regs->pci_phys_hi;
 		regs->pci_size_low = assigned->pci_size_low = len;
 
@@ -1678,84 +1967,135 @@ add_bar_reg_props(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
 		type = base & ~PCI_BASE_IO_ADDR_M;
 		base &= PCI_BASE_IO_ADDR_M;
 
-		/*
-		 * A device under a subtractive PPB can allocate resources from
-		 * its parent bus if there is no resource available on its own
-		 * bus.
-		 */
-		if (op == CONFIG_NEW && pci_bus_res[bus].subtractive &&
-		    *io_avail == NULL) {
-			uchar_t res_bus;
-
-			res_bus = resolve_alloc_bus(pci_bus_res, bus, RES_IO);
-			io_avail = &pci_bus_res[res_bus].io_avail;
-		}
-
 		if (op == CONFIG_INFO) {	/* first pass */
-			dcmn_err(CE_NOTE,
+			ddev_err(rcdip, CE_NOTE,
 			    MSGHDR "BAR%u I/O FWINIT 0x%x ~ 0x%x "
 			    "(ignored)", ddi_node_name(rcdip),
 			    bus, dev, func, bar, base, len);
 			pci_bus_res[bus].io_size += len;
+		} else if (op == CONFIG_TRUST) {
+			/*
+			 * Trust-firmware: claim the firmware BAR address
+			 * from the bus's busra pool.  No config writes.
+			 */
+			if (base != 0) {
+				ndi_ra_request_t ra_req = {0};
+				uint64_t ra_base, ra_len;
+
+				ra_req.ra_flags = NDI_RA_ALLOC_SPECIFIED;
+				ra_req.ra_addr = base;
+				ra_req.ra_len = len;
+				if (ndi_ra_alloc(pci_bus_res[bus].dip,
+				    &ra_req, &ra_base, &ra_len,
+				    NDI_RA_TYPE_IO, 0) != NDI_SUCCESS) {
+					dev_err(rcdip, CE_WARN,
+					    MSGHDR "BAR%u I/O trust-firmware: "
+					    "address 0x%x length 0x%x "
+					    "not in bus pool",
+					    ddi_node_name(rcdip), bus, dev,
+					    func, bar, base, len);
+					return (0);
+				}
+			}
+			ddev_err(rcdip, CE_NOTE,
+			    MSGHDR "BAR%u  I/O TRUST 0x%x ~ 0x%x",
+			    ddi_node_name(rcdip), bus, dev, func,
+			    bar, base, len);
 		} else {
-			base = pci_memlist_find(io_avail, len, len);
-			if (base == 0) {
-				cmn_err(CE_WARN, MSGHDR "BAR%u I/O "
+			/*
+			 * Allocate IO from the bus dip's busra map.
+			 */
+			ndi_ra_request_t ra_req = {0};
+			uint64_t ra_base, ra_len;
+
+			ra_req.ra_len = len;
+			ra_req.ra_align_mask = len - 1;
+			if (ndi_ra_alloc(pci_bus_res[bus].dip,
+			    &ra_req, &ra_base, &ra_len,
+			    NDI_RA_TYPE_IO, 0) != NDI_SUCCESS) {
+				dev_err(rcdip, CE_NOTE, "!" MSGHDR "BAR%u I/O "
 				    "failed to find length 0x%x",
 				    ddi_node_name(rcdip), bus, dev, func, bar,
 				    len);
-			} else {
-				uint32_t nbase;
-
-				dcmn_err(CE_NOTE, MSGHDR "BAR%u  "
-				    "I/O REPROG 0x%x ~ 0x%x",
-				    ddi_node_name(rcdip), bus, dev, func,
-				    bar, base, len);
+				/*
+				 * Disable the BAR and skip the
+				 * assigned-addresses entry so drivers
+				 * that do not need this BAR can still
+				 * attach.
+				 */
 				pci_cfgacc_put32(rcdip,
 				    PCI_GETBDF(bus, dev, func),
-				    offset, base | type);
-				nbase = pci_cfgacc_get32(rcdip,
-				    PCI_GETBDF(bus, dev, func), offset);
-				nbase &= PCI_BASE_IO_ADDR_M;
+				    offset, 0);
+				return (0);
+			}
+			base = (uint32_t)ra_base;
 
-				if (base != nbase) {
-					cmn_err(CE_NOTE, MSGHDR "BAR%u  "
-					    "I/O REPROG 0x%x ~ 0x%x "
-					    "FAILED READBACK 0x%x",
-					    ddi_node_name(rcdip), bus, dev,
-					    func, bar, base, len, nbase);
-					pci_cfgacc_put32(rcdip,
+			uint32_t nbase;
+
+			ddev_err(rcdip, CE_NOTE, MSGHDR "BAR%u  "
+			    "I/O REPROG 0x%x ~ 0x%x",
+			    ddi_node_name(rcdip), bus, dev, func,
+			    bar, base, len);
+			pci_cfgacc_put32(rcdip,
+			    PCI_GETBDF(bus, dev, func),
+			    offset, base | type);
+			nbase = pci_cfgacc_get32(rcdip,
+			    PCI_GETBDF(bus, dev, func), offset);
+			nbase &= PCI_BASE_IO_ADDR_M;
+
+			if (base != nbase) {
+				dev_err(rcdip, CE_NOTE, MSGHDR "BAR%u  "
+				    "I/O REPROG 0x%x ~ 0x%x "
+				    "FAILED READBACK 0x%x",
+				    ddi_node_name(rcdip), bus, dev,
+				    func, bar, base, len, nbase);
+				pci_cfgacc_put32(rcdip,
+				    PCI_GETBDF(bus, dev, func),
+				    offset, 0);
+				if (baseclass != PCI_CLASS_BRIDGE) {
+					/* Disable PCI_COMM_IO bit */
+					command =
+					    pci_cfgacc_get16(rcdip,
 					    PCI_GETBDF(bus, dev, func),
-					    offset, 0);
-					if (baseclass != PCI_CLASS_BRIDGE) {
-						/* Disable PCI_COMM_IO bit */
-						command =
-						    pci_cfgacc_get16(rcdip,
-						    PCI_GETBDF(bus, dev, func),
-						    PCI_CONF_COMM);
-						command &= ~PCI_COMM_IO;
-						pci_cfgacc_put16(rcdip,
-						    PCI_GETBDF(bus, dev, func),
-						    PCI_CONF_COMM, command);
-					}
-					pci_memlist_insert(io_avail, base, len);
-					base = 0;
-				} else {
-					pci_memlist_insert(io_used, base, len);
+					    PCI_CONF_COMM);
+					command &= ~PCI_COMM_IO;
+					pci_cfgacc_put16(rcdip,
+					    PCI_GETBDF(bus, dev, func),
+					    PCI_CONF_COMM, command);
 				}
+				/*
+				 * Return failed alloc to busra.
+				 */
+				(void) ndi_ra_free(
+				    pci_bus_res[bus].dip,
+				    base, len,
+				    NDI_RA_TYPE_IO, 0);
+				return (0);
 			}
 		}
 		assigned->pci_phys_low = base;
 
 	} else {	/* Memory space */
-		struct memlist **mem_avail = &pci_bus_res[bus].mem_avail;
-		struct memlist **mem_used = &pci_bus_res[bus].mem_used;
-		struct memlist **pmem_avail = &pci_bus_res[bus].pmem_avail;
-		struct memlist **pmem_used = &pci_bus_res[bus].pmem_used;
 		uint_t type, base_hi, phys_hi;
 		uint64_t len, fbase;
 
 		if ((base & PCI_BASE_TYPE_M) == PCI_BASE_TYPE_ALL) {
+			if (offset + sizeof (uint32_t) >= end) {
+				dev_err(rcdip, CE_WARN, MSGHDR "BAR%u at "
+				    "offset 0x%x claims 64-bit but next "
+				    "dword at 0x%x is outside BAR region, "
+				    "skipping",
+				    ddi_node_name(rcdip), bus, dev, func,
+				    bar, offset,
+				    offset + (ushort_t)sizeof (uint32_t));
+				*bar_sz = PCI_BAR_SZ_32;
+				if (baseclass != PCI_CLASS_BRIDGE) {
+					pci_cfgacc_put16(rcdip,
+					    PCI_GETBDF(bus, dev, func),
+					    PCI_CONF_COMM, command);
+				}
+				return (-1);
+			}
 			*bar_sz = PCI_BAR_SZ_64;
 			base_hi = pci_cfgacc_get32(rcdip,
 			    PCI_GETBDF(bus, dev, func), offset + 4);
@@ -1774,6 +2114,16 @@ add_bar_reg_props(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
 			value &= PCI_BASE_M_ADDR_M;
 		}
 
+		/*
+		 * Both halves of the BAR have been probed and restored;
+		 * re-enable decode.
+		 */
+		if (baseclass != PCI_CLASS_BRIDGE) {
+			pci_cfgacc_put16(rcdip,
+			    PCI_GETBDF(bus, dev, func),
+			    PCI_CONF_COMM, command);
+		}
+
 		/* skip base regs with size of 0 */
 		if (value == 0)
 			return (-1);
@@ -1785,29 +2135,6 @@ add_bar_reg_props(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
 		phys_hi |= devloc | offset;
 		if (base & PCI_BASE_PREF_M)
 			phys_hi |= PCI_PREFETCH_B;
-
-
-		/*
-		 * A device under a subtractive PPB can allocate resources from
-		 * its parent bus if there is no resource available on its own
-		 * bus.
-		 */
-		if (op == CONFIG_NEW && pci_bus_res[bus].subtractive) {
-			uchar_t res_bus = bus;
-
-			if ((phys_hi & PCI_PREFETCH_B) != 0 &&
-			    *pmem_avail == NULL) {
-				res_bus = resolve_alloc_bus(pci_bus_res, bus,
-				    RES_PMEM);
-				pmem_avail = &pci_bus_res[res_bus].pmem_avail;
-				mem_avail = &pci_bus_res[res_bus].mem_avail;
-			} else if (*mem_avail == NULL) {
-				res_bus = resolve_alloc_bus(pci_bus_res, bus,
-				    RES_MEM);
-				pmem_avail = &pci_bus_res[res_bus].pmem_avail;
-				mem_avail = &pci_bus_res[res_bus].mem_avail;
-			}
-		}
 
 		regs->pci_phys_hi = assigned->pci_phys_hi = phys_hi;
 		assigned->pci_phys_hi |= PCI_RELOCAT_B;
@@ -1821,7 +2148,7 @@ add_bar_reg_props(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
 
 		fbase = (((uint64_t)base_hi) << 32) | base;
 		if (op == CONFIG_INFO) {
-			dcmn_err(CE_NOTE,
+			ddev_err(rcdip, CE_NOTE,
 			    MSGHDR "BAR%u %sMEM FWINIT 0x%lx ~ 0x%lx%s "
 			    "(ignored)",
 			    ddi_node_name(rcdip), bus, dev, func, bar,
@@ -1829,123 +2156,233 @@ add_bar_reg_props(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
 			    fbase, len,
 			    *bar_sz == PCI_BAR_SZ_64 ? " (64-bit)" : "");
 
-			/*
-			 * We need to actually increase the amount of memory
-			 * that we request to take into account alignment.
-			 * This is a bit gross, but by doubling the request
-			 * size we are more likely to get the size that we
-			 * need. A more involved fix would require a smarter
-			 * and more involved allocator (something we will need
-			 * eventually).
-			 */
-			len *= 2;
-
-			if (phys_hi & PCI_PREFETCH_B)
-				pci_bus_res[bus].pmem_size += len;
+			if (*bar_sz == PCI_BAR_SZ_64)
+				pci_bus_res[bus].mem64_size += len;
 			else
 				pci_bus_res[bus].mem_size += len;
+
+			uint64_t cpu_addr;
+			if (i_ddi_bus_to_cpu(rcdip, fbase, len,
+			    &cpu_addr) == DDI_SUCCESS) {
+				pci_bar_relocate_match(cpu_addr, len,
+				    bus, dev, func, bar);
+				pci_bar_relocate_notify(
+				    PCI_BAR_PRE_RELOCATE,
+				    bus, dev, func, bar,
+				    cpu_addr, 0, len);
+			}
+		} else if (op == CONFIG_TRUST) {
+			/*
+			 * Trust-firmware: claim the firmware BAR address
+			 * from the bus's busra pool.  No config writes.
+			 */
+			if (fbase != 0) {
+				ndi_ra_request_t ra_req = {0};
+				uint64_t ra_base, ra_len;
+				char *ra_type;
+
+				/*
+				 * 64-bit BARs above 4G use MEM64 pool;
+				 * everything else uses MEM.
+				 */
+				if (*bar_sz == PCI_BAR_SZ_64 &&
+				    fbase + len - 1 > UINT32_MAX) {
+					ra_type = NDI_RA_TYPE_MEM64;
+				} else {
+					ra_type = NDI_RA_TYPE_MEM;
+				}
+
+				ra_req.ra_flags = NDI_RA_ALLOC_SPECIFIED;
+				ra_req.ra_addr = fbase;
+				ra_req.ra_len = len;
+				if (ndi_ra_alloc(pci_bus_res[bus].dip,
+				    &ra_req, &ra_base, &ra_len,
+				    ra_type, 0) != NDI_SUCCESS) {
+					dev_err(rcdip, CE_WARN,
+					    MSGHDR "BAR%u MEM trust-firmware: "
+					    "address 0x%lx length 0x%lx "
+					    "not in bus pool",
+					    ddi_node_name(rcdip), bus, dev,
+					    func, bar, fbase, len);
+					return (0);
+				}
+			}
+			ddev_err(rcdip, CE_NOTE,
+			    MSGHDR "BAR%u %sMEM TRUST 0x%lx ~ 0x%lx%s",
+			    ddi_node_name(rcdip), bus, dev, func, bar,
+			    (phys_hi & PCI_PREFETCH_B) ? "P" : " ",
+			    fbase, len,
+			    *bar_sz == PCI_BAR_SZ_64 ? " (64-bit)" : "");
 		} else {
 			boolean_t pf = B_FALSE;
-			fbase = 0;
+			boolean_t allocated = B_FALSE;
+			uint64_t fbase_fw = fbase;
 
 			/*
-			 * When desired, attempt a prefetchable allocation first
+			 * Allocate MEM from the bus dip's busra map.
+			 * Try MEM64 first for 64-bit BARs.
 			 */
-			if ((phys_hi & PCI_PREFETCH_B) != 0 &&
-			    *pmem_avail != NULL) {
-				fbase = pci_memlist_find(pmem_avail, len, len);
-				if (fbase != 0)
+			ndi_ra_request_t ra_req = {0};
+			uint64_t ra_base, ra_len;
+
+			ra_req.ra_len = len;
+			ra_req.ra_align_mask = len - 1;
+
+			if (*bar_sz == PCI_BAR_SZ_64) {
+				if (ndi_ra_alloc(pci_bus_res[bus].dip,
+				    &ra_req, &ra_base, &ra_len,
+				    NDI_RA_TYPE_MEM64,
+				    0) == NDI_SUCCESS) {
+					fbase = ra_base;
 					pf = B_TRUE;
+					allocated = B_TRUE;
+				}
 			}
 			/*
-			 * If prefetchable allocation was not desired, or
+			 * If MEM64 allocation was not desired, or
 			 * failed, attempt ordinary memory allocation.
+			 * Bound to 32-bit address space.
 			 */
-			if (fbase == 0 && *mem_avail != NULL)
-				fbase = pci_memlist_find(mem_avail, len, len);
+			if (!allocated) {
+				ra_req.ra_flags = NDI_RA_ALLOC_BOUNDED;
+				ra_req.ra_boundbase = PPB_MEM_ALIGNMENT;
+				ra_req.ra_boundlen =
+				    (uint64_t)UINT32_MAX -
+				    PPB_MEM_ALIGNMENT + 1;
+				if (ndi_ra_alloc(pci_bus_res[bus].dip,
+				    &ra_req, &ra_base, &ra_len,
+				    NDI_RA_TYPE_MEM,
+				    0) == NDI_SUCCESS) {
+					fbase = ra_base;
+					allocated = B_TRUE;
+				}
+			}
+
+			if (!allocated) {
+				dev_err(rcdip, CE_NOTE, "!" MSGHDR "BAR%u MEM "
+				    "failed to find length 0x%lx",
+				    ddi_node_name(rcdip), bus, dev, func,
+				    bar, len);
+				/*
+				 * Disable the BAR and skip the
+				 * assigned-addresses entry so drivers
+				 * that do not need this BAR can still
+				 * attach.
+				 */
+				pci_cfgacc_put32(rcdip,
+				    PCI_GETBDF(bus, dev, func),
+				    offset, 0);
+				if (*bar_sz == PCI_BAR_SZ_64) {
+					pci_cfgacc_put32(rcdip,
+					    PCI_GETBDF(bus, dev, func),
+					    offset + 4, 0);
+				}
+				{
+					uint64_t cpu_fw;
+					if (i_ddi_bus_to_cpu(rcdip, fbase_fw,
+					    len, &cpu_fw) == DDI_SUCCESS) {
+						pci_bar_relocate_notify(
+						    PCI_BAR_POST_RELOCATE,
+						    bus, dev, func, bar,
+						    cpu_fw, 0, len);
+					}
+				}
+				return (0);
+			}
 
 			base_hi = fbase >> 32;
 			base = fbase & 0xffffffff;
 
-			if (fbase == 0) {
-				cmn_err(CE_WARN, MSGHDR "BAR%u MEM "
-				    "failed to find length 0x%lx",
-				    ddi_node_name(rcdip), bus, dev, func,
-				    bar, len);
-			} else {
-				uint64_t nbase, nbase_hi = 0;
+			uint64_t nbase, nbase_hi = 0;
 
-				dcmn_err(CE_NOTE, MSGHDR "BAR%u "
-				    "%s%s REPROG 0x%lx ~ 0x%lx",
-				    ddi_node_name(rcdip), bus, dev, func, bar,
-				    pf ? "PMEM" : "MEM",
-				    *bar_sz == PCI_BAR_SZ_64 ? "64" : "",
-				    fbase, len);
+			ddev_err(rcdip, CE_NOTE, MSGHDR "BAR%u "
+			    "%s REPROG 0x%lx ~ 0x%lx",
+			    ddi_node_name(rcdip), bus, dev, func, bar,
+			    pf ? "MEM64" :
+			    (*bar_sz == PCI_BAR_SZ_64 ? "MEM(64)" : "MEM"),
+			    fbase, len);
+			pci_cfgacc_put32(rcdip,
+			    PCI_GETBDF(bus, dev, func),
+			    offset, base | type);
+			nbase = pci_cfgacc_get32(rcdip,
+			    PCI_GETBDF(bus, dev, func), offset);
+
+			if (*bar_sz == PCI_BAR_SZ_64) {
 				pci_cfgacc_put32(rcdip,
 				    PCI_GETBDF(bus, dev, func),
-				    offset, base | type);
-				nbase = pci_cfgacc_get32(rcdip,
-				    PCI_GETBDF(bus, dev, func), offset);
+				    offset + 4, base_hi);
+				nbase_hi = pci_cfgacc_get32(rcdip,
+				    PCI_GETBDF(bus, dev, func),
+				    offset + 4);
+			}
 
+			nbase &= PCI_BASE_M_ADDR_M;
+
+			if (base != nbase || base_hi != nbase_hi) {
+				{
+					uint64_t cpu_fw;
+					if (i_ddi_bus_to_cpu(rcdip, fbase_fw,
+					    len, &cpu_fw) == DDI_SUCCESS) {
+						pci_bar_relocate_notify(
+						    PCI_BAR_POST_RELOCATE,
+						    bus, dev, func, bar,
+						    cpu_fw, 0, len);
+					}
+				}
+				dev_err(rcdip, CE_NOTE, MSGHDR "BAR%u "
+				    "%s REPROG 0x%lx ~ 0x%lx "
+				    "FAILED READBACK 0x%lx",
+				    ddi_node_name(rcdip), bus, dev,
+				    func, bar,
+				    pf ? "MEM64" :
+				    (*bar_sz == PCI_BAR_SZ_64 ?
+				    "MEM(64)" : "MEM"),
+				    fbase, len,
+				    nbase_hi << 32 | nbase);
+
+				pci_cfgacc_put32(rcdip,
+				    PCI_GETBDF(bus, dev, func),
+				    offset, 0);
 				if (*bar_sz == PCI_BAR_SZ_64) {
 					pci_cfgacc_put32(rcdip,
 					    PCI_GETBDF(bus, dev, func),
-					    offset + 4, base_hi);
-					nbase_hi = pci_cfgacc_get32(rcdip,
-					    PCI_GETBDF(bus, dev, func),
-					    offset + 4);
+					    offset + 4, 0);
 				}
 
-				nbase &= PCI_BASE_M_ADDR_M;
-
-				if (base != nbase || base_hi != nbase_hi) {
-					cmn_err(CE_NOTE, MSGHDR "BAR%u "
-					    "%s%s REPROG 0x%lx ~ 0x%lx "
-					    "FAILED READBACK 0x%lx",
-					    ddi_node_name(rcdip), bus, dev,
-					    func, bar, pf ? "PMEM" : "MEM",
-					    *bar_sz == PCI_BAR_SZ_64 ?
-					    "64" : "",
-					    fbase, len,
-					    nbase_hi << 32 | nbase);
-
-					pci_cfgacc_put32(rcdip,
+				if (baseclass != PCI_CLASS_BRIDGE) {
+					/* Disable PCI_COMM_MAE bit */
+					command =
+					    pci_cfgacc_get16(rcdip,
+					    PCI_GETBDF(bus, dev,
+					    func), PCI_CONF_COMM);
+					command &= ~PCI_COMM_MAE;
+					pci_cfgacc_put16(rcdip,
 					    PCI_GETBDF(bus, dev, func),
-					    offset, 0);
-					if (*bar_sz == PCI_BAR_SZ_64) {
-						pci_cfgacc_put32(rcdip,
-						    PCI_GETBDF(bus, dev, func),
-						    offset + 4, 0);
-					}
+					    PCI_CONF_COMM, command);
+				}
 
-					if (baseclass != PCI_CLASS_BRIDGE) {
-						/* Disable PCI_COMM_MAE bit */
-						command =
-						    pci_cfgacc_get16(rcdip,
-						    PCI_GETBDF(bus, dev,
-						    func), PCI_CONF_COMM);
-						command &= ~PCI_COMM_MAE;
-						pci_cfgacc_put16(rcdip,
-						    PCI_GETBDF(bus, dev, func),
-						    PCI_CONF_COMM, command);
-					}
+				/*
+				 * Return failed alloc to busra.
+				 */
+				(void) ndi_ra_free(
+				    pci_bus_res[bus].dip,
+				    fbase, len,
+				    pf ? NDI_RA_TYPE_MEM64 :
+				    NDI_RA_TYPE_MEM, 0);
+				return (0);
+			}
 
-					pci_memlist_insert(
-					    pf ? pmem_avail : mem_avail,
-					    base, len);
-					base = base_hi = 0;
-				} else {
-					if (pf) {
-						pci_memlist_insert(pmem_used,
-						    fbase, len);
-						(void) pci_memlist_remove(
-						    pmem_avail, fbase, len);
-					} else {
-						pci_memlist_insert(mem_used,
-						    fbase, len);
-						(void) pci_memlist_remove(
-						    mem_avail, fbase, len);
-					}
+			{
+				uint64_t cpu_fw;
+				if (i_ddi_bus_to_cpu(rcdip, fbase_fw, len,
+				    &cpu_fw) == DDI_SUCCESS) {
+					pci_bar_relocate_notify(
+					    PCI_BAR_POST_RELOCATE,
+					    bus, dev, func, bar,
+					    cpu_fw,
+					    pci_bus_mem_to_cpu(rcdip,
+					    fbase, len),
+					    len);
 				}
 			}
 		}
@@ -1954,7 +2391,7 @@ add_bar_reg_props(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
 		assigned->pci_phys_low = base;
 	}
 
-	dcmn_err(CE_NOTE, MSGHDR "BAR%u ---- %08x.%x.%x.%x.%x",
+	ddev_err(rcdip, CE_NOTE, MSGHDR "BAR%u ---- %08x.%x.%x.%x.%x",
 	    ddi_node_name(rcdip), bus, dev, func, bar,
 	    assigned->pci_phys_hi,
 	    assigned->pci_phys_mid,
@@ -1978,16 +2415,9 @@ add_reg_props(dev_info_t *rcdip, dev_info_t *dip,
 	ushort_t bar_sz, offset, end;
 	int max_basereg;
 
-	struct memlist **mem_avail, **mem_used;
-
 	pci_regspec_t regs[16] = {{0}};
 	pci_regspec_t assigned[15] = {{0}};
 	int nreg, nasgn;
-
-	mem_avail = &pci_bus_res[bus].mem_avail;
-	mem_used = &pci_bus_res[bus].mem_used;
-
-	dump_memlists(pci_bus_res, "add_reg_props start", bus);
 
 	devloc = PCI_REG_MAKE_BDFR(bus, dev, func, 0);
 	regs[0].pci_phys_hi = devloc;
@@ -2021,7 +2451,7 @@ add_reg_props(dev_info_t *rcdip, dev_info_t *dip,
 		int ret;
 
 		ret = add_bar_reg_props(rcdip, pci_bus_res, op, bus, dev, func,
-		    bar, offset, &regs[nreg], &assigned[nasgn], &bar_sz);
+		    bar, offset, end, &regs[nreg], &assigned[nasgn], &bar_sz);
 
 		if (bar_sz == PCI_BAR_SZ_64)
 			bar++;
@@ -2030,7 +2460,8 @@ add_reg_props(dev_info_t *rcdip, dev_info_t *dip,
 			continue;
 
 		nreg++;
-		nasgn++;
+		if (ret > 0)	/* allocation succeeded */
+			nasgn++;
 	}
 
 	switch (header) {
@@ -2045,9 +2476,10 @@ add_reg_props(dev_info_t *rcdip, dev_info_t *dip,
 	}
 
 	/*
-	 * Add the expansion rom memory space
-	 * Determine the size of the ROM base reg; don't write reserved bits
-	 * ROM isn't in the PCI memory space.
+	 * Expansion ROM BAR.
+	 *
+	 * Size the ROM by writing the address mask and reading back.
+	 * Bit 0 of the read-back indicates the device has a ROM.
 	 */
 	base = pci_cfgacc_get32(rcdip, PCI_GETBDF(bus, dev, func), offset);
 	pci_cfgacc_put32(rcdip, PCI_GETBDF(bus, dev, func),
@@ -2060,44 +2492,140 @@ add_reg_props(dev_info_t *rcdip, dev_info_t *dip,
 		value = 0;
 
 	if (value != 0) {
-		uint_t len;
+		uint_t len = BARMASKTOLEN(value);
 
 		regs[nreg].pci_phys_hi = (PCI_ADDR_MEM32 | devloc) + offset;
-		assigned[nasgn].pci_phys_hi = (PCI_RELOCAT_B |
-		    PCI_ADDR_MEM32 | devloc) + offset;
-		base &= PCI_BASE_ROM_ADDR_M;
-		assigned[nasgn].pci_phys_low = base;
-		len = BARMASKTOLEN(value);
-		regs[nreg].pci_size_low = assigned[nasgn].pci_size_low = len;
-		nreg++, nasgn++;
-		/* take it out of the memory resource */
-		if (base != 0) {
-			(void) pci_memlist_remove(mem_avail, base, len);
-			pci_memlist_insert(mem_used, base, len);
+		regs[nreg].pci_size_low = len;
+		nreg++;
+
+		if (op == CONFIG_INFO) {
+			/*
+			 * First pass: just account for the ROM size so
+			 * bridge windows are sized to include it.
+			 */
 			pci_bus_res[bus].mem_size += len;
+		} else if (op == CONFIG_TRUST) {
+			uint32_t rom_addr = base & PCI_BASE_ROM_ADDR_M;
+			if (rom_addr != 0) {
+				ndi_ra_request_t ra_req = {0};
+				uint64_t ra_base, ra_len;
+
+				ra_req.ra_flags = NDI_RA_ALLOC_SPECIFIED;
+				ra_req.ra_addr = rom_addr;
+				ra_req.ra_len = len;
+				if (ndi_ra_alloc(pci_bus_res[bus].dip,
+				    &ra_req, &ra_base, &ra_len,
+				    NDI_RA_TYPE_MEM,
+				    0) == NDI_SUCCESS) {
+					assigned[nasgn].pci_phys_hi =
+					    (PCI_RELOCAT_B | PCI_ADDR_MEM32 |
+					    devloc) + offset;
+					assigned[nasgn].pci_phys_low =
+					    rom_addr;
+					assigned[nasgn].pci_size_low = len;
+					nasgn++;
+
+					ddev_err(rcdip, CE_NOTE,
+					    MSGHDR "ROM TRUST 0x%x ~ 0x%x",
+					    ddi_node_name(rcdip),
+					    bus, dev, func,
+					    rom_addr, len);
+				} else {
+					dev_err(rcdip, CE_WARN,
+					    MSGHDR "ROM trust-firmware: "
+					    "address 0x%x length 0x%x "
+					    "not in bus pool",
+					    ddi_node_name(rcdip),
+					    bus, dev, func,
+					    rom_addr, len);
+				}
+			}
+		} else {
+			/*
+			 * Second pass: allocate ROM space from the bus's
+			 * MEM pool via busra.  ROM BARs are always
+			 * non-prefetchable MEM32.
+			 */
+			ndi_ra_request_t ra_req = {0};
+			uint64_t ra_base, ra_len;
+
+			ra_req.ra_len = len;
+			ra_req.ra_align_mask = len - 1;
+			ra_req.ra_flags = NDI_RA_ALLOC_BOUNDED;
+			ra_req.ra_boundbase = PPB_MEM_ALIGNMENT;
+			ra_req.ra_boundlen =
+			    (uint64_t)UINT32_MAX - PPB_MEM_ALIGNMENT + 1;
+
+			if (ndi_ra_alloc(pci_bus_res[bus].dip,
+			    &ra_req, &ra_base, &ra_len,
+			    NDI_RA_TYPE_MEM, 0) == NDI_SUCCESS) {
+				uint32_t rom_val;
+
+				rom_val = (uint32_t)ra_base &
+				    PCI_BASE_ROM_ADDR_M;
+				/*
+				 * Preserve the firmware ROM enable
+				 * bit; if firmware had decode off,
+				 * the driver can enable it later.
+				 */
+				if (base & PCI_BASE_ROM_ENABLE)
+					rom_val |= PCI_BASE_ROM_ENABLE;
+				pci_cfgacc_put32(rcdip,
+				    PCI_GETBDF(bus, dev, func),
+				    offset, rom_val);
+
+				ddev_err(rcdip, CE_NOTE,
+				    MSGHDR "ROM REPROG 0x%lx ~ 0x%x",
+				    ddi_node_name(rcdip),
+				    bus, dev, func,
+				    ra_base, len);
+
+				assigned[nasgn].pci_phys_hi =
+				    (PCI_RELOCAT_B | PCI_ADDR_MEM32 |
+				    devloc) + offset;
+				assigned[nasgn].pci_phys_low =
+				    (uint32_t)ra_base;
+				assigned[nasgn].pci_size_low = len;
+				nasgn++;
+			} else {
+				dev_err(rcdip, CE_NOTE,
+				    MSGHDR "ROM failed to allocate "
+				    "0x%x bytes",
+				    ddi_node_name(rcdip),
+				    bus, dev, func, len);
+				/*
+				 * Disable ROM decode.
+				 */
+				pci_cfgacc_put32(rcdip,
+				    PCI_GETBDF(bus, dev, func),
+				    offset, 0);
+			}
 		}
 	}
 
 	/*
-	 * Account for "legacy" (alias) video adapter resources
+	 * Legacy VGA alias resources (IO 0x3b0-0x3bb, 0x3c0-0x3df, MEM
+	 * 0xa0000-0xbffff) and 8514/A ranges are x86 ISA hard-decodes.
+	 * These do not exist on Arm - no device responds to these fixed
+	 * addresses. We must not add them as reg properties.  Just note
+	 * the device class for diagnostic purposes.
 	 */
-
-	/* add the three hard-decode, aliased address spaces for VGA */
 	if ((baseclass == PCI_CLASS_DISPLAY && subclass == PCI_DISPLAY_VGA) ||
 	    (baseclass == PCI_CLASS_NONE && subclass == PCI_NONE_VGA)) {
-		dev_err(dip, CE_NOTE, "ARM PCI does not support legacy VGA");
+		ddev_err(rcdip, CE_NOTE, MSGHDR "VGA class device: legacy "
+		    "alias ranges are not applicable on Arm",
+		    ddi_node_name(dip), bus, dev, func);
 	}
 
-	/* add the hard-decode, aliased address spaces for 8514 */
 	if ((baseclass == PCI_CLASS_DISPLAY) &&
 	    (subclass == PCI_DISPLAY_VGA) &&
 	    (progclass & PCI_DISPLAY_IF_8514)) {
-		dev_err(dip, CE_NOTE, "ARM PCI does not support legacy VGA");
+		ddev_err(rcdip, CE_NOTE, MSGHDR "8514/A compat: legacy alias "
+		    "ranges are not applicable on Arm",
+		    ddi_node_name(dip), bus, dev, func);
 	}
 
 done:
-	dump_memlists(pci_bus_res, "add_reg_props end", bus);
-
 	(void) ndi_prop_update_int_array(DDI_DEV_T_NONE, dip, OBP_REG,
 	    (int *)regs, nreg * sizeof (pci_regspec_t) / sizeof (int));
 	(void) ndi_prop_update_int_array(DDI_DEV_T_NONE, dip,
@@ -2105,17 +2633,21 @@ done:
 	    (int *)assigned, nasgn * sizeof (pci_regspec_t) / sizeof (int));
 }
 
-static void
+static boolean_t
 add_ppb_props(dev_info_t *rcdip, dev_info_t *dip,
+    uint32_t minbus, uint32_t maxbus,
     struct pci_bus_resource *pci_bus_res, uchar_t bus, uchar_t dev,
-    uchar_t func, boolean_t pciex, boolean_t is_pci_bridge)
+    uchar_t func, boolean_t pciex, boolean_t is_pci_bridge,
+    config_phase_t config_op)
 {
 	char *dev_type;
 	int i;
+	uint_t cmd_reg;
+	uint16_t bcntrl;
 	struct {
 		uint64_t base;
 		uint64_t limit;
-	} io, mem, pmem;
+	} io, mem, mem64;
 	uchar_t secbus, subbus;
 	uchar_t progclass;
 
@@ -2124,13 +2656,62 @@ add_ppb_props(dev_info_t *rcdip, dev_info_t *dip,
 	subbus = pci_cfgacc_get8(rcdip, PCI_GETBDF(bus, dev, func),
 	    PCI_BCNF_SUBBUS);
 
-	ASSERT3U(secbus, <=, subbus);
-	ASSERT3P(pci_bus_res[secbus].dip, ==, NULL);
+	/*
+	 * Validate the bridge's bus numbering against the RC's bus range.
+	 * Firmware bugs could result in us attempting to managed resources
+	 * for buses that are outside the RC's bus range, or that overlap with
+	 * buses belonging to other controllers in a multi-segment system.
+	 *
+	 * Skip the entire bridge subtree if anything looks wrong.
+	 */
+	if (secbus <= bus) {
+		dev_err(rcdip, CE_WARN, MSGHDR "bridge secondary bus "
+		    "0x%02x <= primary bus 0x%02x, skipping subtree",
+		    ddi_node_name(dip), bus, dev, func, secbus, bus);
+		return (B_FALSE);
+	}
+	if (secbus < minbus || secbus > maxbus) {
+		dev_err(rcdip, CE_WARN, MSGHDR "bridge secondary bus "
+		    "0x%02x outside RC range [0x%02x, 0x%02x], "
+		    "skipping subtree",
+		    ddi_node_name(dip), bus, dev, func,
+		    secbus, (uchar_t)minbus, (uchar_t)maxbus);
+		return (B_FALSE);
+	}
+	if (secbus > subbus) {
+		dev_err(rcdip, CE_WARN, MSGHDR "bridge secondary bus "
+		    "0x%02x > subordinate bus 0x%02x, skipping subtree",
+		    ddi_node_name(dip), bus, dev, func, secbus, subbus);
+		return (B_FALSE);
+	}
+	if (subbus > maxbus) {
+		dev_err(rcdip, CE_WARN, MSGHDR "bridge subordinate bus "
+		    "0x%02x exceeds RC max 0x%02x, skipping subtree",
+		    ddi_node_name(dip), bus, dev, func,
+		    subbus, (uchar_t)maxbus);
+		return (B_FALSE);
+	}
+	for (i = secbus; i <= subbus; i++) {
+		if (pci_bus_res[i].dip != NULL) {
+			if (i == secbus) {
+				dev_err(rcdip, CE_WARN, MSGHDR "secondary "
+				    "bus 0x%02x already assigned to another "
+				    "bridge, skipping subtree",
+				    ddi_node_name(dip), bus, dev, func, i);
+			} else {
+				dev_err(rcdip, CE_WARN, MSGHDR "bus 0x%02x "
+				    "in subordinate range [0x%02x..0x%02x] "
+				    "already has a bridge assigned, "
+				    "skipping subtree",
+				    ddi_node_name(dip), bus, dev, func,
+				    i, secbus, subbus);
+			}
+			return (B_FALSE);
+		}
+	}
+
 	pci_bus_res[secbus].dip = dip;
 	pci_bus_res[secbus].par_bus = bus;
-
-	dump_memlists(pci_bus_res, "add_ppb_props start bus", bus);
-	dump_memlists(pci_bus_res, "add_ppb_props start secbus", secbus);
 
 	/*
 	 * Check if it's a subtractive PPB.
@@ -2176,65 +2757,233 @@ add_ppb_props(dev_info_t *rcdip, dev_info_t *dip,
 	    OBP_SIZE_CELLS, 2);
 
 	/*
-	 * Collect bridge window specifications, and use them to populate
-	 * the "avail" resources for the bus.  Not all of those resources will
-	 * end up being available; this is done top-down, and so the initial
-	 * collection of windows populates the 'ranges' property for the
-	 * bus node.  Later, as children are found, resources are removed from
-	 * the 'avail' list, so that it becomes the freelist for
-	 * this point in the tree.  ranges will be set again after bridge
-	 * reprogramming in fix_ppb_res(), in which case it's set from
-	 * used + avail.
+	 * Read firmware's bridge window state.  The FWINIT diagnostic
+	 * lines log the initial values for comparison against what
+	 * allocate_bridge_resources() programs later.
 	 *
-	 * According to PPB spec, the base register should be programmed
-	 * with a value bigger than the limit register when there are
-	 * no resources available. This applies to io, memory, and
-	 * prefetchable memory.
+	 * Windows that firmware left unconfigured (command register
+	 * decode bits clear, or zero base) are explicitly disabled
+	 * here (base > limit) so they do not shadow addresses that
+	 * busra may allocate for other devices.  They will only be
+	 * re-enabled if allocate_bridge_resources() assigns real
+	 * resources to them.
+	 *
+	 * Per the PPB spec, programming the base register to a value
+	 * larger than the limit register disables the window.
 	 */
 
+	cmd_reg = pci_cfgacc_get16(rcdip, PCI_GETBDF(bus, dev, func),
+	    PCI_CONF_COMM);
 	fetch_ppb_res(rcdip, bus, dev, func, RES_IO, &io.base, &io.limit);
 	fetch_ppb_res(rcdip, bus, dev, func, RES_MEM, &mem.base, &mem.limit);
-	fetch_ppb_res(rcdip, bus, dev, func, RES_PMEM, &pmem.base, &pmem.limit);
+	fetch_ppb_res(rcdip, bus, dev, func, RES_MEM64,
+	    &mem64.base, &mem64.limit);
 
-	if (pci_boot_debug != 0) {
-		dcmn_err(CE_NOTE, MSGHDR " I/O FWINIT 0x%lx ~ 0x%lx%s "
-		    "(ignored)",
-		    ddi_node_name(dip), bus, dev, func, io.base, io.limit,
-		    io.base > io.limit ? " (disabled)" : "");
-		dcmn_err(CE_NOTE, MSGHDR " MEM FWINIT 0x%lx ~ 0x%lx%s "
-		    "(ignored)",
-		    ddi_node_name(dip), bus, dev, func, mem.base, mem.limit,
-		    mem.base > mem.limit ? " (disabled)" : "");
-		dcmn_err(CE_NOTE, MSGHDR "PMEM FWINIT 0x%lx ~ 0x%lx%s "
-		    "(ignored)",
-		    ddi_node_name(dip), bus, dev, func, pmem.base, pmem.limit,
-		    pmem.base > pmem.limit ? " (disabled)" : "");
+	ddev_err(rcdip, CE_NOTE, MSGHDR " I/O FWINIT 0x%lx ~ 0x%lx%s",
+	    ddi_node_name(dip), bus, dev, func, io.base, io.limit,
+	    io.base > io.limit ? " (disabled)" : "");
+	ddev_err(rcdip, CE_NOTE, MSGHDR " MEM FWINIT 0x%lx ~ 0x%lx%s",
+	    ddi_node_name(dip), bus, dev, func, mem.base, mem.limit,
+	    mem.base > mem.limit ? " (disabled)" : "");
+	ddev_err(rcdip, CE_NOTE, MSGHDR "MEM64 FWINIT 0x%lx ~ 0x%lx%s",
+	    ddi_node_name(dip), bus, dev, func, mem64.base, mem64.limit,
+	    mem64.base > mem64.limit ? " (disabled)" : "");
+
+	if (config_op == CONFIG_TRUST) {
+		/*
+		 * Trust-firmware path: accept the bridge windows programmed
+		 * by firmware.  Claim each enabled window from the parent
+		 * bus's busra map and seed the child bus's busra map.
+		 * No config space writes.
+		 */
+		dev_info_t *parent_dip = pci_bus_res[bus].dip;
+
+		/* Set up busra maps on the bridge dip */
+		(void) ndi_ra_map_setup(dip, NDI_RA_TYPE_MEM);
+		(void) ndi_ra_map_setup(dip, NDI_RA_TYPE_IO);
+		(void) ndi_ra_map_setup(dip, NDI_RA_TYPE_MEM64);
+		(void) ndi_ra_map_setup(dip, NDI_RA_TYPE_PCI_BUSNUM);
+
+		/* Claim bus numbers from parent */
+		{
+			ndi_ra_request_t req = {0};
+			uint64_t ra_base, ra_len;
+
+			req.ra_flags = NDI_RA_ALLOC_SPECIFIED;
+			req.ra_addr = (uint64_t)secbus;
+			req.ra_len = (uint64_t)(subbus - secbus + 1);
+			if (ndi_ra_alloc(parent_dip, &req, &ra_base,
+			    &ra_len, NDI_RA_TYPE_PCI_BUSNUM,
+			    0) != NDI_SUCCESS) {
+				dev_err(rcdip, CE_WARN,
+				    MSGHDR "trust-firmware: failed to claim "
+				    "bus range [0x%02x, 0x%02x] from parent",
+				    ddi_node_name(dip), bus, dev, func,
+				    secbus, subbus);
+			} else {
+				if (subbus > secbus) {
+					(void) ndi_ra_free(dip,
+					    (uint64_t)(secbus + 1),
+					    (uint64_t)(subbus - secbus),
+					    NDI_RA_TYPE_PCI_BUSNUM, 0);
+				}
+			}
+		}
+
+		/* IO window */
+		if (io.base <= io.limit) {
+			uint64_t len = io.limit - io.base + 1;
+			ndi_ra_request_t req = {0};
+			uint64_t ra_base, ra_len;
+
+			req.ra_flags = NDI_RA_ALLOC_SPECIFIED;
+			req.ra_addr = io.base;
+			req.ra_len = len;
+			if (ndi_ra_alloc(parent_dip, &req, &ra_base,
+			    &ra_len, NDI_RA_TYPE_IO,
+			    0) != NDI_SUCCESS) {
+				dev_err(rcdip, CE_WARN,
+				    MSGHDR "trust-firmware: I/O window "
+				    "[0x%lx, 0x%lx] not in parent pool",
+				    ddi_node_name(dip), bus, dev, func,
+				    io.base, io.limit);
+			} else {
+				(void) ndi_ra_free(dip, io.base, len,
+				    NDI_RA_TYPE_IO, 0);
+			}
+		}
+
+		/* MEM window */
+		if (mem.base <= mem.limit) {
+			uint64_t len = mem.limit - mem.base + 1;
+			ndi_ra_request_t req = {0};
+			uint64_t ra_base, ra_len;
+
+			req.ra_flags = NDI_RA_ALLOC_SPECIFIED;
+			req.ra_addr = mem.base;
+			req.ra_len = len;
+			if (ndi_ra_alloc(parent_dip, &req, &ra_base,
+			    &ra_len, NDI_RA_TYPE_MEM,
+			    0) != NDI_SUCCESS) {
+				dev_err(rcdip, CE_WARN,
+				    MSGHDR "trust-firmware: MEM window "
+				    "[0x%lx, 0x%lx] not in parent pool",
+				    ddi_node_name(dip), bus, dev, func,
+				    mem.base, mem.limit);
+			} else {
+				(void) ndi_ra_free(dip, mem.base, len,
+				    NDI_RA_TYPE_MEM, 0);
+			}
+		}
+
+		/* MEM64 window */
+		if (mem64.base <= mem64.limit) {
+			uint64_t len = mem64.limit - mem64.base + 1;
+			ndi_ra_request_t req = {0};
+			uint64_t ra_base, ra_len;
+			char *ra_type;
+
+			/*
+			 * Route sub-4G MEM64 windows to the MEM pool,
+			 * matching populate_bus_res() logic.
+			 */
+			if (mem64.base + len - 1 <= UINT32_MAX) {
+				ra_type = NDI_RA_TYPE_MEM;
+			} else {
+				ra_type = NDI_RA_TYPE_MEM64;
+			}
+
+			req.ra_flags = NDI_RA_ALLOC_SPECIFIED;
+			req.ra_addr = mem64.base;
+			req.ra_len = len;
+			if (ndi_ra_alloc(parent_dip, &req, &ra_base,
+			    &ra_len, ra_type, 0) != NDI_SUCCESS) {
+				dev_err(rcdip, CE_WARN,
+				    MSGHDR "trust-firmware: MEM64 window "
+				    "[0x%lx, 0x%lx] not in parent pool",
+				    ddi_node_name(dip), bus, dev, func,
+				    mem64.base, mem64.limit);
+			} else {
+				(void) ndi_ra_free(dip, mem64.base, len,
+				    ra_type, 0);
+			}
+		}
+
+		add_ranges_prop(rcdip, pci_bus_res, secbus);
+		add_bus_range_prop(pci_bus_res, secbus);
+
+		return (B_TRUE);
 	}
 
-	io.base = PPB_DISABLE_IORANGE_BASE;
-	io.limit = PPB_DISABLE_IORANGE_LIMIT;
-	set_ppb_res(rcdip, dip, bus, dev, func, RES_IO, io.base, io.limit);
+	/*
+	 * Reallocate path (CONFIG_INFO): disable unconfigured windows
+	 * so they don't shadow addresses busra may allocate.
+	 */
 
-	mem.base = PPB_DISABLE_MEMRANGE_BASE;
-	mem.limit = PPB_DISABLE_MEMRANGE_LIMIT;
-	set_ppb_res(rcdip, dip, bus, dev, func, RES_MEM, mem.base,
-	    mem.limit);
+	/*
+	 * I/O range
+	 *
+	 * If I/O space is not enabled in the command register, we assume
+	 * the window was left unconfigured by firmware.  Disable it
+	 * explicitly so the allocator will reconfigure it later.
+	 */
+	if ((cmd_reg & PCI_COMM_IO) == 0) {
+		io.base = PPB_DISABLE_IORANGE_BASE;
+		io.limit = PPB_DISABLE_IORANGE_LIMIT;
+		set_ppb_res(rcdip, dip, bus, dev, func, RES_IO,
+		    io.base, io.limit);
+	}
 
-	pmem.base = PPB_DISABLE_MEMRANGE_BASE;
-	pmem.limit = PPB_DISABLE_MEMRANGE_LIMIT;
-	set_ppb_res(rcdip, dip, bus, dev, func, RES_PMEM, pmem.base,
-	    pmem.limit);
+	/*
+	 * Memory range
+	 *
+	 * As for I/O, check Memory Access Enable and also reject a zero
+	 * base address (still at PCIe defaults, technically valid but
+	 * unlikely on real firmware).
+	 */
+	if ((cmd_reg & PCI_COMM_MAE) == 0 || mem.base == 0) {
+		mem.base = PPB_DISABLE_MEMRANGE_BASE;
+		mem.limit = PPB_DISABLE_MEMRANGE_LIMIT;
+		set_ppb_res(rcdip, dip, bus, dev, func, RES_MEM,
+		    mem.base, mem.limit);
+	}
 
-	if (pci_cfgacc_get16(rcdip, PCI_GETBDF(bus, dev, func),
-	    PCI_BCNF_BCNTRL) & PCI_BCNF_BCNTRL_VGA_ENABLE) {
-		dev_err(dip, CE_NOTE, "ARM PCI does not support legacy VGA");
+	/*
+	 * 64-bit memory range -- same checks as MEM above.
+	 */
+	if ((cmd_reg & PCI_COMM_MAE) == 0 || mem64.base == 0) {
+		mem64.base = PPB_DISABLE_MEMRANGE_BASE;
+		mem64.limit = PPB_DISABLE_MEMRANGE_LIMIT;
+		set_ppb_res(rcdip, dip, bus, dev, func, RES_MEM64,
+		    mem64.base, mem64.limit);
+	}
+
+	/*
+	 * Clear VGA_ENABLE (bit 3) and VGA 16-bit decode (bit 4) in the
+	 * bridge control register if set by firmware.  These bits make
+	 * the bridge unconditionally forward legacy VGA IO (0x3b0-0x3bb,
+	 * 0x3c0-0x3df) and MEM (0xa0000-0xbffff) to the secondary bus,
+	 * bypassing the normal IO/MEM windows.  On ARM there are no ISA
+	 * legacy decodes, so leaving these set would silently swallow
+	 * transactions if busra happened to allocate in those ranges.
+	 */
+	bcntrl = pci_cfgacc_get16(rcdip,
+	    PCI_GETBDF(bus, dev, func), PCI_BCNF_BCNTRL);
+	if (bcntrl & (PCI_BCNF_BCNTRL_VGA_ENABLE |
+	    PCI_BCNF_BCNTRL_VGA_16BIT_DECODE)) {
+		ddev_err(rcdip, CE_NOTE,
+		    MSGHDR "clearing VGA_ENABLE on bridge",
+		    ddi_node_name(dip), bus, dev, func);
+		bcntrl &= ~(PCI_BCNF_BCNTRL_VGA_ENABLE |
+		    PCI_BCNF_BCNTRL_VGA_16BIT_DECODE);
+		pci_cfgacc_put16(rcdip,
+		    PCI_GETBDF(bus, dev, func),
+		    PCI_BCNF_BCNTRL, bcntrl);
 	}
 
 	add_bus_range_prop(pci_bus_res, secbus);
-	add_ranges_prop(pci_bus_res, secbus, B_TRUE);
 
-	dump_memlists(pci_bus_res, "add_ppb_props end bus", bus);
-	dump_memlists(pci_bus_res, "add_ppb_props end secbus", secbus);
+	return (B_TRUE);
 }
 
 /*
@@ -2260,188 +3009,96 @@ add_bus_range_prop(struct pci_bus_resource *pci_bus_res, int bus)
  * the 'ppb' argument selects PCI-PCI bridges versus root.
  */
 static void
-memlist_to_ranges(void **rp, struct memlist *list, const int bus,
-    const uint32_t type, boolean_t ppb)
+add_ranges_prop(dev_info_t *rcdip, struct pci_bus_resource *pci_bus_res,
+    int bus)
 {
-	ppb_ranges_t *ppb_rp = *rp;
-	pci_ranges_t *pci_rp = *rp;
-
-	while (list != NULL) {
-		uint32_t newtype = type;
-
-		/*
-		 * If this is in fact a 64-bit address, adjust the address
-		 * type code to match.
-		 */
-		if (list->ml_address + (list->ml_size - 1) > UINT32_MAX) {
-			if ((type & PCI_ADDR_MASK) == PCI_ADDR_IO) {
-				cmn_err(CE_WARN, "Found invalid 64-bit I/O "
-				    "space address 0x%lx+0x%lx on bus %x",
-				    list->ml_address, list->ml_size, bus);
-				list = list->ml_next;
-				continue;
-			}
-			newtype &= ~PCI_ADDR_MASK;
-			newtype |= PCI_ADDR_MEM64;
-		}
-
-		if (ppb) {
-			ppb_rp->child_high = ppb_rp->parent_high = newtype;
-			ppb_rp->child_mid = ppb_rp->parent_mid =
-			    (uint32_t)(list->ml_address >> 32);
-			ppb_rp->child_low = ppb_rp->parent_low =
-			    (uint32_t)list->ml_address;
-			ppb_rp->size_high = (uint32_t)(list->ml_size >> 32);
-			ppb_rp->size_low = (uint32_t)list->ml_size;
-			*rp = ++ppb_rp;
-		} else {
-			pci_rp->child_high = newtype;
-			pci_rp->child_mid = pci_rp->parent_high =
-			    (uint32_t)(list->ml_address >> 32);
-			pci_rp->child_low = pci_rp->parent_low =
-			    (uint32_t)list->ml_address;
-			pci_rp->size_high = (uint32_t)(list->ml_size >> 32);
-			pci_rp->size_low = (uint32_t)list->ml_size;
-			*rp = ++pci_rp;
-		}
-		list = list->ml_next;
-	}
-}
-
-static void
-add_ranges_prop(struct pci_bus_resource *pci_bus_res, int bus, boolean_t ppb)
-{
-	int total, alloc_size;
-	void	*rp, *next_rp;
-	struct memlist *iolist, *memlist, *pmemlist;
+	ppb_ranges_t ranges[3];
+	int nranges = 0;
+	int *regp;
+	uint_t reglen;
+	uchar_t parbus, bdev, bfunc;
+	uint64_t base, limit;
+	int rv;
 
 	/* no devinfo node - unused bus, return */
 	if (pci_bus_res[bus].dip == NULL)
 		return;
 
-	dump_memlists(pci_bus_res, "add_ranges_prop", bus);
-
-	iolist = memlist = pmemlist = (struct memlist *)NULL;
-
-	pci_memlist_merge(&pci_bus_res[bus].io_avail, &iolist);
-	pci_memlist_merge(&pci_bus_res[bus].io_used, &iolist);
-	pci_memlist_merge(&pci_bus_res[bus].mem_avail, &memlist);
-	pci_memlist_merge(&pci_bus_res[bus].mem_used, &memlist);
-	pci_memlist_merge(&pci_bus_res[bus].pmem_avail, &pmemlist);
-	pci_memlist_merge(&pci_bus_res[bus].pmem_used, &pmemlist);
-
-	total = pci_memlist_count(iolist);
-	total += pci_memlist_count(memlist);
-	total += pci_memlist_count(pmemlist);
-
-	/* no property is created if no ranges are present */
-	if (total == 0)
+	/*
+	 * Read the programmed bridge window registers directly.
+	 * After allocate_bridge_resources() programs the windows,
+	 * the config registers are the authoritative source.
+	 */
+	rv = ddi_prop_lookup_int_array(DDI_DEV_T_ANY,
+	    pci_bus_res[bus].dip, DDI_PROP_DONTPASS,
+	    OBP_REG, &regp, &reglen);
+	if (rv != DDI_PROP_SUCCESS || reglen == 0)
 		return;
+	bfunc = (uchar_t)PCI_REG_FUNC_G(regp[0]);
+	bdev = (uchar_t)PCI_REG_DEV_G(regp[0]);
+	parbus = (uchar_t)PCI_REG_BUS_G(regp[0]);
+	ddi_prop_free(regp);
 
-	alloc_size = total *
-	    (ppb ? sizeof (ppb_ranges_t) : sizeof (pci_ranges_t));
+	/* IO window */
+	fetch_ppb_res(rcdip, parbus, bdev, bfunc,
+	    RES_IO, &base, &limit);
+	if (base <= limit) {
+		uint64_t size = limit - base + 1;
+		ppb_ranges_t *rp = &ranges[nranges++];
 
-	next_rp = rp = kmem_alloc(alloc_size, KM_SLEEP);
-
-	memlist_to_ranges(&next_rp, iolist, bus,
-	    PCI_ADDR_IO | PCI_RELOCAT_B, ppb);
-	memlist_to_ranges(&next_rp, memlist, bus,
-	    PCI_ADDR_MEM32 | PCI_RELOCAT_B, ppb);
-	memlist_to_ranges(&next_rp, pmemlist, bus,
-	    PCI_ADDR_MEM32 | PCI_RELOCAT_B | PCI_PREFETCH_B, ppb);
-
-	(void) ndi_prop_update_int_array(DDI_DEV_T_NONE, pci_bus_res[bus].dip,
-	    OBP_RANGES, (int *)rp, alloc_size / sizeof (int));
-
-	kmem_free(rp, alloc_size);
-	pci_memlist_free_all(&iolist);
-	pci_memlist_free_all(&memlist);
-	pci_memlist_free_all(&pmemlist);
-}
-
-static void
-pci_memlist_remove_list(struct memlist **list, struct memlist *remove_list)
-{
-	while (list && *list && remove_list) {
-		(void) pci_memlist_remove(list, remove_list->ml_address,
-		    remove_list->ml_size);
-		remove_list = remove_list->ml_next;
+		rp->child_high = rp->parent_high =
+		    PCI_ADDR_IO | PCI_RELOCAT_B;
+		rp->child_mid = rp->parent_mid =
+		    (uint32_t)(base >> 32);
+		rp->child_low = rp->parent_low =
+		    (uint32_t)base;
+		rp->size_high = (uint32_t)(size >> 32);
+		rp->size_low = (uint32_t)size;
 	}
-}
 
+	/* MEM window */
+	fetch_ppb_res(rcdip, parbus, bdev, bfunc,
+	    RES_MEM, &base, &limit);
+	if (base <= limit) {
+		uint64_t size = limit - base + 1;
+		ppb_ranges_t *rp = &ranges[nranges++];
 
-static int
-memlist_to_spec(struct pci_phys_spec *sp, const int bus, struct memlist *list,
-    const uint32_t type)
-{
-	uint_t i = 0;
+		rp->child_high = rp->parent_high =
+		    PCI_ADDR_MEM32 | PCI_RELOCAT_B;
+		rp->child_mid = rp->parent_mid =
+		    (uint32_t)(base >> 32);
+		rp->child_low = rp->parent_low =
+		    (uint32_t)base;
+		rp->size_high = (uint32_t)(size >> 32);
+		rp->size_low = (uint32_t)size;
+	}
 
-	while (list != NULL) {
-		uint32_t newtype = type;
+	/* MEM64 window */
+	fetch_ppb_res(rcdip, parbus, bdev, bfunc,
+	    RES_MEM64, &base, &limit);
+	if (base <= limit) {
+		uint64_t size = limit - base + 1;
+		uint32_t type = PCI_ADDR_MEM32 | PCI_RELOCAT_B |
+		    PCI_PREFETCH_B;
+		ppb_ranges_t *rp = &ranges[nranges++];
 
-		/*
-		 * If this is in fact a 64-bit address, adjust the address
-		 * type code to match.
-		 */
-		if (list->ml_address + (list->ml_size - 1) > UINT32_MAX) {
-			if ((type & PCI_ADDR_MASK) == PCI_ADDR_IO) {
-				cmn_err(CE_WARN, "Found invalid 64-bit I/O "
-				    "space address 0x%lx+0x%lx on bus %x",
-				    list->ml_address, list->ml_size, bus);
-				list = list->ml_next;
-				continue;
-			}
-			newtype &= ~PCI_ADDR_MASK;
-			newtype |= PCI_ADDR_MEM64;
+		if (base + size - 1 > UINT32_MAX) {
+			type &= ~PCI_ADDR_MASK;
+			type |= PCI_ADDR_MEM64;
 		}
-
-		sp->pci_phys_hi = newtype;
-		sp->pci_phys_mid = (uint32_t)(list->ml_address >> 32);
-		sp->pci_phys_low = (uint32_t)list->ml_address;
-		sp->pci_size_hi = (uint32_t)(list->ml_size >> 32);
-		sp->pci_size_low = (uint32_t)list->ml_size;
-
-		list = list->ml_next;
-		sp++, i++;
+		rp->child_high = rp->parent_high = type;
+		rp->child_mid = rp->parent_mid =
+		    (uint32_t)(base >> 32);
+		rp->child_low = rp->parent_low =
+		    (uint32_t)base;
+		rp->size_high = (uint32_t)(size >> 32);
+		rp->size_low = (uint32_t)size;
 	}
-	return (i);
-}
 
-static void
-add_bus_available_prop(struct pci_bus_resource *pci_bus_res, int bus)
-{
-	int i, count;
-	struct pci_phys_spec *sp;
-
-	/* no devinfo node - unused bus, return */
-	if (pci_bus_res[bus].dip == NULL)
+	if (nranges == 0)
 		return;
 
-	count = pci_memlist_count(pci_bus_res[bus].io_avail) +
-	    pci_memlist_count(pci_bus_res[bus].mem_avail) +
-	    pci_memlist_count(pci_bus_res[bus].pmem_avail);
-
-	if (count == 0)		/* nothing available */
-		return;
-
-	sp = kmem_alloc(count * sizeof (*sp), KM_SLEEP);
-	i = memlist_to_spec(&sp[0], bus, pci_bus_res[bus].io_avail,
-	    PCI_ADDR_IO | PCI_RELOCAT_B);
-	i += memlist_to_spec(&sp[i], bus, pci_bus_res[bus].mem_avail,
-	    PCI_ADDR_MEM32 | PCI_RELOCAT_B);
-	i += memlist_to_spec(&sp[i], bus, pci_bus_res[bus].pmem_avail,
-	    PCI_ADDR_MEM32 | PCI_RELOCAT_B | PCI_PREFETCH_B);
-	ASSERT(i == count);
-
-	(void) ndi_prop_update_int_array(DDI_DEV_T_NONE, pci_bus_res[bus].dip,
-	    "available", (int *)sp,
-	    i * sizeof (struct pci_phys_spec) / sizeof (int));
-	kmem_free(sp, count * sizeof (*sp));
-}
-
-static void
-alloc_res_array(struct pci_bus_resource **pci_bus_res, size_t maxbus)
-{
-	*pci_bus_res = kmem_zalloc((maxbus + 1) *
-	    sizeof (struct pci_bus_resource), KM_SLEEP);
+	(void) ndi_prop_update_int_array(DDI_DEV_T_NONE,
+	    pci_bus_res[bus].dip, OBP_RANGES, (int *)ranges,
+	    nranges * sizeof (ppb_ranges_t) / sizeof (int));
 }
