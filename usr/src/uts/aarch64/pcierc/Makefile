@@ -40,7 +40,7 @@ ROOTMODULE	= $(ROOT_MISC_DIR)/$(MODULE)
 
 INC_PATH += -I$(SRC)/uts/aarch64/io/pciex/pcierc/
 
-LDFLAGS += -Nmisc/pcie -Nmisc/pci_prd
+LDFLAGS += -Nmisc/pcie -Nmisc/pci_prd -Nmisc/busra
 
 #
 #	Include common rules.

@@ -102,6 +102,12 @@ struct pci_bus_resource {
 	uint64_t mem_buffer;	/* memory available for proactively */
 				/* allocating to bridges for hotplug */
 	uint_t io_size;		/* existing children required I/O space size */
+#if defined(__aarch64__)
+	uint64_t mem_required;	/* total MEM needed: all BARs + child windows */
+	uint64_t io_required;	/* total IO needed: all BARs + child windows */
+	uint64_t pmem_required;	/* total PMEM needed */
+	uint_t num_hp_bridges;	/* hotplug-capable bridges at or below */
+#endif
 	void *privdata;		/* private data for configuration */
 
 #if defined(__x86)
