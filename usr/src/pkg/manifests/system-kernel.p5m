@@ -153,7 +153,7 @@ $(not_aarch64)file path=kernel/drv/$(ARCH64)/mouse8042 group=sys
 file path=kernel/drv/$(ARCH64)/nulldriver group=sys
 file path=kernel/drv/$(ARCH64)/openeepr group=sys
 file path=kernel/drv/$(ARCH64)/options group=sys
-$(not_aarch64)file path=kernel/drv/$(ARCH64)/pci_pci group=sys
+file path=kernel/drv/$(ARCH64)/pci_pci group=sys
 file path=kernel/drv/$(ARCH64)/pcieb group=sys
 file path=kernel/drv/$(ARCH64)/physmem group=sys
 file path=kernel/drv/$(ARCH64)/poll group=sys
@@ -538,7 +538,7 @@ driver name=nulldriver \
     alias=scsa,probe
 driver name=openeepr perms="openprom 0640 root sys" policy=write_priv_set=all
 driver name=options
-$(i386_ONLY)driver name=pci_pci class=pci \
+driver name=pci_pci class=pci \
     alias=pci1011,1 \
     alias=pci1011,21 \
     alias=pci1014,22 \
