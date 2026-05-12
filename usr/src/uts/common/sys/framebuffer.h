@@ -79,6 +79,9 @@ typedef struct fb_info {
 	uint16_t font_height;
 	boolean_t inverse;
 	boolean_t inverse_screen;
+#if defined(__aarch64__)
+	volatile boolean_t fb_hw_stalled;
+#endif
 } fb_info_t;
 
 extern fb_info_t fb_info;

@@ -87,6 +87,7 @@
 #include <sys/sysconf.h>
 #include <sys/sunndi.h>
 #include <sys/syspic.h>
+#include <sys/pci_bar_relocate.h>
 #include <sys/syspic_impl.h>
 #include <sys/psci.h>
 #include <sys/controlregs.h>
@@ -1124,6 +1125,11 @@ startup_modules(void)
 	 */
 	if (syspic_init() != 0)
 		halt("Can't initialize syspic");
+
+	/*
+	 * Initialise the PCI BAR relocation framework
+	 */
+	pci_bar_relocate_init();
 
 	if (modload("fs", "specfs") == -1)
 		halt("Can't load specfs");
