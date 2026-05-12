@@ -58,6 +58,13 @@ CORE_OBJS +=			\
 	x_call.o
 
 #
+#	PCI BAR relocation callback framework — built into unix so it
+#	is available before any PCI modules load.
+#
+CORE_OBJS +=		\
+	pci_bar_relocate.o
+
+#
 #	Generic-unix Module
 #
 GENUNIX_OBJS +=		\
