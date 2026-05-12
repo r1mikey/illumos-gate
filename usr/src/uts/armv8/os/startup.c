@@ -107,6 +107,8 @@ extern void set_platform_defaults(void);
 extern time_t process_rtc_config_file(void);
 
 extern int32_t soft_hostid(void);
+extern void boot_fb_relocate_init(void);
+extern void boot_uart_relocate_init(void);
 
 #define	TERABYTE		(1ul << 40)
 #define	PHYSMEM_MAX64		mmu_btop(64 * TERABYTE)
@@ -1135,9 +1137,13 @@ startup_modules(void)
 	ffa_init();
 
 	/*
-	 * Initialise the PCI BAR relocation framework
+	 * Initialise the PCI BAR relocation framework and give the boot
+	 * framebuffer a chance to register callbacks when the fb is
+	 * in-use.
 	 */
 	pci_bar_relocate_init();
+	boot_fb_relocate_init();
+	boot_uart_relocate_init();
 
 	if (modload("fs", "specfs") == -1)
 		halt("Can't load specfs");
