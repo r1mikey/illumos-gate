@@ -24,6 +24,15 @@
 
 #include "boot_early_uart.h"
 
+#if !defined(_BOOT)
+#include <sys/pci_bar_relocate.h>
+#include <sys/vmem.h>
+#include <vm/hat.h>
+#include <vm/seg_kmem.h>
+#include <sys/mman.h>
+#include <vm/hat_aarch64.h>
+#endif
+
 #define	SBSA_UARTDR			0x00
 #define	SBSA_UARTFR			0x18
 #define	SBSA_UARTFR_TXFE		(1 << 7)
@@ -32,6 +41,19 @@
 
 static caddr_t boot_uart_mmio_base = NULL;
 static xbi_bsvc_uart_type_t boot_uart_type = XBI_BSVC_UART_NONE;
+
+static volatile boolean_t boot_uart_hw_stalled = B_FALSE;
+#if !defined(_BOOT)
+static uint64_t boot_uart_paddr = 0;
+
+static void boot_uart_bar_relocate(pci_bar_relocate_phase_t,
+    const pci_bar_relocate_info_t *, void *);
+
+static pci_bar_relocate_cb_t boot_uart_relocate_cb = {
+	.brc_fn		= boot_uart_bar_relocate,
+	.brc_arg	= NULL,
+};
+#endif
 
 static void
 boot_uart_writereg32(uint32_t reg, uint32_t val)
@@ -71,7 +93,7 @@ boot_uart_yield(void)
 int
 boot_uart_ischar(void)
 {
-	if (boot_uart_mmio_base == NULL)
+	if (boot_uart_mmio_base == NULL || boot_uart_hw_stalled)
 		return (0);
 
 	return (!(boot_uart_readreg32(SBSA_UARTFR) & SBSA_UARTFR_RXFE));
@@ -80,7 +102,7 @@ boot_uart_ischar(void)
 int
 boot_uart_getchar(void)
 {
-	if (boot_uart_mmio_base == NULL)
+	if (boot_uart_mmio_base == NULL || boot_uart_hw_stalled)
 		return (0);
 
 	while (!boot_uart_ischar())
@@ -92,7 +114,7 @@ boot_uart_getchar(void)
 void
 boot_uart_putchar(int c)
 {
-	if (boot_uart_mmio_base == NULL)
+	if (boot_uart_mmio_base == NULL || boot_uart_hw_stalled)
 		return;
 
 	while (boot_uart_readreg32(SBSA_UARTFR) & SBSA_UARTFR_TXFF)
@@ -144,6 +166,9 @@ boot_uart_init(struct xboot_info *xbp)
 #endif
 	} else {
 		boot_uart_mmio_base = (caddr_t)(xbp->bi_bsvc_uart_mmio_base);
+#if !defined(_BOOT)
+		boot_uart_paddr = xbp->bi_bsvc_uart_mmio_base;
+#endif
 	}
 
 	if (xbp->bi_bsvc_uart_type == XBI_BSVC_UART_NONE) {
@@ -173,3 +198,75 @@ boot_uart_init(struct xboot_info *xbp)
 		break;
 	}
 }
+
+#if !defined(_BOOT)
+/*
+ * Map a UART physical address into the kernel's virtual address space.
+ */
+static caddr_t
+boot_uart_map_kernel_space(uint64_t pa, size_t size)
+{
+	ulong_t pgoff = pa & PAGEOFFSET;
+	uint64_t base = pa - pgoff;
+	pgcnt_t npages = btopr(size + pgoff);
+	caddr_t cvaddr;
+
+	cvaddr = vmem_alloc(heap_arena, ptob(npages), VM_NOSLEEP);
+	if (cvaddr == NULL)
+		return (NULL);
+
+	hat_devload(kas.a_hat, cvaddr, ptob(npages), btop(base),
+	    PROT_READ|PROT_WRITE|HAT_MERGING_OK|HAT_PLAT_NOCACHE,
+	    HAT_LOAD_LOCK);
+
+	return (cvaddr + pgoff);
+}
+
+/*
+ * Boot UART BAR relocation callback.
+ *
+ * The UART register block is typically a single 4K page, but we
+ * use the BAR size reported by the framework for generality.
+ */
+static void
+boot_uart_bar_relocate(pci_bar_relocate_phase_t phase,
+    const pci_bar_relocate_info_t *info, void *arg __unused)
+{
+	uint64_t delta;
+
+	switch (phase) {
+	case PCI_BAR_PRE_RELOCATE:
+		boot_uart_hw_stalled = B_TRUE;
+		membar_producer();
+		break;
+
+	case PCI_BAR_POST_RELOCATE:
+		if (info->bri_new_addr == 0) {
+			boot_uart_paddr = 0;
+			boot_uart_mmio_base = NULL;
+			/* Leave stalled - no HW to write to */
+			return;
+		}
+
+		delta = boot_uart_paddr - info->bri_old_addr;
+		boot_uart_paddr = info->bri_new_addr + delta;
+
+		boot_uart_mmio_base =
+		    boot_uart_map_kernel_space(boot_uart_paddr, PAGESIZE);
+		membar_producer();
+
+		boot_uart_hw_stalled = B_FALSE;
+		membar_producer();
+		break;
+	}
+}
+
+void
+boot_uart_relocate_init(void)
+{
+	if (boot_uart_paddr != 0) {
+		boot_uart_relocate_cb.brc_match_addr = boot_uart_paddr;
+		pci_bar_relocate_register(&boot_uart_relocate_cb);
+	}
+}
+#endif /* !_BOOT */

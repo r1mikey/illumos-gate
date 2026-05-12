@@ -11,7 +11,7 @@
 
 /*
  * Copyright 2016 Toomas Soome <tsoome@me.com>
- * Copyright 2025 Michael van der Westhuizen
+ * Copyright 2026 Michael van der Westhuizen
  */
 
 /*
@@ -33,6 +33,14 @@
 #include <sys/bootconf.h>
 #include <sys/rgb.h>
 #include <sys/efifb.h>
+#if !defined(_BOOT)
+#include <sys/pci_bar_relocate.h>
+#include <sys/mman.h>
+#include <sys/vmem.h>
+#include <vm/hat.h>
+#include <vm/seg_kmem.h>
+#include <vm/hat_aarch64.h>
+#endif	/* !_BOOT */
 #include "boot_console_impl.h"
 
 #define	P2ROUNDUP(x, align)	(-(-(x) & -(align)))
@@ -78,6 +86,16 @@ static void boot_fb_eraseline(void);
 static void boot_fb_setpos(int, int);
 static void boot_fb_shiftline(int);
 static void boot_fb_eraseline_impl(uint16_t, uint16_t);
+
+#if !defined(_BOOT)
+static void boot_fb_bar_relocate(pci_bar_relocate_phase_t,
+    const pci_bar_relocate_info_t *, void *);
+
+static pci_bar_relocate_cb_t boot_fb_relocate_cb = {
+	.brc_fn		= boot_fb_bar_relocate,
+	.brc_arg	= NULL,
+};
+#endif
 
 static void
 xbi_init_font(struct xboot_info *xbi)
@@ -545,7 +563,8 @@ boot_fb_blit(struct vis_consdisplay *rect)
 	for (i = 0; i < rect->height; i++) {
 		uint8_t *dest = fbp + i * fb_info.pitch;
 		uint8_t *src = rect->data + i * size;
-		boot_fb_cpy(dest, src, size);
+		if (!fb_info.fb_hw_stalled)
+			boot_fb_cpy(dest, src, size);
 		if (sfbp != NULL) {
 			dest = sfbp + i * fb_info.pitch;
 			boot_fb_cpy(dest, src, size);
@@ -599,7 +618,8 @@ boot_fb_eraseline_impl(uint16_t x, uint16_t y)
 
 	for (i = 0; i < boot_fb_font.vf_height; i++) {
 		uint8_t *dest = dst + i * fb_info.pitch;
-		if (fb_info.fb + fb_info.fb_size >= dest + size)
+		if (!fb_info.fb_hw_stalled &&
+		    fb_info.fb + fb_info.fb_size >= dest + size)
 			boot_fb_fill(dest, bg, size);
 		if (fb_info.shadow_fb != NULL) {
 			dest = sdst + i * fb_info.pitch;
@@ -652,7 +672,8 @@ boot_fb_conscopy(struct vis_conscopy *c_copy)
 		    toffset + increment + width >= fb_info.fb_size)
 			break;
 
-		boot_fb_cpy(dst + increment, src + increment, width);
+		if (!fb_info.fb_hw_stalled)
+			boot_fb_cpy(dst + increment, src + increment, width);
 
 		if (sdst != NULL)
 			boot_fb_cpy(sdst + increment, src + increment, width);
@@ -736,77 +757,87 @@ boot_fb_cursor(boolean_t visible)
 	switch (fb_info.depth) {
 	case 8:
 		for (i = 0; i < boot_fb_font.vf_height; i++) {
-			fb8 = fb_info.fb + offset + i * pitch;
 			if (fb_info.shadow_fb != NULL)
 				sfb8 = fb_info.shadow_fb + offset + i * pitch;
-			for (j = 0; j < size; j += 1) {
-				fb8[j] = (fb8[j] ^ (fg & 0xff)) ^ (bg & 0xff);
-
-				if (sfb8 == NULL)
-					continue;
-
-				sfb8[j] = (sfb8[j] ^ (fg & 0xff)) ^ (bg & 0xff);
+			if (!fb_info.fb_hw_stalled) {
+				fb8 = fb_info.fb + offset + i * pitch;
+				for (j = 0; j < size; j += 1)
+					fb8[j] = (fb8[j] ^ (fg & 0xff)) ^
+					    (bg & 0xff);
+			}
+			if (sfb8 != NULL) {
+				for (j = 0; j < size; j += 1)
+					sfb8[j] = (sfb8[j] ^ (fg & 0xff)) ^
+					    (bg & 0xff);
 			}
 		}
 		break;
 	case 15:
 	case 16:
 		for (i = 0; i < boot_fb_font.vf_height; i++) {
-			fb16 = (uint16_t *)(fb_info.fb + offset + i * pitch);
 			if (fb_info.shadow_fb != NULL)
 				sfb16 = (uint16_t *)
 				    (fb_info.shadow_fb + offset + i * pitch);
-			for (j = 0; j < boot_fb_font.vf_width; j++) {
-				fb16[j] = (fb16[j] ^ (fg & 0xffff)) ^
-				    (bg & 0xffff);
-
-				if (sfb16 == NULL)
-					continue;
-
-				sfb16[j] = (sfb16[j] ^ (fg & 0xffff)) ^
-				    (bg & 0xffff);
+			if (!fb_info.fb_hw_stalled) {
+				fb16 = (uint16_t *)
+				    (fb_info.fb + offset + i * pitch);
+				for (j = 0; j < boot_fb_font.vf_width; j++)
+					fb16[j] = (fb16[j] ^ (fg & 0xffff)) ^
+					    (bg & 0xffff);
+			}
+			if (sfb16 != NULL) {
+				for (j = 0; j < boot_fb_font.vf_width; j++)
+					sfb16[j] = (sfb16[j] ^
+					    (fg & 0xffff)) ^ (bg & 0xffff);
 			}
 		}
 		break;
 	case 24:
 		for (i = 0; i < boot_fb_font.vf_height; i++) {
-			fb8 = fb_info.fb + offset + i * pitch;
 			if (fb_info.shadow_fb != NULL)
 				sfb8 = fb_info.shadow_fb + offset + i * pitch;
-			for (j = 0; j < size; j += 3) {
-				fb8[j] = (fb8[j] ^ ((fg >> 16) & 0xff)) ^
-				    ((bg >> 16) & 0xff);
-				fb8[j+1] = (fb8[j+1] ^ ((fg >> 8) & 0xff)) ^
-				    ((bg >> 8) & 0xff);
-				fb8[j+2] = (fb8[j+2] ^ (fg & 0xff)) ^
-				    (bg & 0xff);
-
-				if (sfb8 == NULL)
-					continue;
-
-				sfb8[j] = (sfb8[j] ^ ((fg >> 16) & 0xff)) ^
-				    ((bg >> 16) & 0xff);
-				sfb8[j+1] = (sfb8[j+1] ^ ((fg >> 8) & 0xff)) ^
-				    ((bg >> 8) & 0xff);
-				sfb8[j+2] = (sfb8[j+2] ^ (fg & 0xff)) ^
-				    (bg & 0xff);
+			if (!fb_info.fb_hw_stalled) {
+				fb8 = fb_info.fb + offset + i * pitch;
+				for (j = 0; j < size; j += 3) {
+					fb8[j] = (fb8[j] ^
+					    ((fg >> 16) & 0xff)) ^
+					    ((bg >> 16) & 0xff);
+					fb8[j+1] = (fb8[j+1] ^
+					    ((fg >> 8) & 0xff)) ^
+					    ((bg >> 8) & 0xff);
+					fb8[j+2] = (fb8[j+2] ^
+					    (fg & 0xff)) ^ (bg & 0xff);
+				}
+			}
+			if (sfb8 != NULL) {
+				for (j = 0; j < size; j += 3) {
+					sfb8[j] = (sfb8[j] ^
+					    ((fg >> 16) & 0xff)) ^
+					    ((bg >> 16) & 0xff);
+					sfb8[j+1] = (sfb8[j+1] ^
+					    ((fg >> 8) & 0xff)) ^
+					    ((bg >> 8) & 0xff);
+					sfb8[j+2] = (sfb8[j+2] ^
+					    (fg & 0xff)) ^ (bg & 0xff);
+				}
 			}
 		}
 		break;
 	case 32:
 		for (i = 0; i < boot_fb_font.vf_height; i++) {
-			fb32 = (uint32_t *)(fb_info.fb + offset + i * pitch);
 			if (fb_info.shadow_fb != NULL) {
 				sfb32 = (uint32_t *)
 				    (fb_info.shadow_fb + offset + i * pitch);
 			}
-			for (j = 0; j < boot_fb_font.vf_width; j++) {
-				fb32[j] = (fb32[j] ^ fg) ^ bg;
-
-				if (sfb32 == NULL)
-					continue;
-
-				sfb32[j] = (sfb32[j] ^ fg) ^ bg;
+			if (!fb_info.fb_hw_stalled) {
+				fb32 = (uint32_t *)
+				    (fb_info.fb + offset + i * pitch);
+				for (j = 0; j < boot_fb_font.vf_width; j++)
+					fb32[j] = (fb32[j] ^ fg) ^ bg;
+			}
+			if (sfb32 != NULL) {
+				for (j = 0; j < boot_fb_font.vf_width; j++)
+					sfb32[j] = (sfb32[j] ^ fg) ^ bg;
 			}
 		}
 		break;
@@ -867,3 +898,95 @@ boot_fb_putchar(int c)
 		boot_fb_scroll();
 	}
 }
+
+#if !defined(_BOOT)
+/*
+ * Map device memory into KVA.  Equivalent to gfxp_map_kernel_space
+ * but callable from unix, as it has no gfx_private module dependency.
+ * Same attributes as gfxp_map_kernel_space(GFXP_MEMORY_WRITECOMBINED).
+ */
+static uint8_t *
+boot_fb_map_kernel_space(uint64_t paddr, size_t size)
+{
+	ulong_t pgoff = paddr & PAGEOFFSET;
+	uint64_t base = paddr - pgoff;
+	pgcnt_t npages = btopr(size + pgoff);
+	caddr_t cvaddr;
+
+	cvaddr = vmem_alloc(heap_arena, ptob(npages), VM_NOSLEEP);
+	if (cvaddr == NULL)
+		return (NULL);
+
+	hat_devload(kas.a_hat, cvaddr, ptob(npages), btop(base),
+	    PROT_READ|PROT_WRITE|HAT_MERGING_OK|HAT_PLAT_NOCACHE,
+	    HAT_LOAD_LOCK);
+
+	return ((uint8_t *)(cvaddr + pgoff));
+}
+
+/*
+ * boot_fb BAR relocation callback.
+ *
+ * Only acts when boot_fb still owns fb_info.fb (identity-mapped,
+ * i.e. fb == paddr).  If efifb/gfxp_bitmap has taken over, this
+ * callback is a complete no-op and efifb's own callback handles
+ * everything independently.
+ */
+static void
+boot_fb_bar_relocate(pci_bar_relocate_phase_t phase,
+    const pci_bar_relocate_info_t *info, void *arg __unused)
+{
+	uint64_t delta, old_paddr;
+
+	/* Not in charge - efifb owns fb_info.fb */
+	if ((uintptr_t)fb_info.fb != (uintptr_t)fb_info.paddr)
+		return;
+
+	switch (phase) {
+	case PCI_BAR_PRE_RELOCATE:
+		fb_info.fb_hw_stalled = B_TRUE;
+		membar_producer();
+		break;
+
+	case PCI_BAR_POST_RELOCATE:
+		old_paddr = fb_info.paddr;
+
+		if (info->bri_new_addr == 0) {
+			fb_info.paddr = 0;
+			fb_info.fb = NULL;
+			/* Leave stalled — no HW to write to */
+			return;
+		}
+
+		delta = old_paddr - info->bri_old_addr;
+		fb_info.paddr = info->bri_new_addr + delta;
+
+		fb_info.fb = boot_fb_map_kernel_space(fb_info.paddr,
+		    fb_info.fb_size);
+		membar_producer();
+
+		/*
+		 * Full shadow-to-HW flush before clearing the stall
+		 * flag.  The new HW address has no valid content, so
+		 * this copy is what restores the screen.
+		 */
+		if (fb_info.fb != NULL && fb_info.shadow_fb != NULL)
+			boot_fb_cpy(fb_info.fb, fb_info.shadow_fb,
+			    fb_info.fb_size);
+
+		fb_info.fb_hw_stalled = B_FALSE;
+		membar_producer();
+		break;
+	}
+}
+
+void
+boot_fb_relocate_init(void)
+{
+	if (fb_info.paddr != 0) {
+		boot_fb_relocate_cb.brc_match_addr = fb_info.paddr;
+		pci_bar_relocate_register(&boot_fb_relocate_cb);
+	}
+}
+
+#endif /* !_BOOT */
