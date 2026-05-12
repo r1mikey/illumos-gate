@@ -30,9 +30,18 @@
 #include <sys/sunddi.h>
 #include <sys/rgb.h>
 #include <sys/gfx_private.h>
+#include <sys/pci_bar_relocate.h>
 #include "gfxp_fb.h"
 
 #define	MYNAME	"gfxp_bitmap"
+
+static void gfxp_bitmap_bar_relocate(pci_bar_relocate_phase_t,
+    const pci_bar_relocate_info_t *, void *);
+
+static pci_bar_relocate_cb_t gfxp_bitmap_relocate_cb = {
+	.brc_fn		= gfxp_bitmap_bar_relocate,
+	.brc_arg	= NULL,
+};
 
 static ddi_device_acc_attr_t dev_attr = {
 	DDI_DEVICE_ATTR_V0,
@@ -152,8 +161,9 @@ gfxp_bm_detach(dev_info_t *devi __unused, struct gfxp_fb_softc *softc)
 static void
 bitmap_kdsettext(struct gfxp_fb_softc *softc)
 {
-	bitmap_copy_fb(softc, softc->console->fb.shadow_fb,
-	    softc->console->fb.fb);
+	if (!fb_info.fb_hw_stalled)
+		bitmap_copy_fb(softc, softc->console->fb.shadow_fb,
+		    softc->console->fb.fb);
 }
 
 static void
@@ -214,6 +224,78 @@ bitmap_kdsetmode(struct gfxp_fb_softc *softc, int mode)
 }
 
 /*
+ * gfxp_bitmap BAR relocation callback.
+ *
+ * Fully self-contained - handles stall, paddr update, remap,
+ * shadow flush, and unstall.  boot_fb's callback is a complete
+ * no-op when gfxp_bitmap is in charge (fb != paddr).
+ * No identity-mapped check needed - by the time this callback is
+ * registered, bitmap_setup_fb has already replaced fb_info.fb with
+ * a gfxp_map_kernel_space mapping.
+ */
+static void
+gfxp_bitmap_bar_relocate(pci_bar_relocate_phase_t phase,
+    const pci_bar_relocate_info_t *info, void *arg __unused)
+{
+	uint8_t *old_fb;
+	uint64_t delta, old_paddr;
+	size_t fb_size;
+
+	switch (phase) {
+	case PCI_BAR_PRE_RELOCATE:
+		fb_info.fb_hw_stalled = B_TRUE;
+		membar_producer();
+		break;
+
+	case PCI_BAR_POST_RELOCATE:
+		old_paddr = fb_info.paddr;
+		old_fb = fb_info.fb;
+		fb_size = fb_info.fb_size;
+
+		if (info->bri_new_addr == 0) {
+			/* BAR allocation failed: unmap and give up */
+			fb_info.paddr = 0;
+			fb_info.fb = NULL;
+			if (old_fb != NULL)
+				gfxp_unmap_kernel_space(
+				    (gfxp_kva_t)old_fb, fb_size);
+			/*
+			 * Leave stalled, as we no longer have
+			 * any hardware to write to.
+			 */
+			return;
+		}
+
+		delta = old_paddr - info->bri_old_addr;
+		fb_info.paddr = info->bri_new_addr + delta;
+
+		/* Tear down old mapping */
+		if (old_fb != NULL)
+			gfxp_unmap_kernel_space(
+			    (gfxp_kva_t)old_fb, fb_size);
+
+		/* Create new mapping at the relocated address */
+		fb_info.fb = (uint8_t *)gfxp_map_kernel_space(
+		    fb_info.paddr, fb_size,
+		    GFXP_MEMORY_WRITECOMBINED);
+		membar_producer();
+
+		/*
+		 * Full shadow-to-HW flush before clearing the stall
+		 * flag.  The new HW address has no valid content, so
+		 * this memcpy is what restores the screen.
+		 */
+		if (fb_info.fb != NULL && fb_info.shadow_fb != NULL)
+			(void) memcpy(fb_info.fb, fb_info.shadow_fb,
+			    fb_size);
+
+		fb_info.fb_hw_stalled = B_FALSE;
+		membar_producer();
+		break;
+	}
+}
+
+/*
  * Copy fb_info from early boot and set up the FB
  */
 static int
@@ -221,14 +303,27 @@ bitmap_setup_fb(struct gfxp_fb_softc *softc)
 {
 	size_t size;
 	struct gfxfb_info *gfxfb_info;
+	uint8_t *old_fb;
+	boolean_t old_identity;
 
 	softc->console = (union gfx_console *)&fb_info;
 	size = ptob(btopr(fb_info.fb_size));
 	softc->console->fb.fb_size = size;
+
+	old_fb = fb_info.fb;
+	old_identity = ((uintptr_t)old_fb == (uintptr_t)fb_info.paddr);
+
 	softc->console->fb.fb = (uint8_t *)gfxp_map_kernel_space(fb_info.paddr,
 	    size, GFXP_MEMORY_WRITECOMBINED);
 	if (softc->console->fb.fb == NULL)
 		return (DDI_FAILURE);
+	membar_producer();
+
+	if (!old_identity && old_fb != NULL)
+		gfxp_unmap_kernel_space((gfxp_kva_t)old_fb, size);
+
+	gfxp_bitmap_relocate_cb.brc_match_addr = fb_info.paddr;
+	pci_bar_relocate_register(&gfxp_bitmap_relocate_cb);
 
 	softc->console->fb.shadow_fb = kmem_zalloc(size, KM_SLEEP);
 
@@ -322,7 +417,8 @@ bitmap_cons_copy(struct gfxp_fb_softc *softc, struct vis_conscopy *ma)
 	if (toffset <= soffset) {
 		for (i = 0; i < height; i++) {
 			uint32_t increment = i * pitch;
-			if (softc->mode == KD_TEXT) {
+			if (softc->mode == KD_TEXT &&
+			    !fb_info.fb_hw_stalled) {
 				(void) memmove(dst + increment,
 				    src + increment, width);
 			}
@@ -332,7 +428,8 @@ bitmap_cons_copy(struct gfxp_fb_softc *softc, struct vis_conscopy *ma)
 	} else {
 		for (i = height - 1; i >= 0; i--) {
 			uint32_t increment = i * pitch;
-			if (softc->mode == KD_TEXT) {
+			if (softc->mode == KD_TEXT &&
+			    !fb_info.fb_hw_stalled) {
 				(void) memmove(dst + increment,
 				    src + increment, width);
 			}
@@ -420,7 +517,7 @@ bitmap_cons_display(struct gfxp_fb_softc *softc, struct vis_consdisplay *da)
 
 		/* alpha blend bitmap to shadow fb. */
 		bitmap_cpy(dest, src, size, console->fb.bpp);
-		if (softc->mode == KD_TEXT) {
+		if (softc->mode == KD_TEXT && !fb_info.fb_hw_stalled) {
 			/* Copy from shadow to fb. */
 			src = dest;
 			dest = fbp + i * console->fb.pitch;
@@ -445,7 +542,8 @@ bitmap_cons_clear(struct gfxp_fb_softc *softc, struct vis_consclear *ca)
 	case 8:
 		data = ca->bg_color.eight;
 		for (i = 0; i < console->fb.screen.y; i++) {
-			if (softc->mode == KD_TEXT) {
+			if (softc->mode == KD_TEXT &&
+			    !fb_info.fb_hw_stalled) {
 				fb = console->fb.fb + i * pitch;
 				(void) memset(fb, data, pitch);
 			}
@@ -461,7 +559,8 @@ bitmap_cons_clear(struct gfxp_fb_softc *softc, struct vis_consclear *ca)
 			fb16 = (uint16_t *)(console->fb.fb + i * pitch);
 			sfb16 = (uint16_t *)(console->fb.shadow_fb + i * pitch);
 			for (j = 0; j < console->fb.screen.x; j++) {
-				if (softc->mode == KD_TEXT)
+				if (softc->mode == KD_TEXT &&
+				    !fb_info.fb_hw_stalled)
 					fb16[j] = (uint16_t)data & 0xffff;
 				sfb16[j] = (uint16_t)data & 0xffff;
 			}
@@ -475,7 +574,8 @@ bitmap_cons_clear(struct gfxp_fb_softc *softc, struct vis_consclear *ca)
 			fb = console->fb.fb + i * pitch;
 			sfb = console->fb.shadow_fb + i * pitch;
 			for (j = 0; j < pitch; j += 3) {
-				if (softc->mode == KD_TEXT) {
+				if (softc->mode == KD_TEXT &&
+				    !fb_info.fb_hw_stalled) {
 					fb[j] = (data >> 16) & 0xff;
 					fb[j+1] = (data >> 8) & 0xff;
 					fb[j+2] = data & 0xff;
@@ -493,7 +593,8 @@ bitmap_cons_clear(struct gfxp_fb_softc *softc, struct vis_consclear *ca)
 			fb32 = (uint32_t *)(console->fb.fb + i * pitch);
 			sfb32 = (uint32_t *)(console->fb.shadow_fb + i * pitch);
 			for (j = 0; j < console->fb.screen.x; j++) {
-				if (softc->mode == KD_TEXT)
+				if (softc->mode == KD_TEXT &&
+				    !fb_info.fb_hw_stalled)
 					fb32[j] = data;
 				sfb32[j] = data;
 			}
@@ -533,7 +634,8 @@ bitmap_display_cursor(struct gfxp_fb_softc *softc, struct vis_conscursor *ca)
 			sfb8 = console->fb.shadow_fb + offset + i * pitch;
 			for (j = 0; j < size; j += 1) {
 				sfb8[j] = (sfb8[j] ^ (fg & 0xff)) ^ (bg & 0xff);
-				if (softc->mode == KD_TEXT) {
+				if (softc->mode == KD_TEXT &&
+				    !fb_info.fb_hw_stalled) {
 					fb8[j] = sfb8[j];
 				}
 			}
@@ -553,7 +655,8 @@ bitmap_display_cursor(struct gfxp_fb_softc *softc, struct vis_conscursor *ca)
 			for (j = 0; j < ca->width; j++) {
 				sfb16[j] = (sfb16[j] ^ (fg & 0xffff)) ^
 				    (bg & 0xffff);
-				if (softc->mode == KD_TEXT) {
+				if (softc->mode == KD_TEXT &&
+				    !fb_info.fb_hw_stalled) {
 					fb16[j] = sfb16[j];
 				}
 			}
@@ -576,7 +679,8 @@ bitmap_display_cursor(struct gfxp_fb_softc *softc, struct vis_conscursor *ca)
 				    ((bg >> 8) & 0xff);
 				sfb8[j+2] = (sfb8[j+2] ^ (fg & 0xff)) ^
 				    (bg & 0xff);
-				if (softc->mode == KD_TEXT) {
+				if (softc->mode == KD_TEXT &&
+				    !fb_info.fb_hw_stalled) {
 					fb8[j] = sfb8[j];
 					fb8[j+1] = sfb8[j+1];
 					fb8[j+2] = sfb8[j+2];
@@ -594,7 +698,8 @@ bitmap_display_cursor(struct gfxp_fb_softc *softc, struct vis_conscursor *ca)
 			    (console->fb.shadow_fb + offset + i * pitch);
 			for (j = 0; j < ca->width; j++) {
 				sfb32[j] = (sfb32[j] ^ fg) ^ bg;
-				if (softc->mode == KD_TEXT)
+				if (softc->mode == KD_TEXT &&
+				    !fb_info.fb_hw_stalled)
 					fb32[j] = sfb32[j];
 			}
 		}
