@@ -87,8 +87,13 @@ struct pci_bus_resource {
 	struct memlist *io_used;	/* used io res */
 	struct memlist *mem_avail;	/* available free mem res */
 	struct memlist *mem_used;	/* used mem res */
+#if defined(__aarch64__)
+	struct memlist *mem64_avail;	/* available free 64bit mem res */
+	struct memlist *mem64_used;	/* used 64bit mem res */
+#else
 	struct memlist *pmem_avail; /* available free prefetchable mem res */
 	struct memlist *pmem_used; /* used prefetchable mem res */
+#endif
 	struct memlist *bus_avail;	/* available free bus res */
 			/* bus_space_used not needed; can read from regs */
 	dev_info_t *dip;	/* devinfo node */
@@ -98,10 +103,20 @@ struct pci_bus_resource {
 	boolean_t mem_reprogram;	/* need mem reprog on this bus */
 	boolean_t subtractive;	/* subtractive PPB */
 	uint64_t mem_size;	/* existing children required MEM space size */
+#if defined(__aarch64__)
+	uint64_t mem64_size;	/* existing children req'd MEM64 space size */
+#else
 	uint64_t pmem_size;	/* existing children required PMEM space size */
+#endif
 	uint64_t mem_buffer;	/* memory available for proactively */
 				/* allocating to bridges for hotplug */
 	uint_t io_size;		/* existing children required I/O space size */
+#if defined(__aarch64__)
+	uint64_t mem_required;	/* total MEM needed: all BARs + child windows */
+	uint64_t io_required;	/* total IO needed: all BARs + child windows */
+	uint64_t mem64_required;	/* total MEM64 needed */
+	uint_t num_hp_bridges;	/* hotplug-capable bridges at or below */
+#endif
 	void *privdata;		/* private data for configuration */
 
 #if defined(__x86)

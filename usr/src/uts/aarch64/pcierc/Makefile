@@ -52,12 +52,13 @@ ALL_TARGET	= $(BINARY)
 INSTALL_TARGET	= $(BINARY) $(ROOTMODULE)
 
 #
-# depends on misc/pcie and misc/pci_prd
+# depends on misc/pcie, misc/pci_prd and misc/busra
 #
 # pcie supplies PCI Express fabric error support
 # pci_prd provides platform choices and implementations
+# busra provides resource management
 #
-LDFLAGS	+= -Nmisc/pcie -Nmisc/pci_prd
+LDFLAGS	+= -Nmisc/pcie -Nmisc/pci_prd -Nmisc/busra
 
 CPPFLAGS += -I$(UTSBASE)/armv8 -D_MODULE_NAME="\"$(MODULE)\""
 
