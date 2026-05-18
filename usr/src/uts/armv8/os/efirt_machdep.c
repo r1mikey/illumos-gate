@@ -913,3 +913,134 @@ efi_set_time(EFI_TIME *time)
 
 	return (status);
 }
+
+/*
+ * Get the value of a UEFI variable (UEFI Specification 2.10, Section 8.2.1).
+ *
+ * data_size is an in/out parameter: on entry, the size of the data
+ * buffer; on return, the size of the data written (or the required
+ * size if the buffer was too small - EFI_BUFFER_TOO_SMALL).
+ * attrs may be NULL if the caller does not need the attributes.
+ */
+uint64_t
+efi_get_variable(uint16_t *name, efi_guid_t *vendor, uint32_t *attrs,
+    uint64_t *data_size, void *data)
+{
+	uint64_t status;
+
+	if (!efirt_is_active()) {
+		return (EFI_UNSUPPORTED);
+	}
+
+	if (!efirt_is_supported(EFI_RT_SUPPORTED_GET_VARIABLE)) {
+		return (EFI_UNSUPPORTED);
+	}
+
+	status = efirt_call_rt(efirt_get_variable,
+	    (uint64_t)name, (uint64_t)vendor, (uint64_t)attrs,
+	    (uint64_t)data_size, (uint64_t)data);
+
+	if (status == EFI_UNSUPPORTED) {
+		efirt_clear_supported(EFI_RT_SUPPORTED_GET_VARIABLE);
+	}
+
+	return (status);
+}
+
+/*
+ * Enumerate the names and vendor GUIDs of all current UEFI variables
+ * (UEFI Specification 2.10, Section 8.2.3).
+ *
+ * name_size is an in/out parameter: on entry, the size of the name
+ * buffer; on return, the size of the name written (or the required
+ * size if the buffer was too small - EFI_BUFFER_TOO_SMALL).
+ * name and vendor are seeded by the caller with the result of the
+ * previous call (or an empty NUL-terminated string for the first).
+ */
+uint64_t
+efi_get_next_variable_name(uint64_t *name_size, uint16_t *name,
+    efi_guid_t *vendor)
+{
+	uint64_t status;
+
+	if (!efirt_is_active()) {
+		return (EFI_UNSUPPORTED);
+	}
+
+	if (!efirt_is_supported(EFI_RT_SUPPORTED_GET_NEXT_VARIABLE_NAME)) {
+		return (EFI_UNSUPPORTED);
+	}
+
+	status = efirt_call_rt(efirt_get_next_variable_name,
+	    (uint64_t)name_size, (uint64_t)name, (uint64_t)vendor, 0, 0);
+
+	if (status == EFI_UNSUPPORTED) {
+		efirt_clear_supported(
+		    EFI_RT_SUPPORTED_GET_NEXT_VARIABLE_NAME);
+	}
+
+	return (status);
+}
+
+/*
+ * Set the value of a UEFI variable (UEFI Specification 2.10, Section 8.2.2).
+ *
+ * Setting data_size to 0 deletes the variable.  attrs must include
+ * EFI_VARIABLE_NON_VOLATILE for the change to persist across reset.
+ */
+uint64_t
+efi_set_variable(uint16_t *name, efi_guid_t *vendor, uint32_t attrs,
+    uint64_t data_size, void *data)
+{
+	uint64_t status;
+
+	if (!efirt_is_active()) {
+		return (EFI_UNSUPPORTED);
+	}
+
+	if (!efirt_is_supported(EFI_RT_SUPPORTED_SET_VARIABLE)) {
+		return (EFI_UNSUPPORTED);
+	}
+
+	status = efirt_call_rt(efirt_set_variable,
+	    (uint64_t)name, (uint64_t)vendor, (uint64_t)attrs,
+	    data_size, (uint64_t)data);
+
+	if (status == EFI_UNSUPPORTED) {
+		efirt_clear_supported(EFI_RT_SUPPORTED_SET_VARIABLE);
+	}
+
+	return (status);
+}
+
+/*
+ * Query variable store information (UEFI Specification 2.10, Section 8.2.4).
+ *
+ * Returns the maximum variable storage size, remaining storage size,
+ * and maximum individual variable size for the given attributes.
+ */
+uint64_t
+efi_query_variable_info(uint32_t attrs, uint64_t *max_storage,
+    uint64_t *remaining_storage, uint64_t *max_variable_size)
+{
+	uint64_t status;
+
+	if (!efirt_is_active()) {
+		return (EFI_UNSUPPORTED);
+	}
+
+	if (!efirt_is_supported(EFI_RT_SUPPORTED_QUERY_VARIABLE_INFO)) {
+		return (EFI_UNSUPPORTED);
+	}
+
+	status = efirt_call_rt(efirt_query_variable_info,
+	    (uint64_t)attrs, (uint64_t)max_storage,
+	    (uint64_t)remaining_storage, (uint64_t)max_variable_size, 0);
+
+	if (status == EFI_UNSUPPORTED) {
+		efirt_clear_supported(
+		    EFI_RT_SUPPORTED_QUERY_VARIABLE_INFO);
+	}
+
+	return (status);
+}

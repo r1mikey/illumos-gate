@@ -79,6 +79,14 @@ typedef struct {
 extern void efi_reset_system(EFI_RESET_TYPE, uint64_t, uint64_t, void *);
 extern uint64_t efi_get_time(EFI_TIME *, EFI_TIME_CAPABILITIES *);
 extern uint64_t efi_set_time(EFI_TIME *);
+extern uint64_t efi_get_variable(uint16_t *, efi_guid_t *, uint32_t *,
+    uint64_t *, void *);
+extern uint64_t efi_get_next_variable_name(uint64_t *, uint16_t *,
+    efi_guid_t *);
+extern uint64_t efi_set_variable(uint16_t *, efi_guid_t *, uint32_t,
+    uint64_t, void *);
+extern uint64_t efi_query_variable_info(uint32_t, uint64_t *, uint64_t *,
+    uint64_t *);
 
 #ifdef __cplusplus
 }
