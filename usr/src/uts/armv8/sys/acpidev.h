@@ -77,6 +77,7 @@ extern "C" {
 #if defined(__aarch64__)
 /* Well-known device HIDs/CIDs. */
 #define	ACPIDEV_HID_ARM_PL011		"ARMH0011"
+#define	ACPIDEV_HID_GED			"ACPI0013"
 #endif
 
 /* Device names for ACPI objects. */
