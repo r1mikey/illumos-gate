@@ -55,6 +55,7 @@ static char *acpidev_device_hid_skiplist[] = {
 static char *acpidev_device_well_known_hids[] = {
 	ACPIDEV_HID_ARM_PL011,
 	ACPIDEV_HID_VIRTIO_MMIO,
+	ACPIDEV_HID_GED,
 #if 0
 	ACPIDEV_HID_PCIE_HOSTBRIDGE,
 	ACPIDEV_HID_PCIEX_HOSTBRIDGE,
@@ -594,8 +595,6 @@ acpidev_device_init(acpidev_walk_info_t *infop)
 		compat[i] =
 		    ddi_strdup(compats->Ids[j].String, KM_SLEEP);
 	}
-
-	i += ncid;
 
 	/* Add the _CLS entry, if present and well-formed */
 	if (ncls != 0) {

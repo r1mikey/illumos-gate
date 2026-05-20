@@ -190,6 +190,8 @@ EFIFB_OBJS		+= efifb.o
 
 BOOTDEV_OBJS		+= bootdev.o
 
+ACPIGED_OBJS +=	acpiged.o
+
 ACPINEX_OBJS +=			\
 	acpinex_drv.o		\
 	acpinex_event.o
