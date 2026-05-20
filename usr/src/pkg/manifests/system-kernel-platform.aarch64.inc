@@ -45,6 +45,7 @@ dir  path=platform/armv8/kernel/drv
 dir  path=platform/armv8/kernel/drv/$(ARCH)
 file path=platform/armv8/kernel/drv/$(ARCH)/acpiged
 file path=platform/armv8/kernel/drv/$(ARCH)/acpinex
+file path=platform/armv8/kernel/drv/$(ARCH)/acpipwrbtn
 file path=platform/armv8/kernel/drv/$(ARCH)/arm_gtmr
 file path=platform/armv8/kernel/drv/$(ARCH)/efidev
 file path=platform/armv8/kernel/drv/$(ARCH)/efifb
@@ -55,6 +56,7 @@ file path=platform/armv8/kernel/drv/$(ARCH)/gicv3_its
 file path=platform/armv8/kernel/drv/$(ARCH)/rootnex
 file path=platform/armv8/kernel/drv/$(ARCH)/simple-bus
 file path=platform/armv8/kernel/drv/acpiged.conf
+file path=platform/armv8/kernel/drv/acpipwrbtn.conf
 file path=platform/armv8/kernel/drv/efidev.conf
 dir  path=platform/armv8/kernel/misc
 dir  path=platform/armv8/kernel/misc/$(ARCH)
@@ -74,6 +76,7 @@ file path=usr/share/man/man4d/efidev.4d
 file path=usr/share/man/man4d/simple-bus.4d
 driver name=acpiged alias=ACPI0013
 driver name=acpinex alias=acpivirtnex
+driver name=acpipwrbtn alias=PNP0C0C
 driver name=arm_gtmr alias=arm,armv8-timer
 driver name=devfdt perms="* 0400 root sys"
 driver name=ecam alias=pci-host-ecam-generic

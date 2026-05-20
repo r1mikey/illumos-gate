@@ -232,6 +232,7 @@ DRV_KMODS += efitod
 DRV_KMODS += efifb
 DRV_KMODS += pcieb
 DRV_KMODS += acpiged
+DRV_KMODS += acpipwrbtn
 DRV_KMODS += acpinex
 
 #
