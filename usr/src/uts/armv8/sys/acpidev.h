@@ -78,6 +78,7 @@ extern "C" {
 /* Well-known device HIDs/CIDs. */
 #define	ACPIDEV_HID_ARM_PL011		"ARMH0011"
 #define	ACPIDEV_HID_GED			"ACPI0013"
+#define	ACPIDEV_HID_PWRBTN		"PNP0C0C"
 #endif
 
 /* Device names for ACPI objects. */
