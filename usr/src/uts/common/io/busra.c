@@ -1032,6 +1032,10 @@ pci_resource_setup(dev_info_t *dip)
 		return (NDI_FAILURE);
 	}
 
+	if (ndi_ra_map_setup(dip, NDI_RA_TYPE_MEM64) == NDI_FAILURE) {
+		return (NDI_FAILURE);
+	}
+
 	/* read the "available" property if it is available */
 	if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
 	    "available", (int **)&regs, &rlen) == DDI_SUCCESS) {
@@ -1067,7 +1071,7 @@ pci_resource_setup(dev_info_t *dip)
 				    ((uint64_t)(regs[i].pci_size_low)),
 				    (regs[i].pci_phys_hi & PCI_REG_PF_M) ?
 				    NDI_RA_TYPE_PCI_PREFETCH_MEM :
-				    NDI_RA_TYPE_MEM,
+				    NDI_RA_TYPE_MEM64,
 				    0);
 				break;
 			case PCI_REG_ADDR_G(PCI_ADDR_IO):
@@ -1230,6 +1234,8 @@ pci_resource_destroy(dev_info_t *dip)
 	(void) ndi_ra_map_destroy(dip, NDI_RA_TYPE_PCI_BUSNUM);
 
 	(void) ndi_ra_map_destroy(dip, NDI_RA_TYPE_PCI_PREFETCH_MEM);
+
+	(void) ndi_ra_map_destroy(dip, NDI_RA_TYPE_MEM64);
 }
 
 
@@ -1243,6 +1249,8 @@ pci_resource_setup_avail(dev_info_t *dip, pci_regspec_t *avail_p, int entries)
 	if (ndi_ra_map_setup(dip, NDI_RA_TYPE_IO) == NDI_FAILURE)
 		return (NDI_FAILURE);
 	if (ndi_ra_map_setup(dip, NDI_RA_TYPE_PCI_PREFETCH_MEM) == NDI_FAILURE)
+		return (NDI_FAILURE);
+	if (ndi_ra_map_setup(dip, NDI_RA_TYPE_MEM64) == NDI_FAILURE)
 		return (NDI_FAILURE);
 
 	/* for each entry in the PCI "available" property */
@@ -1258,6 +1266,16 @@ pci_resource_setup_avail(dev_info_t *dip, pci_regspec_t *avail_p, int entries)
 			    NDI_RA_TYPE_PCI_PREFETCH_MEM : NDI_RA_TYPE_MEM,
 			    0);
 			}
+			break;
+		case PCI_REG_ADDR_G(PCI_ADDR_MEM64):
+			(void) ndi_ra_free(dip,
+			    ((uint64_t)avail_p->pci_phys_mid << 32) |
+			    (uint64_t)avail_p->pci_phys_low,
+			    ((uint64_t)avail_p->pci_size_hi << 32) |
+			    (uint64_t)avail_p->pci_size_low,
+			    (avail_p->pci_phys_hi & PCI_REG_PF_M) ?
+			    NDI_RA_TYPE_PCI_PREFETCH_MEM : NDI_RA_TYPE_MEM64,
+			    0);
 			break;
 		case PCI_REG_ADDR_G(PCI_ADDR_IO):
 			(void) ndi_ra_free(dip, (uint64_t)avail_p->pci_phys_low,
@@ -1718,16 +1736,20 @@ pci_type_ra2pci(char *type)
 {
 	uint32_t	pci_type = PCI_ADDR_TYPE_INVAL;
 
-	/*
-	 * No 64 bit mem support for now
-	 */
 	if (strcmp(type, NDI_RA_TYPE_IO) == 0) {
 		pci_type = PCI_ADDR_IO;
 
 	} else if (strcmp(type, NDI_RA_TYPE_MEM) == 0) {
 		pci_type = PCI_ADDR_MEM32;
 
+	} else if (strcmp(type, NDI_RA_TYPE_MEM64) == 0) {
+		pci_type = PCI_ADDR_MEM64;
+
 	} else if (strcmp(type, NDI_RA_TYPE_PCI_PREFETCH_MEM)  == 0) {
+		/*
+		 * Somewhat confusingly, prefetchable memory is unconditionally
+		 * treated as 32bit.  This is a legacy behaviour.
+		 */
 		pci_type = PCI_ADDR_MEM32;
 		pci_type |= PCI_REG_PF_M;
 	}
