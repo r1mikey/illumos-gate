@@ -714,6 +714,7 @@ typedef struct ndi_ra_request {
 
 /* Predefined types for generic type of resources */
 #define	NDI_RA_TYPE_MEM			"memory"
+#define	NDI_RA_TYPE_MEM64		"memory64"
 #define	NDI_RA_TYPE_IO			"io"
 #define	NDI_RA_TYPE_PCI_BUSNUM		"pci_bus_number"
 #define	NDI_RA_TYPE_PCI_PREFETCH_MEM	"pci_prefetchable_memory"
