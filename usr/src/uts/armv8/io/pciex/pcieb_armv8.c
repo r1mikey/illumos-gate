@@ -23,6 +23,7 @@
  * Use is subject to license terms.
  *
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2026 Michael van der Westhuizen
  */
 
 /* armv8 specific code used by the pcieb driver */
@@ -36,6 +37,8 @@
 #include <sys/pcie.h>
 #include <sys/pci_cap.h>
 #include <sys/pcie_impl.h>
+#include <sys/pcie_osc.h>
+#include <sys/pcie_aarch64.h>
 #include <sys/hotplug/hpctrl.h>
 #include <io/pciex/pcieb.h>
 #include <sys/obpdefs.h>
@@ -102,10 +105,61 @@ pcieb_plat_msi_supported(dev_info_t *dip)
 	return (B_TRUE);
 }
 
+/*
+ * Check whether _OSC has been called for this device.
+ * Used to avoid duplicate calls when hotplug init has
+ * already evaluated _OSC.
+ */
+static boolean_t
+pcieb_is_osc(dev_info_t *dip)
+{
+	pcie_bus_t		*bus_p = PCIE_DIP2BUS(dip);
+	pcie_aarch64_priv_t	*osc_p;
+
+	if (bus_p == NULL || bus_p->bus_plat_private == NULL)
+		return (B_FALSE);
+
+	osc_p = (pcie_aarch64_priv_t *)bus_p->bus_plat_private;
+	return (osc_p->bus_osc);
+}
+
+static void
+pcieb_init_osc(dev_info_t *devi)
+{
+	pcie_bus_t		*bus_p = PCIE_DIP2UPBUS(devi);
+	pcie_aarch64_priv_t	*osc_p;
+	uint32_t		support = PCIE_OSC_SUPPORT_INIT;
+	uint32_t		ctrl_req = PCIE_OSC_CONTROL_INIT;
+	uint32_t		ctrl_ret = 0;
+
+	if (!PCIE_IS_RP(bus_p))
+		return;
+
+	osc_p = (pcie_aarch64_priv_t *)bus_p->bus_plat_private;
+	if (osc_p == NULL)
+		return;
+
+	/* Mark that _OSC has been attempted for this device */
+	osc_p->bus_osc = B_TRUE;
+
+	/*
+	 * TODO: add PCIE_OSC_CTL_NAT_HP | PCIE_OSC_CTL_NAT_PM
+	 * when native PCIe hotplug is implemented.
+	 */
+
+	if (pcie_osc(devi, support, ctrl_req, &ctrl_ret) == DDI_SUCCESS) {
+		osc_p->bus_osc_hp =
+		    (ctrl_ret & PCIE_OSC_CTL_NAT_HP) ? B_TRUE : B_FALSE;
+		osc_p->bus_osc_aer =
+		    (ctrl_ret & PCIE_OSC_CTL_AER) ? B_TRUE : B_FALSE;
+	}
+}
+
 void
 pcieb_plat_intr_attach(pcieb_devstate_t *pcieb)
 {
-
+	if (!pcieb_is_osc(pcieb->pcieb_dip))
+		pcieb_init_osc(pcieb->pcieb_dip);
 }
 
 void
