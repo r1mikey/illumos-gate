@@ -109,6 +109,7 @@ extern time_t process_rtc_config_file(void);
 extern int32_t soft_hostid(void);
 extern void boot_fb_relocate_init(void);
 extern void boot_uart_relocate_init(void);
+extern void bop_release_bootstrap(void);
 
 #define	TERABYTE		(1ul << 40)
 #define	PHYSMEM_MAX64		mmu_btop(64 * TERABYTE)
@@ -1595,8 +1596,10 @@ release_bootstrap(void)
 	/*
 	 * We're finished using the boot loader so free its pages.
 	 */
-	PRM_POINT("Unmapping lower boot pages");
+	PRM_POINT("Releasing boot console mappings");
+	bop_release_bootstrap();
 
+	PRM_POINT("Unmapping lower boot pages");
 	clear_boot_mappings(0, _userlimit);
 
 	/*

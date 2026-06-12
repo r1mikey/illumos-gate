@@ -33,6 +33,8 @@
 #include <sys/pci_bar_relocate.h>
 #include "gfxp_fb.h"
 
+extern void boot_fb_release_kva(void);
+
 #define	MYNAME	"gfxp_bitmap"
 
 static void gfxp_bitmap_bar_relocate(pci_bar_relocate_phase_t,
@@ -320,7 +322,7 @@ bitmap_setup_fb(struct gfxp_fb_softc *softc)
 	membar_producer();
 
 	if (!old_identity && old_fb != NULL)
-		gfxp_unmap_kernel_space((gfxp_kva_t)old_fb, size);
+		boot_fb_release_kva();
 
 	gfxp_bitmap_relocate_cb.brc_match_addr = fb_info.paddr;
 	pci_bar_relocate_register(&gfxp_bitmap_relocate_cb);
