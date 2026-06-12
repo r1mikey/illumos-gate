@@ -1213,6 +1213,52 @@ process_boot_environment(struct boot_modules *benv, char *space)
 			continue;
 		}
 
+		/*
+		 * Loader property `pci_boot_reallocate' is a
+		 * comma-separated list of PCI segment group numbers
+		 * (in hex, e.g. "0x0001,0x000a") identifying segments
+		 * whose PCI resources should be reallocated from
+		 * scratch rather than trusting firmware assignments.
+		 *
+		 * Convert to an integer array boot property named
+		 * `pci-boot-reallocate' so that pci_boot can look it
+		 * up via ddi_prop_lookup_int_array on the root node.
+		 */
+		if (strcmp(name, "pci_boot_reallocate") == 0) {
+			uint32_t segs[32];
+			uint_t nsegs = 0;
+			char *p = value;
+
+			while (*p != '\0' && nsegs < 32) {
+				uint64_t v;
+				char *ep;
+
+				while (*p == ',' || *p == ' ') {
+					p++;
+				}
+
+				if (*p == '\0') {
+					break;
+				}
+
+				if (ddi_strtoul(p, &ep, 0, &v) != 0) {
+					break;
+				}
+
+				segs[nsegs++] = (uint32_t)v;
+				p = ep;
+			}
+
+			if (nsegs > 0) {
+				bsetprop(DDI_PROP_TYPE_INT,
+				    "pci-boot-reallocate",
+				    strlen("pci-boot-reallocate"),
+				    segs, nsegs * sizeof (uint32_t));
+			}
+
+			continue;
+		}
+
 		if (name_is_blocklisted(name) == B_TRUE)
 			continue;
 
