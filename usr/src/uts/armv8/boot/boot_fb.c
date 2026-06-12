@@ -95,6 +95,14 @@ static pci_bar_relocate_cb_t boot_fb_relocate_cb = {
 	.brc_fn		= boot_fb_bar_relocate,
 	.brc_arg	= NULL,
 };
+
+/*
+ * Tracking for the kernel VA mapping created by boot_fb_map_kernel_space, so
+ * we can release it during bop_release_bootstrap.  Page-aligned base and
+ * allocation size.
+ */
+static caddr_t boot_fb_kva_base;
+static size_t boot_fb_kva_size;
 #endif
 
 static void
@@ -921,6 +929,9 @@ boot_fb_map_kernel_space(uint64_t paddr, size_t size)
 	    PROT_READ|PROT_WRITE|HAT_MERGING_OK|HAT_PLAT_NOCACHE,
 	    HAT_LOAD_LOCK);
 
+	boot_fb_kva_base = cvaddr;
+	boot_fb_kva_size = ptob(npages);
+
 	return ((uint8_t *)(cvaddr + pgoff));
 }
 
@@ -978,6 +989,34 @@ boot_fb_bar_relocate(pci_bar_relocate_phase_t phase,
 		membar_producer();
 		break;
 	}
+}
+
+/*
+ * Release the kernel VA mapping created by boot_fb_map_kernel_space.
+ *
+ * Called by gfxp_bitmap when it takes over the framebuffer, so that
+ * bop_release_bootstrap does not double-free the mapping.
+ */
+void
+boot_fb_release_kva(void)
+{
+	if (boot_fb_kva_base != NULL) {
+		hat_unload(kas.a_hat, boot_fb_kva_base, boot_fb_kva_size,
+		    HAT_UNLOAD_UNLOCK);
+		vmem_free(heap_arena, boot_fb_kva_base, boot_fb_kva_size);
+		boot_fb_kva_base = NULL;
+		boot_fb_kva_size = 0;
+	}
+}
+
+/*
+ * Release any boot framebuffer kernel VA mapping that was not already
+ * handed off to gfxp_bitmap.  Called from bop_release_bootstrap.
+ */
+void
+boot_fb_release_bootstrap(void)
+{
+	boot_fb_release_kva();
 }
 
 void

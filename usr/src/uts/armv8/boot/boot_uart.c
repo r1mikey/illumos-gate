@@ -53,6 +53,14 @@ static pci_bar_relocate_cb_t boot_uart_relocate_cb = {
 	.brc_fn		= boot_uart_bar_relocate,
 	.brc_arg	= NULL,
 };
+
+/*
+ * Tracking for the kernel VA mapping created by boot_uart_map_kernel_space, so
+ * we can release it during bop_release_bootstrap.  Page-aligned base and
+ * allocation size.
+ */
+static caddr_t boot_uart_kva_base;
+static size_t boot_uart_kva_size;
 #endif
 
 static void
@@ -219,6 +227,9 @@ boot_uart_map_kernel_space(uint64_t pa, size_t size)
 	    PROT_READ|PROT_WRITE|HAT_MERGING_OK|HAT_PLAT_NOCACHE,
 	    HAT_LOAD_LOCK);
 
+	boot_uart_kva_base = cvaddr;
+	boot_uart_kva_size = ptob(npages);
+
 	return (cvaddr + pgoff);
 }
 
@@ -258,6 +269,23 @@ boot_uart_bar_relocate(pci_bar_relocate_phase_t phase,
 		boot_uart_hw_stalled = B_FALSE;
 		membar_producer();
 		break;
+	}
+}
+
+/*
+ * Release the kernel VA mapping created by boot_uart_map_kernel_space.
+ *
+ * Called from bop_release_bootstrap once the real console driver has attached.
+ */
+void
+boot_uart_release_bootstrap(void)
+{
+	if (boot_uart_kva_base != NULL) {
+		hat_unload(kas.a_hat, boot_uart_kva_base, boot_uart_kva_size,
+		    HAT_UNLOAD_UNLOCK);
+		vmem_free(heap_arena, boot_uart_kva_base, boot_uart_kva_size);
+		boot_uart_kva_base = NULL;
+		boot_uart_kva_size = 0;
 	}
 }
 

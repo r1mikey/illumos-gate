@@ -1685,3 +1685,19 @@ bmemlist_init(struct xboot_info *xbp)
 
 	bmemlist_insert(&bootmem_avail, MISC_VA_BASE, MISC_VA_SIZE);
 }
+
+/*
+ * Release kernel VA mappings created by the boot console (framebuffer and UART)
+ * during PCI BAR relocation.  By the time release_bootstrap calls this,
+ * consconfig has attached the real console drivers, so these early mappings are
+ * no longer needed.
+ */
+void
+bop_release_bootstrap(void)
+{
+	extern void boot_fb_release_bootstrap(void);
+	extern void boot_uart_release_bootstrap(void);
+
+	boot_fb_release_bootstrap();
+	boot_uart_release_bootstrap();
+}
