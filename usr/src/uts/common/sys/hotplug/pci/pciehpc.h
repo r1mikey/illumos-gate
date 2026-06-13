@@ -59,9 +59,9 @@ void pciehpc_reg_put32(pcie_hp_ctrl_t *ctrl_p, uint_t off, uint32_t val);
 void pciehpc_led_init(pcie_hp_slot_t *slot_p);
 extern bool pciehpc_slot_kstat_init(pcie_hp_slot_t *);
 extern void pciehpc_slot_kstat_fini(pcie_hp_slot_t *);
-#if	defined(__i386) || defined(__amd64)
+#if	defined(__x86) || defined(__aarch64__)
 extern void pciehpc_update_ops(pcie_hp_ctrl_t *ctrl_p);
-#endif	/* defined(__i386) || defined(__amd64) */
+#endif	/* defined(__x86) || defined(__aarch64__) */
 
 #endif	/* _KERNEL */
 
