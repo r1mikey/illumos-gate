@@ -142,10 +142,7 @@ pcieb_init_osc(dev_info_t *devi)
 	/* Mark that _OSC has been attempted for this device */
 	osc_p->bus_osc = B_TRUE;
 
-	/*
-	 * TODO: add PCIE_OSC_CTL_NAT_HP | PCIE_OSC_CTL_NAT_PM
-	 * when native PCIe hotplug is implemented.
-	 */
+	ctrl_req |= (PCIE_OSC_CTL_NAT_HP|PCIE_OSC_CTL_NAT_PM);
 
 	if (pcie_osc(devi, support, ctrl_req, &ctrl_ret) == DDI_SUCCESS) {
 		osc_p->bus_osc_hp =
