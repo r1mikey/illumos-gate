@@ -83,6 +83,10 @@ install:	$(INSTALL_DEPS)
 #
 include $(UTSBASE)/armv8/Makefile.targ
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/pciex/hotplug/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 $(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/pciex/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
