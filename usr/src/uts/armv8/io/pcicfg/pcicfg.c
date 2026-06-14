@@ -1660,7 +1660,7 @@ pcicfg_destroy_phdl(dev_info_t *dip)
 			if (entry->pf_memory_len > 0) {
 				(void) ndi_ra_free(ddi_get_parent(dip),
 				    entry->pf_memory_base, entry->pf_memory_len,
-				    NDI_RA_TYPE_PCI_PREFETCH_MEM, NDI_RA_PASS);
+				    NDI_RA_TYPE_MEM64, NDI_RA_PASS);
 			}
 			pcicfg_free_hole(&entry->pf_mem_hole);
 
@@ -1776,7 +1776,7 @@ pcicfg_bridge_assign(dev_info_t *dip, void *hdl)
 		if (pf_mem_residual > 0) {
 			(void) ndi_ra_free(ddi_get_parent(dip),
 			    entry->pf_memory_last, pf_mem_residual,
-			    NDI_RA_TYPE_PCI_PREFETCH_MEM, NDI_RA_PASS);
+			    NDI_RA_TYPE_MEM64, NDI_RA_PASS);
 		}
 
 		if (entry->io_len > 0) {
@@ -1990,15 +1990,7 @@ pcicfg_device_assign(dev_info_t *dip)
 
 	bzero((caddr_t)&request, sizeof (ndi_ra_request_t));
 
-	/*
-	 * Note: Both non-prefetchable and prefetchable memory space
-	 * allocations are made within 32bit space. Currently, BIOSs
-	 * allocate device memory for PCI devices within the 32bit space
-	 * so this will not be a problem.
-	 */
-	request.ra_flags |= NDI_RA_ALIGN_SIZE | NDI_RA_ALLOC_BOUNDED;
-	request.ra_boundbase = 0;
-	request.ra_boundlen = PCICFG_4GIG_LIMIT;
+	request.ra_flags |= NDI_RA_ALIGN_SIZE;
 
 	rcount = length / sizeof (pci_regspec_t);
 	offset = PCI_CONF_BASE0;
@@ -2012,19 +2004,35 @@ pcicfg_device_assign(dev_info_t *dip)
 
 			switch (PCI_REG_ADDR_G(reg[i].pci_phys_hi)) {
 			case PCI_REG_ADDR_G(PCI_ADDR_MEM64):
-				if (reg[i].pci_phys_hi & PCI_REG_PF_M) {
-					mem_type = NDI_RA_TYPE_PCI_PREFETCH_MEM;
-				} else {
-					mem_type = NDI_RA_TYPE_MEM;
-				}
+				/*
+				 * 64-bit BAR: try MEM64 unbounded first.
+				 * If no MEM64 pool exists on the parent
+				 * (bridge has no PF window), fall back to
+				 * MEM bounded to 4G.
+				 */
+				request.ra_flags &= ~NDI_RA_ALLOC_BOUNDED;
+				mem_type = NDI_RA_TYPE_MEM64;
 				/* allocate memory space from the allocator */
 				if (ndi_ra_alloc(ddi_get_parent(dip), &request,
 				    &answer, &alen, mem_type, NDI_RA_PASS)
 				    != NDI_SUCCESS) {
-					DEBUG0("Failed to allocate 64b mem\n");
-					ddi_prop_free(reg);
-					(void) pcicfg_config_teardown(&handle);
-					return (PCICFG_NORESRC);
+					request.ra_flags |= NDI_RA_ALLOC_BOUNDED;
+					request.ra_boundbase = 0;
+					request.ra_boundlen =
+					    PCICFG_4GIG_LIMIT;
+					mem_type = NDI_RA_TYPE_MEM;
+					if (ndi_ra_alloc(ddi_get_parent(dip),
+					    &request, &answer, &alen,
+					    mem_type, NDI_RA_PASS)
+					    != NDI_SUCCESS) {
+						DEBUG0("Failed to allocate"
+						    " 64b mem\n");
+						ddi_prop_free(reg);
+						(void)
+						    pcicfg_config_teardown(
+						    &handle);
+						return (PCICFG_NORESRC);
+					}
 				}
 				DEBUG3("64 addr = [0x%x.0x%x] len [0x%x]\n",
 				    PCICFG_HIADDR(answer),
@@ -2039,29 +2047,56 @@ pcicfg_device_assign(dev_info_t *dip)
 				reg[i].pci_phys_hi |= PCI_REG_REL_M;
 				reg[i].pci_phys_low = PCICFG_LOADDR(answer);
 				reg[i].pci_phys_mid = PCICFG_HIADDR(answer);
-				/*
-				 * currently support 32b address space
-				 * assignments only.
-				 */
-				reg[i].pci_phys_hi ^=
-				    PCI_ADDR_MEM64 ^ PCI_ADDR_MEM32;
 
 				offset += 8;
 				break;
 
 			case PCI_REG_ADDR_G(PCI_ADDR_MEM32):
-				if (reg[i].pci_phys_hi & PCI_REG_PF_M)
-					mem_type = NDI_RA_TYPE_PCI_PREFETCH_MEM;
-				else
+				/*
+				 * 32-bit BAR: constrain to 32-bit
+				 * address space.  Prefetchable BARs
+				 * try MEM64 first, falling back to MEM
+				 * when no MEM64 pool exists.
+				 */
+				request.ra_flags |= NDI_RA_ALLOC_BOUNDED;
+				request.ra_boundbase = 0;
+				request.ra_boundlen = PCICFG_4GIG_LIMIT;
+				if (reg[i].pci_phys_hi & PCI_REG_PF_M) {
+					mem_type = NDI_RA_TYPE_MEM64;
+				} else {
 					mem_type = NDI_RA_TYPE_MEM;
+				}
 				/* allocate memory space from the allocator */
 				if (ndi_ra_alloc(ddi_get_parent(dip), &request,
 				    &answer, &alen, mem_type, NDI_RA_PASS)
 				    != NDI_SUCCESS) {
-					DEBUG0("Failed to allocate 32b mem\n");
-					ddi_prop_free(reg);
-					(void) pcicfg_config_teardown(&handle);
-					return (PCICFG_NORESRC);
+					if (strcmp(mem_type, NDI_RA_TYPE_MEM64) == 0) {
+						mem_type = NDI_RA_TYPE_MEM;
+						if (ndi_ra_alloc(
+						    ddi_get_parent(dip),
+						    &request, &answer,
+						    &alen, mem_type,
+						    NDI_RA_PASS)
+						    != NDI_SUCCESS) {
+							DEBUG0("Failed to"
+							    " allocate"
+							    " 32b mem\n");
+							ddi_prop_free(reg);
+							(void)
+							    pcicfg_config_teardown(
+							    &handle);
+							return
+							    (PCICFG_NORESRC);
+						}
+					} else {
+						DEBUG0("Failed to allocate"
+						    " 32b mem\n");
+						ddi_prop_free(reg);
+						(void)
+						    pcicfg_config_teardown(
+						    &handle);
+						return (PCICFG_NORESRC);
+					}
 				}
 				DEBUG3("32 addr = [0x%x.0x%x] len [0x%x]\n",
 				    PCICFG_HIADDR(answer),
@@ -2086,6 +2121,9 @@ pcicfg_device_assign(dev_info_t *dip)
 				 * that need to use I/O space, the hotplug
 				 * will still fail later during driver attach.
 				 */
+				request.ra_flags |= NDI_RA_ALLOC_BOUNDED;
+				request.ra_boundbase = 0;
+				request.ra_boundlen = PCICFG_4GIG_LIMIT;
 				if (ndi_ra_alloc(ddi_get_parent(dip), &request,
 				    &answer, &alen, NDI_RA_TYPE_IO, NDI_RA_PASS)
 				    != NDI_SUCCESS) {
@@ -2176,16 +2214,12 @@ pcicfg_device_assign_readonly(dev_info_t *dip)
 		pci_config_put8(handle, PCI_CONF_ILINE, 0xf);
 	}
 	/*
-	 * Note: Both non-prefetchable and prefetchable memory space
-	 * allocations are made within 32bit space. Currently, BIOSs
-	 * allocate device memory for PCI devices within the 32bit space
-	 * so this will not be a problem.
+	 * Allocate resources at the addresses already assigned by
+	 * firmware, removing them from the parent's resource pool.
 	 */
 	bzero((caddr_t)&request, sizeof (ndi_ra_request_t));
 
 	request.ra_flags = NDI_RA_ALLOC_SPECIFIED;  /* specified addr */
-	request.ra_boundbase = 0;
-	request.ra_boundlen = PCICFG_4GIG_LIMIT;
 
 	acount = length / sizeof (pci_regspec_t);
 	for (i = 0; i < acount; i++) {
@@ -2202,18 +2236,21 @@ pcicfg_device_assign_readonly(dev_info_t *dip)
 				    assigned[i].pci_phys_low,
 				    assigned[i].pci_phys_mid);
 
-				if (assigned[i].pci_phys_hi & PCI_REG_PF_M) {
-					mem_type = NDI_RA_TYPE_PCI_PREFETCH_MEM;
-				} else {
-					mem_type = NDI_RA_TYPE_MEM;
-				}
+				mem_type = NDI_RA_TYPE_MEM64;
 				/* allocate memory space from the allocator */
 				if (ndi_ra_alloc(ddi_get_parent(dip), &request,
 				    &answer, &alen, mem_type, NDI_RA_PASS)
 				    != NDI_SUCCESS) {
-					DEBUG0("Failed to allocate 64b mem\n");
-					ddi_prop_free(assigned);
-					return (PCICFG_NORESRC);
+					mem_type = NDI_RA_TYPE_MEM;
+					if (ndi_ra_alloc(ddi_get_parent(dip),
+					    &request, &answer, &alen,
+					    mem_type, NDI_RA_PASS)
+					    != NDI_SUCCESS) {
+						DEBUG0("Failed to allocate"
+						    " 64b mem\n");
+						ddi_prop_free(assigned);
+						return (PCICFG_NORESRC);
+					}
 				}
 
 				break;
@@ -2221,17 +2258,37 @@ pcicfg_device_assign_readonly(dev_info_t *dip)
 				request.ra_addr = (uint64_t)
 				    assigned[i].pci_phys_low;
 
-				if (assigned[i].pci_phys_hi & PCI_REG_PF_M)
-					mem_type = NDI_RA_TYPE_PCI_PREFETCH_MEM;
-				else
+				if (assigned[i].pci_phys_hi & PCI_REG_PF_M) {
+					mem_type = NDI_RA_TYPE_MEM64;
+				} else {
 					mem_type = NDI_RA_TYPE_MEM;
+				}
 				/* allocate memory space from the allocator */
 				if (ndi_ra_alloc(ddi_get_parent(dip), &request,
 				    &answer, &alen, mem_type, NDI_RA_PASS)
 				    != NDI_SUCCESS) {
-					DEBUG0("Failed to allocate 32b mem\n");
-					ddi_prop_free(assigned);
-					return (PCICFG_NORESRC);
+					if (strcmp(mem_type, NDI_RA_TYPE_MEM64) == 0) {
+						mem_type = NDI_RA_TYPE_MEM;
+						if (ndi_ra_alloc(
+						    ddi_get_parent(dip),
+						    &request, &answer,
+						    &alen, mem_type,
+						    NDI_RA_PASS)
+						    != NDI_SUCCESS) {
+							DEBUG0("Failed to"
+							    " allocate"
+							    " 32b mem\n");
+							ddi_prop_free(
+							    assigned);
+							return
+							    (PCICFG_NORESRC);
+						}
+					} else {
+						DEBUG0("Failed to allocate"
+						    " 32b mem\n");
+						ddi_prop_free(assigned);
+						return (PCICFG_NORESRC);
+					}
 				}
 
 				break;
@@ -2453,15 +2510,22 @@ pcicfg_free_bridge_resources(dev_info_t *dip)
 					return (PCICFG_FAILURE);
 				}
 				break;
-			case PCI_ADDR_MEM32:
 			case PCI_ADDR_MEM64:
+				DEBUG3("Free 64-bit Memory base/length = "
+				    "[0x%x.0x%x]/[0x%x]\n",
+				    ranges[i].child_mid,
+				    ranges[i].child_low,
+				    ranges[i].size_low);
+				mem_type = NDI_RA_TYPE_MEM64;
+				goto free_mem;
+			case PCI_ADDR_MEM32:
 				if (ranges[i].parent_high & PCI_REG_PF_M) {
 					DEBUG3("Free PF Memory base/length = "
 					    "[0x%x.0x%x]/[0x%x]\n",
 					    ranges[i].child_mid,
 					    ranges[i].child_low,
 					    ranges[i].size_low);
-					mem_type = NDI_RA_TYPE_PCI_PREFETCH_MEM;
+					mem_type = NDI_RA_TYPE_MEM64;
 				} else {
 					DEBUG3("Free Memory base/length"
 					    " = [0x%x.0x%x]/[0x%x]\n",
@@ -2470,6 +2534,7 @@ pcicfg_free_bridge_resources(dev_info_t *dip)
 					    ranges[i].size_low)
 					mem_type = NDI_RA_TYPE_MEM;
 				}
+			free_mem:
 				if (ndi_ra_free(ddi_get_parent(dip),
 				    PCICFG_LADDR(ranges[i].child_low,
 				    ranges[i].child_mid),
@@ -2546,10 +2611,12 @@ pcicfg_free_device_resources(dev_info_t *dip)
 		    (assigned[i].pci_size_hi != 0)) {
 			switch (PCI_REG_ADDR_G(assigned[i].pci_phys_hi)) {
 			case PCI_REG_ADDR_G(PCI_ADDR_MEM32):
-				if (assigned[i].pci_phys_hi & PCI_REG_PF_M)
-					mem_type = NDI_RA_TYPE_PCI_PREFETCH_MEM;
-				else
-					mem_type = NDI_RA_TYPE_MEM;
+				/*
+				 * 32-bit BARs are always sub-4G.  pci_boot
+				 * routes sub-4G PF ranges to the MEM pool,
+				 * so always free to MEM here.
+				 */
+				mem_type = NDI_RA_TYPE_MEM;
 
 				if (ndi_ra_free(ddi_get_parent(dip),
 				    (uint64_t)assigned[i].pci_phys_low,
@@ -2569,10 +2636,16 @@ pcicfg_free_device_resources(dev_info_t *dip)
 
 			break;
 			case PCI_REG_ADDR_G(PCI_ADDR_MEM64):
-				if (assigned[i].pci_phys_hi & PCI_REG_PF_M)
-					mem_type = NDI_RA_TYPE_PCI_PREFETCH_MEM;
-				else
+				/*
+				 * If phys_mid is non-zero the allocation
+				 * came from MEM64 (above 4G); otherwise
+				 * it fell back to MEM during allocation.
+				 */
+				if (assigned[i].pci_phys_mid != 0) {
+					mem_type = NDI_RA_TYPE_MEM64;
+				} else {
 					mem_type = NDI_RA_TYPE_MEM;
+				}
 
 				if (ndi_ra_free(ddi_get_parent(dip),
 				    PCICFG_LADDR(assigned[i].pci_phys_low,
@@ -3620,10 +3693,10 @@ pcicfg_probe_bridge(dev_info_t *new_child, ddi_acc_handle_t h, uint_t bus,
 		rval = PCICFG_FAILURE;
 		goto cleanup;
 	}
-	if (ndi_ra_map_setup(new_child, NDI_RA_TYPE_PCI_PREFETCH_MEM) ==
+	if (ndi_ra_map_setup(new_child, NDI_RA_TYPE_MEM64) ==
 	    NDI_FAILURE) {
 		DEBUG0("Can not setup resource map -"
-		    " NDI_RA_TYPE_PCI_PREFETCH_MEM\n");
+		    " NDI_RA_TYPE_MEM64\n");
 		rval = PCICFG_FAILURE;
 		goto cleanup;
 	}
@@ -3771,21 +3844,17 @@ pcicfg_probe_bridge(dev_info_t *new_child, ddi_acc_handle_t h, uint_t bus,
 
 	/*
 	 * Bridge supports PF mem range; Allocate PF Memory Space for it.
-	 *
-	 * Note: Both non-prefetchable and prefetchable memory space
-	 * allocations are made within 32bit space. Currently, BIOSs
-	 * allocate device memory for PCI devices within the 32bit space
-	 * so this will not be a problem.
+	 * Prefetchable memory may reside above 4GB on platforms with
+	 * 64-bit MMIO apertures, so the allocation is not bounded.
 	 */
 	bzero((caddr_t)&req, sizeof (ndi_ra_request_t));
-	req.ra_flags = NDI_RA_ALLOC_PARTIAL_OK | NDI_RA_ALLOC_BOUNDED;
-	req.ra_boundbase = 0;
+	req.ra_flags = NDI_RA_ALLOC_PARTIAL_OK;
 	req.ra_len = PCICFG_4GIG_LIMIT; /* Get as big as possible */
 	req.ra_align_mask =
 	    PCICFG_MEMGRAN - 1; /* 1M alignment on memory space */
 
 	rval = ndi_ra_alloc(ddi_get_parent(new_child), &req,
-	    &pf_mem_answer, &pf_mem_alen,  NDI_RA_TYPE_PCI_PREFETCH_MEM,
+	    &pf_mem_answer, &pf_mem_alen,  NDI_RA_TYPE_MEM64,
 	    NDI_RA_PASS);
 
 	if (rval != NDI_SUCCESS) {
@@ -3808,7 +3877,7 @@ pcicfg_probe_bridge(dev_info_t *new_child, ddi_acc_handle_t h, uint_t bus,
 	 * Put available PF memory into the pool.
 	 */
 	(void) ndi_ra_free(new_child, pf_mem_answer, pf_mem_alen,
-	    NDI_RA_TYPE_PCI_PREFETCH_MEM, NDI_RA_PASS);
+	    NDI_RA_TYPE_MEM64, NDI_RA_PASS);
 
 	pf_mem_base = pf_mem_answer;
 
@@ -3849,7 +3918,7 @@ pcicfg_probe_bridge(dev_info_t *new_child, ddi_acc_handle_t h, uint_t bus,
 		    PCICFG_MEMGRAN));
 
 		(void) ndi_ra_alloc(new_child, &req,
-		    &round_answer, &round_len,  NDI_RA_TYPE_PCI_PREFETCH_MEM,
+		    &round_answer, &round_len,  NDI_RA_TYPE_MEM64,
 		    NDI_RA_PASS);
 	}
 
@@ -4288,7 +4357,7 @@ next:
 	if (pf_mem_supported) {
 		(void) ndi_ra_free(ddi_get_parent(new_child),
 		    pf_mem_end, (pf_mem_answer + pf_mem_alen) - pf_mem_end,
-		    NDI_RA_TYPE_PCI_PREFETCH_MEM, NDI_RA_PASS);
+		    NDI_RA_TYPE_MEM64, NDI_RA_PASS);
 
 		if (pf_mem_end == pf_mem_answer) {
 			DEBUG0("No PF memory resources used\n");
@@ -4391,7 +4460,7 @@ cleanup:
 		if (pf_mem_alen)
 			(void) ndi_ra_free(ddi_get_parent(new_child),
 			    pf_mem_base, pf_mem_alen,
-			    NDI_RA_TYPE_PCI_PREFETCH_MEM, NDI_RA_PASS);
+			    NDI_RA_TYPE_MEM64, NDI_RA_PASS);
 		if (pcibus_alen)
 			(void) ndi_ra_free(ddi_get_parent(new_child),
 			    pcibus_base, pcibus_alen, NDI_RA_TYPE_PCI_BUSNUM,
@@ -4402,7 +4471,7 @@ cleanup:
 	(void) ndi_ra_map_destroy(new_child, NDI_RA_TYPE_PCI_BUSNUM);
 	(void) ndi_ra_map_destroy(new_child, NDI_RA_TYPE_IO);
 	(void) ndi_ra_map_destroy(new_child, NDI_RA_TYPE_MEM);
-	(void) ndi_ra_map_destroy(new_child, NDI_RA_TYPE_PCI_PREFETCH_MEM);
+	(void) ndi_ra_map_destroy(new_child, NDI_RA_TYPE_MEM64);
 
 	return (rval);
 }
