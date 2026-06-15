@@ -767,10 +767,23 @@ pciehpc_intr(dev_info_t *dip)
 		PCIE_DBG("pciehpc_intr(): ATTN BUTTON interrupt received\n");
 
 		/* if ATTN button event is still pending then cancel it */
-		if (slot_p->hs_attn_btn_pending == B_TRUE)
+		if (slot_p->hs_attn_btn_pending == B_TRUE) {
 			slot_p->hs_attn_btn_pending = B_FALSE;
-		else
+		} else {
 			slot_p->hs_attn_btn_pending = B_TRUE;
+#if defined(__aarch64__)
+			/*
+			 * Snapshot the slot state now, before any other
+			 * status bits (e.g. PDC) are processed in this
+			 * ISR invocation.  The AB handler uses this to
+			 * decide INCOMING vs OUTGOING after its 5-second
+			 * wait, by which time concurrent events may have
+			 * changed the hardware state.
+			 */
+			slot_p->hs_attn_btn_snap =
+			    slot_p->hs_info.cn_state;
+#endif
+		}
 
 		/* wake up the ATTN event handler */
 		cv_signal(&slot_p->hs_attn_btn_cv);
@@ -1566,6 +1579,9 @@ pciehpc_slotinfo_init(pcie_hp_ctrl_t *ctrl_p)
 
 		cv_init(&slot_p->hs_attn_btn_cv, NULL, CV_DRIVER, NULL);
 		slot_p->hs_attn_btn_pending = B_FALSE;
+#if defined(__aarch64__)
+		slot_p->hs_attn_btn_snap = DDI_HP_CN_STATE_EMPTY;
+#endif
 		slot_p->hs_attn_btn_threadp = thread_create(NULL, 0,
 		    pciehpc_attn_btn_handler,
 		    (void *)ctrl_p, 0, &p0, TS_RUN, minclsyspri);
@@ -3566,9 +3582,23 @@ pciehpc_attn_btn_handler(pcie_hp_ctrl_t *ctrl_p)
 					int hint;
 
 					slot_p->hs_attn_btn_pending = B_FALSE;
+
+#if defined(__aarch64__)
+					/*
+					 * Use the slot state captured at ABP
+					 * time rather than re-reading hardware.
+					 * Concurrent events (e.g. PDC firing
+					 * in the same ISR invocation) may have
+					 * changed the slot state during the
+					 * 5-second wait, leading to the wrong
+					 * decision here.
+					 */
+					if (slot_p->hs_attn_btn_snap <=
+#else
 					pciehpc_get_slot_state(slot_p);
 
 					if (slot_p->hs_info.cn_state <=
+#endif
 					    DDI_HP_CN_STATE_PRESENT) {
 						/*
 						 * Insertion.
