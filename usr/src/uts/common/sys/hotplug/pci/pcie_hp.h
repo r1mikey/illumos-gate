@@ -316,6 +316,9 @@ struct pcie_hp_slot {
 	/* Synchronization variable(s) for hot plug events */
 	kcondvar_t	hs_attn_btn_cv;		/* ATTN button pressed intr */
 	boolean_t	hs_attn_btn_pending;
+#if defined(__aarch64__)
+	ddi_hp_cn_state_t hs_attn_btn_snap;	/* slot state at ABP time */
+#endif
 	kthread_t	*hs_attn_btn_threadp;	/* ATTN button event thread */
 	boolean_t	hs_attn_btn_thread_exit;
 	kcondvar_t	hs_dll_active_cv;	/* DLL State Changed intr */
