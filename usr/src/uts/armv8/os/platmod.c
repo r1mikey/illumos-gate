@@ -15,6 +15,10 @@
 
 #include <sys/systm.h>
 #include <sys/machclock.h>
+#include <sys/promif.h>
+#include <sys/prom_plat.h>
+#include <sys/byteorder.h>
+#include <sys/sunddi.h>
 #include <sys/efi.h>
 #include <sys/efirt.h>
 
@@ -46,4 +50,83 @@ set_platform_defaults(void)
 	if (efi_get_time(&t, &tc) == EFI_SUCCESS) {
 		tod_module_name = "efitod";
 	}
+}
+
+static int
+plat_devi_is_compatible(dev_info_t *dip, const char **compats, uint_t ncompats)
+{
+	char	**cmpats;
+	uint_t	ncmpats;
+	uint_t	n;
+	uint_t	i;
+
+	if (ddi_prop_lookup_string_array(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    OBP_COMPATIBLE, &cmpats, &ncmpats) == DDI_PROP_SUCCESS) {
+		for (n = 0; n < ncmpats; ++n) {
+			for (i = 0; i < ncompats; ++i) {
+				if (strcmp(cmpats[n], compats[i]) == 0) {
+					ddi_prop_free(cmpats);
+					return (1);
+				}
+			}
+		}
+
+		ddi_prop_free(cmpats);
+	}
+
+	return (0);
+}
+
+static int
+plat_devi_is_fixed_clock(dev_info_t *dip) {
+	static const char *fixed_clocks[] = {
+		"fixed-clock",
+	};
+	static const uint_t num_fixed_clocks = 1;
+
+	return (plat_devi_is_compatible(dip, fixed_clocks, num_fixed_clocks));
+}
+
+int
+plat_clk_get_rate(dev_info_t *dip, uint_t clkno)
+{
+	struct prom_hwclock hwclk;
+
+	if (prom_fdt_get_clock_by_index((pnode_t)ddi_get_nodeid(dip),
+	    clkno, &hwclk) != 0) {
+		return (-1);
+	}
+
+	if (plat_devi_is_fixed_clock(dip)) {
+		int freq = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
+		    DDI_PROP_DONTPASS, "clock-frequency", -1);
+
+		if (freq != -1) {
+			return (freq);
+		}
+	}
+
+	return (-1);
+}
+
+int
+plat_clk_get_rate_by_name(dev_info_t *dip, const char *clkname)
+{
+	struct prom_hwclock hwclk;
+
+	if (prom_fdt_get_clock_by_name((pnode_t)ddi_get_nodeid(dip),
+	    clkname, &hwclk) != 0) {
+		return (-1);
+	}
+
+	if (plat_devi_is_fixed_clock(dip)) {
+		int freq = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
+		    DDI_PROP_DONTPASS, "clock-frequency", -1);
+
+		if (freq != -1) {
+			return (freq);
+		}
+	}
+
+	return (-1);
 }
