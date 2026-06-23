@@ -24,7 +24,7 @@
  */
 /*
  * Copyright 2017 Hayashi Naoyuki
- * Copyright 2025 Michael van der Westhuizen
+ * Copyright 2026 Michael van der Westhuizen
  */
 
 #include <sys/types.h>
@@ -56,6 +56,7 @@
 #include <sys/cpupart.h>
 #include <sys/cpuinfo.h>
 #include <sys/psci.h>
+#include <sys/smccc_pci.h>
 #include <sys/bootsvcs.h>
 
 #include <sys/debug.h>
@@ -248,6 +249,13 @@ mlsetup(struct regs *rp, struct xboot_info *xbp)
 	 * to devices being mapped.
 	 */
 	lgrp_init(LGRP_INIT_STAGE1);
+
+	/*
+	 * Probe for the DEN0115 PCI Configuration Space Access
+	 * Firmware Interface.  SMCCC is already initialised by
+	 * boot services.
+	 */
+	smccc_pci_init();
 
 	/*
 	 * Hypervisor trap table replacement.
