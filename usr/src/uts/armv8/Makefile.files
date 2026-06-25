@@ -82,6 +82,7 @@ CORE_OBJS +=			\
 	smccc_impl.o		\
 	smccc_pci.o		\
 	smccc_subr.o		\
+	ffa.o			\
 	arch_timer.o		\
 	earlybsa.o		\
 	cpuinfo.o		\

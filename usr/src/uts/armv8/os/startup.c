@@ -88,7 +88,7 @@
 #include <sys/sunndi.h>
 #include <sys/syspic.h>
 #include <sys/syspic_impl.h>
-#include <sys/psci.h>
+#include <sys/ffa.h>
 #include <sys/controlregs.h>
 #include <sys/arch_timer.h>
 #include <sys/cpuinfo.h>
@@ -1126,6 +1126,12 @@ startup_modules(void)
 	 */
 	if (syspic_init() != 0)
 		halt("Can't initialize syspic");
+
+	/*
+	 * Initialise the FF-A transport for communicating with secure
+	 * partitions.  Non-fatal (FF-A is optional).
+	 */
+	ffa_init();
 
 	if (modload("fs", "specfs") == -1)
 		halt("Can't load specfs");
