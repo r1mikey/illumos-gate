@@ -48,8 +48,7 @@
 #include <sys/sunddi.h>
 #include <sys/sunndi.h>
 #include <sys/cpuinfo.h>
-#include <sys/sunddi.h>
-#include <sys/sunndi.h>
+#include <sys/ddi_implfuncs.h>
 
 static int mach_cpu_create_devinfo(cpu_t *cp, dev_info_t **dipp);
 
@@ -295,8 +294,67 @@ cpu_wakeup(cpu_t *cpu, int bound)
 }
 
 /*
+ * Search children of the cpus nexus for a device node whose reg property
+ * matches the given MPIDR.  On FDT systems the reg property of each cpu
+ * node under /cpus contains the MPIDR affinity value; #address-cells
+ * determines whether it is one or two 32-bit cells.
+ *
+ * Returns DDI_SUCCESS with *dipp set and held if found, DDI_FAILURE
+ * otherwise.  The caller must hold cpu_nex_devi (ndi_devi_enter).
+ */
+static int
+mach_cpu_find_by_mpidr(dev_info_t *cpu_nex_devi, uint64_t target_mpidr,
+    dev_info_t **dipp)
+{
+	dev_info_t *dip;
+	int addr_cells;
+	int *reg;
+	uint_t reg_len;
+	uint64_t mpidr;
+
+	ASSERT3P(cpu_nex_devi, !=, NULL);
+	ASSERT3P(dipp, !=, NULL);
+
+	addr_cells = ddi_prop_get_int(DDI_DEV_T_ANY, cpu_nex_devi,
+	    DDI_PROP_DONTPASS, OBP_ADDRESS_CELLS, 2);
+
+	for (dip = ddi_get_child(cpu_nex_devi); dip != NULL;
+	    dip = ddi_get_next_sibling(dip)) {
+		if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dip,
+		    DDI_PROP_DONTPASS, OBP_REG, &reg, &reg_len) !=
+		    DDI_PROP_SUCCESS) {
+			continue;
+		}
+
+		if (addr_cells == 2 && reg_len >= 2) {
+			mpidr = ((uint64_t)(uint32_t)reg[0] << 32) |
+			    (uint32_t)reg[1];
+		} else if (addr_cells == 1 && reg_len >= 1) {
+			mpidr = (uint32_t)reg[0];
+		} else {
+			ddi_prop_free(reg);
+			continue;
+		}
+		ddi_prop_free(reg);
+
+		if (mpidr == target_mpidr) {
+			*dipp = dip;
+			(void) ndi_hold_devi(dip);
+			return (DDI_SUCCESS);
+		}
+	}
+
+	return (DDI_FAILURE);
+}
+
+/*
  * Default handler to create device node for CPU.
- * One reference count will be held on created device node.
+ * One reference count will be held on the device node.
+ *
+ * If the cpus nexus already has a child whose reg property matches this
+ * CPU's MPIDR (the normal case on FDT systems where /cpus/cpu@N nodes
+ * are populated from the devicetree), return the existing node instead
+ * of creating a duplicate.
  */
 static int
 mach_cpu_create_devinfo(cpu_t *cp, dev_info_t **dipp)
@@ -334,9 +392,19 @@ mach_cpu_create_devinfo(cpu_t *cp, dev_info_t **dipp)
 	}
 
 	/*
-	 * create a child node for cpu identified as 'cpu_id'
+	 * Search for an existing cpu node matching this CPU's MPIDR.
 	 */
 	ndi_devi_enter(cpu_nex_devi);
+	if (mach_cpu_find_by_mpidr(cpu_nex_devi, cp->cpu_m.affinity,
+	    &dip) == DDI_SUCCESS) {
+		ndi_devi_exit(cpu_nex_devi);
+		*dipp = dip;
+		return (DDI_SUCCESS);
+	}
+
+	/*
+	 * No existing node found.  Create a child node for this cpu.
+	 */
 	dip = ddi_add_child(cpu_nex_devi, "cpu", DEVI_SID_NODEID, -1);
 	if (dip == NULL) {
 		cmn_err(CE_CONT,
@@ -350,6 +418,64 @@ mach_cpu_create_devinfo(cpu_t *cp, dev_info_t **dipp)
 	ndi_devi_exit(cpu_nex_devi);
 
 	return (rv);
+}
+
+/*
+ * Create cpu device node in device tree and online it.
+ * Return created dip with reference count held if requested.
+ *
+ * On aarch64 with ACPI, acpidev_cpu creates the device nodes during boot
+ * enumeration (marked offline) and hooks psm_cpu_create_devinfo to look
+ * them up.  This function bridges the gap: it finds the existing node and
+ * onlines it, triggering driver attachment.
+ */
+int
+mach_cpu_create_device_node(struct cpu *cp, dev_info_t **dipp)
+{
+	int rv;
+	dev_info_t *dip = NULL;
+
+	ASSERT3P(cp, !=, NULL);
+	ASSERT3P(psm_cpu_create_devinfo, !=, NULL);
+
+	rv = psm_cpu_create_devinfo(cp, &dip);
+	if (rv == DDI_SUCCESS) {
+		/* Recursively attach driver for parent nexus device. */
+		if (i_ddi_attach_node_hierarchy(ddi_get_parent(dip)) ==
+		    DDI_SUCCESS) {
+			/* Configure cpu itself and descendants. */
+			(void) ndi_devi_online(dip,
+			    NDI_ONLINE_ATTACH | NDI_CONFIG);
+		}
+		if (dipp != NULL) {
+			*dipp = dip;
+		} else {
+			(void) ndi_rele_devi(dip);
+		}
+	}
+
+	return (rv);
+}
+
+/*
+ * The dipp contains one of following values on return:
+ * - NULL if no device node found
+ * - pointer to device node if found
+ */
+int
+mach_cpu_get_device_node(struct cpu *cp, dev_info_t **dipp)
+{
+	ASSERT3P(cp, !=, NULL);
+	ASSERT3P(dipp, !=, NULL);
+
+	*dipp = NULL;
+	if (psm_cpu_get_devinfo != NULL) {
+		if (psm_cpu_get_devinfo(cp, dipp) == DDI_SUCCESS) {
+			return (DDI_SUCCESS);
+		}
+	}
+
+	return (DDI_FAILURE);
 }
 
 void
