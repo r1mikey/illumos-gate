@@ -20,6 +20,7 @@
  */
 /*
  * Copyright 2017 Hayashi Naoyuki
+ * Copyright 2026 Michael van der Westhuizen
  */
 
 #ifndef	_SYS_CPU_H
@@ -35,6 +36,46 @@ extern "C" {
 
 #define	SMT_PAUSE()	\
     __asm__ __volatile__("isb":::"memory")
+
+/*
+ * Idle state for the cpu_idle_enter/cpu_idle_exit callback framework.
+ *
+ * IDLE_STATE_NORMAL indicates the CPU is not in an idle state.
+ *
+ * On aarch64, the state value encodes both the firmware-specific (_LPI)
+ * index (1-based) in bits [31:20] and context loss flags in bits [19:0].
+ * This gives DTrace consumers visibility into which _LPI state was entered
+ * and what context will be lost.  IDLE_STATE_NORMAL is zero (no
+ * firmware-specific index, no context loss).
+ */
+#define	IDLE_STATE_NORMAL	0
+
+#define	LPI_STATE_IDX_SHIFT	20
+#define	LPI_STATE_IDX_MASK	0xFFF00000U
+#define	LPI_STATE_CTX_MASK	0x000FFFFFU
+
+/* Compose a state value from a 1-based _LPI index and context loss flags */
+#define	LPI_IDLE_STATE(idx, flags)	\
+	(((uint_t)(idx) << LPI_STATE_IDX_SHIFT) | \
+	((uint_t)(flags) & LPI_STATE_CTX_MASK))
+
+/* Extract components from a state value */
+#define	LPI_STATE_IDX(state)	\
+	(((uint_t)(state) >> LPI_STATE_IDX_SHIFT) & 0xFFFU)
+#define	LPI_STATE_CTX(state)	\
+	((uint_t)(state) & LPI_STATE_CTX_MASK)
+
+/*
+ * LPI context loss flags (bits [19:0] of the idle state value).
+ *
+ * Phase 1 only selects states where all flags are zero (WFI, PSCI standby).
+ * Phase 2 will enable powerdown states with non-zero flags once resume and
+ * context save/restore support is in place.
+ */
+#define	LPI_CTX_LOSS_TIMER	(1U << 0)	/* Timer context lost */
+#define	LPI_CTX_LOSS_GICR	(1U << 1)	/* GIC Redistributor lost */
+#define	LPI_CTX_LOSS_GICD	(1U << 2)	/* GIC Distributor lost */
+#define	LPI_CTX_LOSS_CPU	(1U << 3)	/* CPU register state lost */
 
 #endif
 
