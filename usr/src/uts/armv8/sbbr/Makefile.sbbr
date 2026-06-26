@@ -60,7 +60,7 @@ USR_SBBR_ISYS_DIR	= $(USR_SBBR_INC_DIR)/sys
 #
 #	Define modules.
 #
-SBBR_KMODS = platmod pcie
+SBBR_KMODS = platmod pcie cpudrv
 
 #
 #	Include the makefiles which define build rule templates, the
