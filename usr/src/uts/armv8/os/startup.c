@@ -1530,6 +1530,8 @@ post_startup(void)
 
 	cpu_event_init_cpu(CPU);
 
+	(void) mach_cpu_create_device_node(CPU, NULL);
+
 	pg_init();
 }
 
