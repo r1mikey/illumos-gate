@@ -26,10 +26,11 @@
  *    enumeration.  Uses the Platform-wide OSPM Capabilities UUID
  *    defined in ACPI 4.0+.
  *
- *    Currently we declare NO support for CPPC (Collaborative Processor
- *    Performance Control) or LPI (Low Power Idle) because the required
- *    frameworks do not exist on aarch64 yet.  The call is still valuable
- *    because it informs the firmware that an _OSC-aware OS is running.
+ *    Currently we declare support for LPI (Low Power Idle) via the
+ *    cpuidle/acpicpu framework, but not CPPC (Collaborative Processor
+ *    Performance Control) because the required framework does not exist
+ *    on aarch64 yet.  The call also informs the firmware that an
+ *    _OSC-aware OS is running.
  *
  * 2. Per-bridge PCIe Host Bridge _OSC
  *
@@ -52,10 +53,6 @@
  * Future work:
  *   - CPPC support (bit 6 of \_SB._OSC) requires a cpupm/acpipm
  *     framework for aarch64, which does not yet exist.
- *   - LPI support (bit 7 of \_SB._OSC) requires processor idle state
- *     management for aarch64, which does not yet exist.
- *   - The entire cpupm/acpipm power management subsystem needs to be
- *     ported to aarch64 before either CPPC or LPI can be declared.
  */
 
 #include <sys/types.h>
@@ -218,11 +215,10 @@ acpidev_osc_eval(uint8_t *uuid, ACPI_HANDLE osc_hdl,
  * bridge enumeration begins.  Tells the firmware what platform-level
  * features the OS supports.
  *
- * Currently we declare NO support for any platform capabilities
- * (CPPC, LPI, processor aggregator, etc.) because the required
- * frameworks do not exist on aarch64 yet.  The call is still
- * valuable because it informs the firmware that an _OSC-aware OS
- * is present.
+ * Currently we declare support for LPI (Low Power Idle) and no
+ * other platform capabilities (CPPC, processor aggregator, etc.).
+ * The call also informs the firmware that an _OSC-aware OS is
+ * present.
  */
 void
 acpidev_osc_init(void)
@@ -250,14 +246,12 @@ acpidev_osc_init(void)
 	/*
 	 * Build capabilities:
 	 *   Bit 6 (CPPC): 0 -- not supported
-	 *   Bit 7 (LPI):  0 -- not supported
+	 *   Bit 7 (LPI):  supported via cpuidle/acpicpu
 	 *
 	 * TODO: Set PLAT_OSC_CPPC once cpupm/acpipm is ported
 	 *       to aarch64.
-	 * TODO: Set PLAT_OSC_LPI once processor idle management
-	 *       is ported to aarch64.
 	 */
-	caps[0] = 0;
+	caps[0] = PLAT_OSC_LPI;
 
 	status = acpidev_osc_eval(acpidev_osc_plat_uuid, osc_hdl,
 	    1, 1, caps);
