@@ -197,6 +197,10 @@ ACPIPWRBTN_OBJS +=	acpipwrbtn.o
 
 CPUIDLE_OBJS +=	cpuidle.o
 
+CPUDRV_OBJS += \
+	cpudrv.o \
+	cpudrv_mach.o
+
 CPUNEX_OBJS +=	cpunex.o
 
 ACPINEX_OBJS +=			\
