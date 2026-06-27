@@ -47,6 +47,7 @@ file path=platform/armv8/kernel/drv/$(ARCH)/acpiged
 file path=platform/armv8/kernel/drv/$(ARCH)/acpinex
 file path=platform/armv8/kernel/drv/$(ARCH)/acpipwrbtn
 file path=platform/armv8/kernel/drv/$(ARCH)/arm_gtmr
+file path=platform/armv8/kernel/drv/$(ARCH)/cpudrv
 file path=platform/armv8/kernel/drv/$(ARCH)/cpunex
 file path=platform/armv8/kernel/drv/$(ARCH)/efidev
 file path=platform/armv8/kernel/drv/$(ARCH)/efifb
@@ -58,6 +59,7 @@ file path=platform/armv8/kernel/drv/$(ARCH)/rootnex
 file path=platform/armv8/kernel/drv/$(ARCH)/simple-bus
 file path=platform/armv8/kernel/drv/acpiged.conf
 file path=platform/armv8/kernel/drv/acpipwrbtn.conf
+file path=platform/armv8/kernel/drv/cpudrv.conf
 file path=platform/armv8/kernel/drv/efidev.conf
 dir  path=platform/armv8/kernel/misc
 dir  path=platform/armv8/kernel/misc/$(ARCH)
@@ -80,6 +82,49 @@ driver name=acpiged alias=ACPI0013
 driver name=acpinex alias=acpivirtnex
 driver name=acpipwrbtn alias=PNP0C0C
 driver name=arm_gtmr alias=arm,armv8-timer
+driver name=cpudrv \
+    alias=arm,armv8 \
+    alias=arm,c1-nano \
+    alias=arm,c1-premium \
+    alias=arm,c1-pro \
+    alias=arm,c1-ultra \
+    alias=arm,cortex-a320 \
+    alias=arm,cortex-a34 \
+    alias=arm,cortex-a35 \
+    alias=arm,cortex-a510 \
+    alias=arm,cortex-a520 \
+    alias=arm,cortex-a520ae \
+    alias=arm,cortex-a53 \
+    alias=arm,cortex-a55 \
+    alias=arm,cortex-a57 \
+    alias=arm,cortex-a65 \
+    alias=arm,cortex-a710 \
+    alias=arm,cortex-a715 \
+    alias=arm,cortex-a72 \
+    alias=arm,cortex-a720 \
+    alias=arm,cortex-a720ae \
+    alias=arm,cortex-a725 \
+    alias=arm,cortex-a73 \
+    alias=arm,cortex-a75 \
+    alias=arm,cortex-a76 \
+    alias=arm,cortex-a77 \
+    alias=arm,cortex-a78 \
+    alias=arm,cortex-a78ae \
+    alias=arm,cortex-a78c \
+    alias=arm,cortex-x1 \
+    alias=arm,cortex-x1c \
+    alias=arm,cortex-x2 \
+    alias=arm,cortex-x3 \
+    alias=arm,cortex-x4 \
+    alias=arm,cortex-x925 \
+    alias=arm,neoverse-e1 \
+    alias=arm,neoverse-n1 \
+    alias=arm,neoverse-n2 \
+    alias=arm,neoverse-n3 \
+    alias=arm,neoverse-v1 \
+    alias=arm,neoverse-v2 \
+    alias=arm,neoverse-v3 \
+    alias=arm,neoverse-v3ae
 driver name=cpunex
 driver name=devfdt perms="* 0400 root sys"
 driver name=ecam alias=pci-host-ecam-generic
