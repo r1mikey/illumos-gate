@@ -234,6 +234,7 @@ DRV_KMODS += pcieb
 DRV_KMODS += acpiged
 DRV_KMODS += acpipwrbtn
 DRV_KMODS += acpinex
+DRV_KMODS += cpunex
 
 #
 #	'Dacf' Modules (/kernel/dacf):

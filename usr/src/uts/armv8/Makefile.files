@@ -196,6 +196,8 @@ ACPIPWRBTN_OBJS +=	acpipwrbtn.o
 
 CPUIDLE_OBJS +=	cpuidle.o
 
+CPUNEX_OBJS +=	cpunex.o
+
 ACPINEX_OBJS +=			\
 	acpinex_drv.o		\
 	acpinex_event.o

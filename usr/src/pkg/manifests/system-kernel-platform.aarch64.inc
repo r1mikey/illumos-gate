@@ -47,6 +47,7 @@ file path=platform/armv8/kernel/drv/$(ARCH)/acpiged
 file path=platform/armv8/kernel/drv/$(ARCH)/acpinex
 file path=platform/armv8/kernel/drv/$(ARCH)/acpipwrbtn
 file path=platform/armv8/kernel/drv/$(ARCH)/arm_gtmr
+file path=platform/armv8/kernel/drv/$(ARCH)/cpunex
 file path=platform/armv8/kernel/drv/$(ARCH)/efidev
 file path=platform/armv8/kernel/drv/$(ARCH)/efifb
 file path=platform/armv8/kernel/drv/$(ARCH)/gicthree
@@ -79,6 +80,7 @@ driver name=acpiged alias=ACPI0013
 driver name=acpinex alias=acpivirtnex
 driver name=acpipwrbtn alias=PNP0C0C
 driver name=arm_gtmr alias=arm,armv8-timer
+driver name=cpunex
 driver name=devfdt perms="* 0400 root sys"
 driver name=ecam alias=pci-host-ecam-generic
 driver name=efidev perms="* 0666 root sys"
