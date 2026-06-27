@@ -347,26 +347,15 @@ mach_cpu_find_by_mpidr(dev_info_t *cpu_nex_devi, uint64_t target_mpidr,
 	return (DDI_FAILURE);
 }
 
-/*
- * Default handler to create device node for CPU.
- * One reference count will be held on the device node.
- *
- * If the cpus nexus already has a child whose reg property matches this
- * CPU's MPIDR (the normal case on FDT systems where /cpus/cpu@N nodes
- * are populated from the devicetree), return the existing node instead
- * of creating a duplicate.
- */
-static int
-mach_cpu_create_devinfo(cpu_t *cp, dev_info_t **dipp)
+static dev_info_t *
+mach_cpu_ensure_cpus(void)
 {
 	int rv;
 	dev_info_t *dip;
-	static kmutex_t cpu_node_lock;
+	major_t major;
 	static dev_info_t *cpu_nex_devi = NULL;
-
-	ASSERT3P(cp, !=, NULL);
-	ASSERT3P(dipp, !=, NULL);
-	*dipp = NULL;
+	static boolean_t bound = B_FALSE;
+	static kmutex_t cpu_node_lock;
 
 	if (cpu_nex_devi == NULL) {
 		mutex_enter(&cpu_node_lock);
@@ -381,14 +370,64 @@ mach_cpu_create_devinfo(cpu_t *cp, dev_info_t **dipp)
 				mutex_exit(&cpu_node_lock);
 				cmn_err(CE_CONT,
 				    "?failed to create cpu nexus device.\n");
-				return (DDI_FAILURE);
+				return (NULL);
 			}
+
 			ASSERT3P(dip, !=, NULL);
 			(void) ndi_devi_online(dip, 0);
 			ndi_devi_exit(ddi_root_node());
 			cpu_nex_devi = dip;
 		}
 		mutex_exit(&cpu_node_lock);
+	}
+
+	if (bound != B_TRUE) {
+		mutex_enter(&cpu_node_lock);
+		if (bound != B_TRUE) {
+			if ((major = ddi_name_to_major("cpunex"))
+			    == DDI_MAJOR_T_NONE) {
+				cmn_err(CE_CONT,
+				    "?could not locate cpunex driver\n");
+				mutex_exit(&cpu_node_lock);
+				return (cpu_nex_devi);
+			}
+
+			(void) make_mbind("cpus", major, NULL, mb_hashtab);
+			/* (void) ndi_devi_online(cpu_nex_devi, 0); */
+			bound = B_TRUE;
+		}
+		mutex_exit(&cpu_node_lock);
+	}
+
+	return (cpu_nex_devi);
+}
+
+/*
+ * Default handler to create device node for CPU.
+ * One reference count will be held on the device node.
+ *
+ * If the cpus nexus already has a child whose reg property matches this
+ * CPU's MPIDR (the normal case on FDT systems where /cpus/cpu@N nodes
+ * are populated from the devicetree), return the existing node instead
+ * of creating a duplicate.
+ */
+static int
+mach_cpu_create_devinfo(cpu_t *cp, dev_info_t **dipp)
+{
+	int rv;
+	dev_info_t *dip;
+	static dev_info_t *cpu_nex_devi = NULL;
+
+	ASSERT3P(cp, !=, NULL);
+	ASSERT3P(dipp, !=, NULL);
+	*dipp = NULL;
+
+	/*
+	 * Ensure that the /cpus device tree node exists and bind the
+	 * cpunex driver has bound to the node.
+	 */
+	if ((cpu_nex_devi = mach_cpu_ensure_cpus()) == NULL) {
+		return (DDI_FAILURE);
 	}
 
 	/*
