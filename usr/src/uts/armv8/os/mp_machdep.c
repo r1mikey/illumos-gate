@@ -65,7 +65,6 @@ void (*kdisetsoftint)(int, struct av_softinfo *) =
 int (*slvltovect)(int) = (int (*)(int))return_instr;
 
 int (*psm_cpu_create_devinfo)(cpu_t *, dev_info_t **) = mach_cpu_create_devinfo;
-int (*psm_cpu_get_devinfo)(cpu_t *, dev_info_t **) = NULL;
 
 static int
 mach_softlvl_to_vect(int ipl)
@@ -494,27 +493,6 @@ mach_cpu_create_device_node(struct cpu *cp, dev_info_t **dipp)
 	}
 
 	return (rv);
-}
-
-/*
- * The dipp contains one of following values on return:
- * - NULL if no device node found
- * - pointer to device node if found
- */
-int
-mach_cpu_get_device_node(struct cpu *cp, dev_info_t **dipp)
-{
-	ASSERT3P(cp, !=, NULL);
-	ASSERT3P(dipp, !=, NULL);
-
-	*dipp = NULL;
-	if (psm_cpu_get_devinfo != NULL) {
-		if (psm_cpu_get_devinfo(cp, dipp) == DDI_SUCCESS) {
-			return (DDI_SUCCESS);
-		}
-	}
-
-	return (DDI_FAILURE);
 }
 
 void
