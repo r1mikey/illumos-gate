@@ -45,6 +45,14 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/acpi/acpipwrbtn/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/acpi/pcc/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/acpi/cppc/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 $(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/promif/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)

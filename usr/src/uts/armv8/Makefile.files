@@ -246,3 +246,7 @@ PCIE_MISC_OBJS += pciehpc_fw.o
 PCIEB_OBJS += pcieb_armv8.o
 
 PCICFG_OBJS += pcicfg.o
+
+PCC_OBJS += pcc.o
+
+CPPC_OBJS += cppc.o
