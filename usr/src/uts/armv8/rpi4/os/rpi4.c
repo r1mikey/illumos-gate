@@ -371,3 +371,54 @@ plat_cpu_free_speeds(int *speeds, int nspeeds)
 {
 	kmem_free(speeds, nspeeds * sizeof (int));
 }
+
+/*
+ * Per-CPU requested speed tracking for DVFS.
+ *
+ * The RPi4 has a single clock domain for all CPUs, so we cannot set
+ * per-CPU frequencies independently.  Instead, each CPU's governor
+ * records its requested speed here, and the actual system-wide
+ * frequency is set to the maximum across all CPUs so no busy CPU is
+ * penalised by another's idle request.
+ */
+static int plat_cpu_req_speed[NCPU];
+static kmutex_t plat_cpu_speed_lock;
+
+int
+plat_cpu_set_speed(cpu_t *cp, int speed)
+{
+	pnode_t node = 0;
+	int max_speed;
+	int clkhz;
+	int i;
+
+	ASSERT3P(cp, !=, NULL);
+
+	prom_fdt_walk(find_cprman, &node);
+	if (node == 0) {
+		return (DDI_FAILURE);
+	}
+
+	mutex_enter(&plat_cpu_speed_lock);
+
+	plat_cpu_req_speed[cp->cpu_id] = speed;
+
+	/* Find the maximum requested speed across all CPUs */
+	max_speed = 0;
+	for (i = 0; i < NCPU; i++) {
+		if (plat_cpu_req_speed[i] > max_speed) {
+			max_speed = plat_cpu_req_speed[i];
+		}
+	}
+
+	mutex_exit(&plat_cpu_speed_lock);
+
+	struct prom_hwclock clk = { node, VCPROP_CLK_ARM };
+	clkhz = plat_vc_hwclock_rate(&clk, VCCLOCKID,
+	    VCPROPTAG_SET_CLOCKRATE, max_speed * 1000000);
+	if (clkhz == -1) {
+		return (DDI_FAILURE);
+	}
+
+	return (DDI_SUCCESS);
+}
