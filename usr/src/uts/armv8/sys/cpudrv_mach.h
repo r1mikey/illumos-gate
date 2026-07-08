@@ -25,12 +25,12 @@ extern "C" {
 /*
  * aarch64 cpudrv machine-dependent definitions.
  *
- * Follows the sun4u model: no PPM, no governor, no dynamic topspeed
- * redefinition.  The driver attaches to CPU device nodes and delegates
- * idle state registration to cpudrv_mach_init().  Frequency scaling
- * (DVFS) is not yet supported; CPUDRV_GET_SPEEDS returns 0 so
- * cpudrv_init() returns DDI_FAILURE and the PM governor loop is never
- * started.
+ * Follows the sun4u model: no PPM, no dynamic topspeed redefinition.
+ * The driver attaches to CPU device nodes, delegates idle state
+ * registration to cpudrv_mach_init(), and delegates DVFS to the
+ * platmod via cpudrv_mach_get_speeds/cpudrv_mach_set_speed wrappers.
+ * When no platmod DVFS is available, the PM governor is not started
+ * and the driver provides idle management only.
  */
 
 /*
@@ -66,14 +66,21 @@ extern "C" {
 #define	CPUDRV_SET_PPM_CALLBACKS()
 
 /*
- * No DVFS speeds yet.  Returns nspeeds = 0, which causes cpudrv_init()
- * to return DDI_FAILURE, skipping the PM governor.  When CPPC or
- * platform DVFS is added, this will return real speed levels.
+ * Speed enumeration via platmod.  cpudrv_mach_get_speeds() and
+ * cpudrv_mach_free_speeds() are defined in cpudrv_mach.c and wrap
+ * the platmod weak symbols with safe defaults.
  */
+extern int cpudrv_mach_get_speeds(cpu_t *, int **, int *);
+extern void cpudrv_mach_free_speeds(int *, int);
+
 #define	CPUDRV_GET_SPEEDS(cpudsp, speeds, nspeeds) { \
-	nspeeds = 0; \
+	if (cpudrv_mach_get_speeds((cpudsp)->cp, &(speeds), \
+	    (int *)&(nspeeds)) != DDI_SUCCESS) { \
+		nspeeds = 0; \
+	} \
 }
-#define	CPUDRV_FREE_SPEEDS(speeds, nspeeds)
+#define	CPUDRV_FREE_SPEEDS(speeds, nspeeds) \
+	cpudrv_mach_free_speeds(speeds, nspeeds)
 
 /*
  * Idle and user watermark percentages.  These are only used by the
