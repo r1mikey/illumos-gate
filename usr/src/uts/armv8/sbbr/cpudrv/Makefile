@@ -49,10 +49,10 @@ INSTALL_TARGET	= $(BINARY) $(ROOTMODULE) $(ROOT_CONFFILE)
 CERRWARN	+= -_gcc=-Wno-parentheses
 
 #
-# Depends on cpuidle for cpuidle_register_states and acpica for _LPI
-# parsing.
+# Depends on cpuidle for cpuidle_register_states, acpica for _LPI
+# parsing, and cppc for CPPC frequency scaling.
 #
-LDFLAGS		+= -N misc/cpuidle -N misc/acpica
+LDFLAGS		+= -N misc/cpuidle -N misc/acpica -N misc/cppc
 
 #
 #	Default build targets.

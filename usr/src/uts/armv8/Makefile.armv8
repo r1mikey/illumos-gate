@@ -252,4 +252,6 @@ MISC_KMODS += gfx_private
 MISC_KMODS += pci_prd
 MISC_KMODS += pcicfg
 MISC_KMODS += pcie
+MISC_KMODS += pcc
+MISC_KMODS += cppc
 MISC_KMODS += platmod

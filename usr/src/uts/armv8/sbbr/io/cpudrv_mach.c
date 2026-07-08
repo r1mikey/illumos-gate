@@ -18,12 +18,13 @@
  *
  * Provides the cpudrv_mach interface for SBBR (ACPI) platforms.
  * On attach, cpudrv_mach_init() evaluates the ACPI _LPI method to
- * discover idle states and registers them with the cpuidle framework.
+ * discover idle states and registers them with the cpuidle framework,
+ * then initializes CPPC for frequency scaling.
  *
- * Frequency scaling (DVFS) is not yet supported.  cpudrv_is_enabled()
- * returns B_FALSE for per-instance calls so the common cpudrv PM
- * governor is not started.  When CPPC is added, cpudrv_is_enabled()
- * and CPUDRV_GET_SPEEDS will be updated to provide real speed levels.
+ * Frequency scaling is provided via ACPI CPPC (Collaborative Processor
+ * Performance Control).  The cppc misc module evaluates per-CPU _CPC
+ * objects to discover the performance range and register transports,
+ * and this file delegates the cpudrv_mach speed interface to it.
  */
 
 #include <sys/types.h>
@@ -37,9 +38,33 @@
 #include <sys/cpuidle.h>
 #include <sys/cpupm.h>
 #include <sys/cpudrv_mach.h>
+#include <sys/cppc.h>
 #include <sys/acpi/acpi.h>
 #include <sys/acpica.h>
 #include <sys/acpidev.h>
+
+/*
+ * DVFS speed enumeration and release.
+ *
+ * Called by the CPUDRV_GET_SPEEDS / CPUDRV_FREE_SPEEDS macros in the
+ * shared cpudrv_mach.h header.  Delegates to the CPPC module which
+ * synthesizes a speed table from the _CPC performance range.
+ */
+int
+cpudrv_mach_get_speeds(cpu_t *cp, int **speeds, int *nspeeds)
+{
+	ASSERT3P(cp, !=, NULL);
+	ASSERT3P(speeds, !=, NULL);
+	ASSERT3P(nspeeds, !=, NULL);
+
+	return (cppc_get_speeds(cp, speeds, nspeeds));
+}
+
+void
+cpudrv_mach_free_speeds(int *speeds, int nspeeds)
+{
+	cppc_free_speeds(speeds, nspeeds);
+}
 
 /*
  * FFH (Functional Fixed Hardware) address space ID.
@@ -322,12 +347,37 @@ cpudrv_get_cpu_id(dev_info_t *dip, processorid_t *cpu_id)
 }
 
 /*
- * Change CPU speed.  No DVFS support yet.
+ * Change CPU speed via CPPC.
+ *
+ * The common cpudrv_power() calls this with the target speed level.
+ * On success, update cpu_curr_clock from the delivered performance.
+ * cppc_get_speed() returns MHz; cpu_curr_clock is in Hz.
  */
-/* ARGSUSED */
 int
 cpudrv_change_speed(cpudrv_devstate_t *cpudsp, cpudrv_pm_spd_t *new_spd)
 {
+	cpu_t *cp;
+	int ret;
+	uint64_t clk;
+
+	ASSERT3P(cpudsp, !=, NULL);
+	ASSERT3P(new_spd, !=, NULL);
+
+	cp = cpudsp->cp;
+	if (cp == NULL) {
+		return (DDI_FAILURE);
+	}
+
+	ret = cppc_set_speed(cp, new_spd->speed);
+	if (ret != DDI_SUCCESS) {
+		return (ret);
+	}
+
+	clk = cppc_get_speed(cp);
+	if (clk != 0) {
+		cp->cpu_curr_clock = clk * 1000000ULL;
+	}
+
 	return (DDI_SUCCESS);
 }
 
@@ -357,6 +407,10 @@ cpudrv_is_governor_thread(cpudrv_pm_t *cpupm)
  * Evaluates _LPI to discover idle states and registers them with the
  * cpuidle framework.  If _LPI is absent (e.g. QEMU), cpuidle provides
  * a WFI fallback.
+ *
+ * After idle state registration, initializes CPPC for this CPU by
+ * calling cppc_cpu_init() with the ACPI handle.  CPPC init failure
+ * is non-fatal - the CPU simply will not have DVFS support.
  */
 boolean_t
 cpudrv_mach_init(cpudrv_devstate_t *cpudsp)
@@ -385,6 +439,12 @@ cpudrv_mach_init(cpudrv_devstate_t *cpudsp)
 	/* Register with cpuidle framework (takes ownership of states) */
 	(void) cpuidle_register_states(cpudsp->cpu_id, states, nstates);
 
+	/*
+	 * Initialize CPPC for this CPU.  Failure is non-fatal - it
+	 * simply means DVFS is not available for this CPU.
+	 */
+	(void) cppc_cpu_init(cpudsp->cp, (void *)hdl);
+
 	return (B_TRUE);
 }
 
@@ -403,10 +463,10 @@ cpudrv_mach_fini(cpudrv_devstate_t *cpudsp)
  *
  * When called with NULL (from the global attach gate), returns B_TRUE
  * so the driver attaches and cpudrv_mach_init() can register idle
- * states.  When called with a per-instance cpudsp (from the PM setup
- * block), returns B_FALSE to skip the speed governor -- no DVFS yet.
+ * states and initialize CPPC.  When called with a per-instance cpudsp
+ * (from the PM setup block), returns B_TRUE only if CPPC was
+ * successfully initialized for that CPU, enabling the speed governor.
  */
-/* ARGSUSED */
 boolean_t
 cpudrv_is_enabled(cpudrv_devstate_t *cpudsp)
 {
@@ -414,15 +474,27 @@ cpudrv_is_enabled(cpudrv_devstate_t *cpudsp)
 		return (B_TRUE);
 	}
 
-	return (B_FALSE);
+	return (cppc_cpu_available(cpudsp->cp));
 }
 
 /*
- * Set supported frequencies.  No DVFS yet.
+ * Set supported frequencies from CPPC.
+ *
+ * Retrieves the synthesized speed table from the cppc module and
+ * registers it with the cpupm framework for kstat reporting.
  */
-/* ARGSUSED */
 void
 cpudrv_set_supp_freqs(cpudrv_devstate_t *cpudsp)
 {
+	int *speeds;
+	int nspeeds;
 
+	ASSERT3P(cpudsp, !=, NULL);
+
+	if (cpudrv_mach_get_speeds(cpudsp->cp, &speeds, &nspeeds) !=
+	    DDI_SUCCESS) {
+		return;
+	}
+	cpupm_set_supp_freqs(cpudsp->cp, speeds, (uint_t)nspeeds);
+	cpudrv_mach_free_speeds(speeds, nspeeds);
 }
