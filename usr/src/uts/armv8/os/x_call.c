@@ -21,9 +21,45 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- *
- * Copyright 2017 Hayashi Naoyuki
  */
+/*
+ * Copyright (c) 2010, Intel Corporation.
+ * All rights reserved.
+ * Copyright 2018 Joyent, Inc.
+ * Copyright 2026 Michael van der Westhuizen
+ */
+
+/*
+ * Lock-free per-CPU cross-call implementation for aarch64.
+ *
+ * Direct port of the Joyent i86pc xcall redesign.  Each CPU owns a set
+ * of preallocated xc_msg_t slots in its free list.  Initiators allocate
+ * a message from their OWN free list, fill it in (command + slave id),
+ * CAS it onto the target's msgbox, then send an IPI.  The receiver
+ * drains its msgbox, executes the function (read from the master's
+ * xc_data), and sends the message back to the master's msgbox as DONE.
+ * The master processes DONE messages in its own xc_serv() call and
+ * returns them to its free list.
+ *
+ * State transitions for xc_command ("->" in slave, "=>" in master):
+ *
+ *   FREE => ASYNC ->                       DONE => FREE
+ *   FREE => CALL ->                        DONE => FREE
+ *   FREE => SYNC -> WAITING => RELEASED -> DONE => FREE
+ *
+ * Memory ordering:
+ *   aarch64 atomic_cas_ptr/atomic_cas_32/atomic_dec_32 provide
+ *   acquire-release ordering.  ACQ_REL suffices for the CAS-based
+ *   queue operations.  xc_priority_common() requires an explicit
+ *   membar_enter() (DMB ISH) after writing xc_priority_data and
+ *   before setting xc_priority_set bits, so targets observe the
+ *   data before the set bit.
+ *
+ * IPI dispatch:
+ *   armv8 send_dirint() takes an SGI INTID, not a PIL.  We use
+ *   IRQ_IPI_HI (the cross-call SGI) directly.
+ */
+
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/t_lock.h>
@@ -32,7 +68,6 @@
 #include <sys/x_call.h>
 #include <sys/xc_levels.h>
 #include <sys/cpu.h>
-#include <sys/psw.h>
 #include <sys/sunddi.h>
 #include <sys/debug.h>
 #include <sys/systm.h>
@@ -41,303 +76,596 @@
 #include <sys/mutex_impl.h>
 #include <sys/stack.h>
 #include <sys/promif.h>
-#include <sys/spl.h>
+#include <sys/bitmap.h>
+#include <sys/atomic.h>
 #include <sys/irq.h>
+#include <sys/spl.h>
 #include <sys/syspic.h>
 #include <sys/smp_impldefs.h>
 
-struct	xc_mbox {
-	xc_func_t	func;
-	xc_arg_t	arg0;
-	xc_arg_t	arg1;
-	xc_arg_t	arg2;
-	cpuset_t	set;
-};
+/*
+ * We allow for one high priority message at a time to happen in the system.
+ * This is used for panic, kmdb, etc., so no locking is done.
+ */
+static volatile cpuset_t xc_priority_set_store;
+static volatile ulong_t *xc_priority_set = CPUSET2BV(xc_priority_set_store);
+static xc_data_t xc_priority_data;
 
-enum {
-	XC_DONE,	/* x-call session done */
-	XC_HOLD,	/* spin doing nothing */
-	XC_SYNC_OP,	/* perform a synchronous operation */
-	XC_CALL_OP,	/* perform a call operation */
-	XC_WAIT,	/* capture/release. callee has seen wait */
-	XC_ASYNC_OP,
-};
+/*
+ * Decrement a CPU's work count.
+ */
+static void
+xc_decrement(struct machcpu *mcpu)
+{
+	atomic_dec_32(&mcpu->xc_work_cnt);
+}
 
-static int	xc_initialized = 0;
-extern cpuset_t	cpu_ready_set;
+/*
+ * Increment a CPU's work count and return the old value.
+ */
+static int
+xc_increment(struct machcpu *mcpu)
+{
+	int old;
 
-static kmutex_t	xc_mbox_lock;
-static struct	xc_mbox xc_mbox;
+	do {
+		old = mcpu->xc_work_cnt;
+	} while (atomic_cas_32(&mcpu->xc_work_cnt, old, old + 1) != old);
+	return (old);
+}
+
+/*
+ * Put a message into a queue.  The insertion is atomic no matter
+ * how many different inserts/extracts to the same queue happen.
+ */
+static void
+xc_insert(void *queue, xc_msg_t *msg)
+{
+	xc_msg_t *old_head;
+
+	/*
+	 * FREE messages should only ever be getting inserted into
+	 * the xc_master CPU's xc_free queue.
+	 */
+	ASSERT(msg->xc_command != XC_MSG_FREE ||
+	    cpu[msg->xc_master] == NULL || /* possible only during init */
+	    queue == &cpu[msg->xc_master]->cpu_m.xc_free);
+
+	do {
+		old_head = (xc_msg_t *)*(volatile xc_msg_t **)queue;
+		msg->xc_next = old_head;
+	} while (atomic_cas_ptr(queue, old_head, msg) != old_head);
+}
+
+/*
+ * Extract a message from a queue.  The extraction is atomic only
+ * when just one thread does extractions from the queue.
+ * If the queue is empty, NULL is returned.
+ */
+static xc_msg_t *
+xc_extract(xc_msg_t **queue)
+{
+	xc_msg_t *old_head;
+
+	do {
+		old_head = (xc_msg_t *)*(volatile xc_msg_t **)queue;
+		if (old_head == NULL) {
+			return (old_head);
+		}
+		membar_consumer();
+	} while (atomic_cas_ptr(queue, old_head, old_head->xc_next) !=
+	    old_head);
+	old_head->xc_next = NULL;
+	return (old_head);
+}
+
+/*
+ * Extract the next message from the CPU's queue, and place the message in
+ * .xc_curmsg.  The latter is solely to make debugging (and ::xcall) more
+ * useful.
+ */
+static xc_msg_t *
+xc_get(void)
+{
+	struct machcpu *mcpup = &CPU->cpu_m;
+	xc_msg_t *msg = xc_extract(&mcpup->xc_msgbox);
+
+	mcpup->xc_curmsg = msg;
+	return (msg);
+}
+
+/*
+ * Initialize the machcpu fields used for cross calls.
+ */
+static uint_t xc_initialized = 0;
+static uint_t xc_ipi_registered = 0;
+
 static uint_t	xc_serv(caddr_t, caddr_t);
 static uint_t	xc_poke(caddr_t, caddr_t);
 
 void
-xc_init()
+xc_init_cpu(struct cpu *cpup)
 {
-	ASSERT(xc_initialized == 0);
-	mutex_init(&xc_mbox_lock, NULL,  MUTEX_SPIN,
-	    (void *)ipltospl(XC_HI_PIL));
+	xc_msg_t *msg;
+	int c;
 
-	add_avintr((void *)NULL, XC_HI_PIL, xc_serv, "xc_intr", IRQ_IPI_HI,
-	    NULL, NULL, NULL, NULL);
-	add_avintr((void *)NULL, XC_CPUPOKE_PIL, xc_poke, "xc_poke",
-	    IRQ_IPI_CPUPOKE, NULL, NULL, NULL, NULL);
+	/*
+	 * Allocate message buffers for the new CPU.
+	 */
+	for (c = 0; c < max_ncpus; ++c) {
+		if (plat_dr_support_cpu()) {
+			/*
+			 * Allocate a message buffer for every CPU possible
+			 * in system, including our own, and add them to our xc
+			 * message queue.
+			 */
+			msg = kmem_zalloc(sizeof (*msg), KM_SLEEP);
+			msg->xc_command = XC_MSG_FREE;
+			msg->xc_master = cpup->cpu_id;
+			xc_insert(&cpup->cpu_m.xc_free, msg);
+		} else if (cpu[c] != NULL && cpu[c] != cpup) {
+			/*
+			 * Add a new message buffer to each existing CPU's free
+			 * list, as well as one for my list for each of them.
+			 * Note: cpu0 is statically inserted into cpu[] array,
+			 * so need to check cpu[c] isn't cpup itself to avoid
+			 * allocating extra message buffers for cpu0.
+			 */
+			msg = kmem_zalloc(sizeof (*msg), KM_SLEEP);
+			msg->xc_command = XC_MSG_FREE;
+			msg->xc_master = c;
+			xc_insert(&cpu[c]->cpu_m.xc_free, msg);
 
-	xc_initialized = 1;
+			msg = kmem_zalloc(sizeof (*msg), KM_SLEEP);
+			msg->xc_command = XC_MSG_FREE;
+			msg->xc_master = cpup->cpu_id;
+			xc_insert(&cpup->cpu_m.xc_free, msg);
+		}
+	}
+
+	if (!plat_dr_support_cpu()) {
+		/*
+		 * Add one for self messages if CPU hotplug is disabled.
+		 */
+		msg = kmem_zalloc(sizeof (*msg), KM_SLEEP);
+		msg->xc_command = XC_MSG_FREE;
+		msg->xc_master = cpup->cpu_id;
+		xc_insert(&cpup->cpu_m.xc_free, msg);
+	}
+
+	/*
+	 * Register IPI handlers on first call (BSP only).
+	 */
+	if (!xc_ipi_registered) {
+		add_avintr((void *)NULL, XC_HI_PIL, xc_serv, "xc_intr",
+		    IRQ_IPI_HI, NULL, NULL, NULL, NULL);
+		add_avintr((void *)NULL, XC_CPUPOKE_PIL, xc_poke, "xc_poke",
+		    IRQ_IPI_CPUPOKE, NULL, NULL, NULL, NULL);
+		xc_ipi_registered = 1;
+	}
+
+	if (!xc_initialized) {
+		xc_initialized = 1;
+	}
 }
 
-/* We do nothing except be poked */
+void
+xc_fini_cpu(struct cpu *cpup)
+{
+	xc_msg_t *msg;
+
+	ASSERT((cpup->cpu_flags & CPU_READY) == 0);
+	ASSERT(cpup->cpu_m.xc_msgbox == NULL);
+	ASSERT(cpup->cpu_m.xc_work_cnt == 0);
+
+	while ((msg = xc_extract(&cpup->cpu_m.xc_free)) != NULL) {
+		kmem_free(msg, sizeof (*msg));
+	}
+}
+
+#define	XC_FLUSH_MAX_WAITS		1000
+
+/* Flush inflight message buffers. */
+int
+xc_flush_cpu(struct cpu *cpup)
+{
+	int i;
+
+	ASSERT((cpup->cpu_flags & CPU_READY) == 0);
+
+	/*
+	 * Pause all working CPUs, which ensures that there's no CPU in
+	 * function xc_common().
+	 * This is used to work around a race condition window in xc_common()
+	 * between checking CPU_READY flag and increasing working item count.
+	 */
+	pause_cpus(cpup, NULL);
+	start_cpus();
+
+	for (i = 0; i < XC_FLUSH_MAX_WAITS; i++) {
+		if (cpup->cpu_m.xc_work_cnt == 0) {
+			break;
+		}
+		DELAY(1);
+	}
+	for (; i < XC_FLUSH_MAX_WAITS; i++) {
+		if (!BT_TEST(xc_priority_set, cpup->cpu_id)) {
+			break;
+		}
+		DELAY(1);
+	}
+
+	return (i >= XC_FLUSH_MAX_WAITS ? ETIME : 0);
+}
+
+/*
+ * X-call message processing routine.  Note that this is used by both
+ * senders and recipients of messages.
+ *
+ * We're protected against changing CPUs by either being in a high-priority
+ * interrupt, having preemption disabled or by having a raised SPL.
+ */
 static uint_t
-xc_poke(caddr_t arg0, caddr_t arg1)
+xc_serv(caddr_t arg1 __unused, caddr_t arg2 __unused)
+{
+	struct machcpu *mcpup = &(CPU->cpu_m);
+	xc_msg_t *msg;
+	xc_data_t *data;
+	xc_msg_t *xc_waiters = NULL;
+	uint32_t num_waiting = 0;
+	xc_func_t func;
+	xc_arg_t a1;
+	xc_arg_t a2;
+	xc_arg_t a3;
+	uint_t rc = DDI_INTR_UNCLAIMED;
+
+	while (mcpup->xc_work_cnt != 0) {
+		rc = DDI_INTR_CLAIMED;
+
+		/*
+		 * We may have to wait for a message to arrive.
+		 */
+		for (msg = NULL; msg == NULL; msg = xc_get()) {
+
+			/*
+			 * Always check for and handle a priority message.
+			 */
+			if (BT_TEST(xc_priority_set, CPU->cpu_id)) {
+				func = xc_priority_data.xc_func;
+				a1 = xc_priority_data.xc_a1;
+				a2 = xc_priority_data.xc_a2;
+				a3 = xc_priority_data.xc_a3;
+				BT_ATOMIC_CLEAR(xc_priority_set, CPU->cpu_id);
+				xc_decrement(mcpup);
+				func(a1, a2, a3);
+				if (mcpup->xc_work_cnt == 0) {
+					return (rc);
+				}
+			}
+
+			/*
+			 * wait for a message to arrive
+			 */
+			SMT_PAUSE();
+		}
+
+
+		/*
+		 * process the message
+		 */
+		switch (msg->xc_command) {
+
+		/*
+		 * ASYNC gives back the message immediately, then we do the
+		 * function and return with no more waiting.
+		 */
+		case XC_MSG_ASYNC:
+			data = &cpu[msg->xc_master]->cpu_m.xc_data;
+			func = data->xc_func;
+			a1 = data->xc_a1;
+			a2 = data->xc_a2;
+			a3 = data->xc_a3;
+			msg->xc_command = XC_MSG_DONE;
+			xc_insert(&cpu[msg->xc_master]->cpu_m.xc_msgbox, msg);
+			if (func != NULL) {
+				(void) (*func)(a1, a2, a3);
+			}
+			xc_decrement(mcpup);
+			break;
+
+		/*
+		 * SYNC messages do the call, then send it back to the master
+		 * in WAITING mode.
+		 */
+		case XC_MSG_SYNC:
+			data = &cpu[msg->xc_master]->cpu_m.xc_data;
+			if (data->xc_func != NULL) {
+				(void) (*data->xc_func)(data->xc_a1,
+				    data->xc_a2, data->xc_a3);
+			}
+			msg->xc_command = XC_MSG_WAITING;
+			xc_insert(&cpu[msg->xc_master]->cpu_m.xc_msgbox, msg);
+			break;
+
+		/*
+		 * WAITING messages are collected by the master until all
+		 * have arrived.  Once all arrive, we release them back to
+		 * the slaves.
+		 */
+		case XC_MSG_WAITING:
+			xc_insert(&xc_waiters, msg);
+			if (++num_waiting < mcpup->xc_wait_cnt) {
+				break;
+			}
+			while ((msg = xc_extract(&xc_waiters)) != NULL) {
+				msg->xc_command = XC_MSG_RELEASED;
+				xc_insert(&cpu[msg->xc_slave]->cpu_m.xc_msgbox,
+				    msg);
+				--num_waiting;
+			}
+			if (num_waiting != 0) {
+				panic("wrong number waiting");
+			}
+			mcpup->xc_wait_cnt = 0;
+			break;
+
+		/*
+		 * CALL messages do the function and then, like RELEASED,
+		 * send the message back to master as DONE.
+		 */
+		case XC_MSG_CALL:
+			data = &cpu[msg->xc_master]->cpu_m.xc_data;
+			if (data->xc_func != NULL) {
+				(void) (*data->xc_func)(data->xc_a1,
+				    data->xc_a2, data->xc_a3);
+			}
+			/*FALLTHROUGH*/
+		case XC_MSG_RELEASED:
+			msg->xc_command = XC_MSG_DONE;
+			xc_insert(&cpu[msg->xc_master]->cpu_m.xc_msgbox, msg);
+			xc_decrement(mcpup);
+			break;
+
+		/*
+		 * DONE means a slave has completely finished up.
+		 * Once we collect all the DONE messages, we'll exit
+		 * processing too.
+		 */
+		case XC_MSG_DONE:
+			msg->xc_command = XC_MSG_FREE;
+			xc_insert(&mcpup->xc_free, msg);
+			xc_decrement(mcpup);
+			break;
+
+		case XC_MSG_FREE:
+			panic("free message 0x%p in msgbox", (void *)msg);
+			break;
+
+		default:
+			panic("bad message 0x%p in msgbox", (void *)msg);
+			break;
+		}
+
+		CPU->cpu_m.xc_curmsg = NULL;
+	}
+	return (rc);
+}
+
+/*
+ * The poke handler does nothing; it exists solely so that a CPU blocked
+ * in a tight loop (e.g. mutex_enter spin) gets pulled out by the IPI.
+ */
+static uint_t
+xc_poke(caddr_t arg0 __unused, caddr_t arg1 __unused)
 {
 	return (DDI_INTR_CLAIMED);
 }
 
-static uint_t
-xc_serv(caddr_t arg0, caddr_t arg1)
-{
-	struct cpu *cpup = CPU;
-
-	int xc_pend = cpup->cpu_m.xc_pend;
-	dsb(ish);
-
-	/*
-	 * XXXARM: If there are no pending calls, it's not clear how we got
-	 * here.
-	 */
-	if (xc_pend == 0) {
-		return (DDI_INTR_UNCLAIMED);
-	}
-
-	int op = cpup->cpu_m.xc_state;
-
-	xc_func_t func = xc_mbox.func;
-	xc_arg_t a0 = xc_mbox.arg0;
-	xc_arg_t a1 = xc_mbox.arg1;
-	xc_arg_t a2 = xc_mbox.arg2;
-	int ret;
-
-	dsb(ish);
-	cpup->cpu_m.xc_pend = 0;
-
-	if (func != NULL)
-		ret = (*func)(a0, a1, a2);
-	else
-		ret = 0;
-
-	if (op == XC_ASYNC_OP)
-		return (DDI_INTR_CLAIMED);
-
-	cpup->cpu_m.xc_retval = ret;
-
-	/*
-	 * Acknowledge that we have completed the x-call operation.
-	 */
-	dsb(ish);
-	cpup->cpu_m.xc_ack = 1;
-
-	if (op == XC_CALL_OP) {
-		return (DDI_INTR_CLAIMED);
-	}
-
-	dsb(ish);
-	/*
-	 * for (op == XC_SYNC_OP)
-	 * Wait for the initiator of the x-call to indicate
-	 * that all CPUs involved can proceed.
-	 *
-	 * XXXARM: It feels like there's much better things to do here, but
-	 * likely not in high-level interrupt context.
-	 */
-	while (cpup->cpu_m.xc_wait) {
-	}
-
-	dsb(ish);
-
-	/*
-	 * Acknowledge that we have received the directive to continue.
-	 */
-	ASSERT(cpup->cpu_m.xc_ack == 0);
-	dsb(ish);
-	cpup->cpu_m.xc_ack = 1;
-
-	return (DDI_INTR_CLAIMED);
-}
-
+/*
+ * Initiate cross call processing.
+ */
 static void
 xc_common(
 	xc_func_t func,
-	xc_arg_t arg0,
 	xc_arg_t arg1,
 	xc_arg_t arg2,
-	cpuset_t set,
-	int op)
+	xc_arg_t arg3,
+	ulong_t *set,
+	uint_t command)
 {
-	int cix;
-	int lcx = (int)(CPU->cpu_id);
-	cpuset_t cpuset;
+	int c;
+	struct cpu *cpup;
+	xc_msg_t *msg;
+	xc_data_t *data;
+	int cnt;
+	int save_spl;
 
-	/*
-	 * Assert we haven't panicked and stopped the other CPUs.
-	 *
-	 * XXXARM: I'm deeply unhappy about using `panicstr` for this, but
-	 * seemingly that's the done thing.
-	 */
-	ASSERT(panicstr == NULL);
-
-	ASSERT(MUTEX_HELD(&xc_mbox_lock));
-
-	/*
-	 * XXXARM: I don't know what this guards against.  Us trying to to
-	 * cross call when we ourselves aren't ready to get it?  There must be
-	 * a story here at the very least.
-	 */
-	ASSERT(CPU->cpu_flags & CPU_READY);
-
-	CPUSET_ZERO(cpuset);
-
-	/*
-	 * Set up the service definition mailbox.
-	 */
-	xc_mbox.func = func;
-	xc_mbox.arg0 = arg0;
-	xc_mbox.arg1 = arg1;
-	xc_mbox.arg2 = arg2;
-
-	/*
-	 * Request service on all remote processors.
-	 */
-	cpuset = set;
-	while (!CPUSET_ISNULL(cpuset)) {
-		CPUSET_FIND(cpuset, cix);
-		struct cpu *cpup = cpu[cix];
-		if (cpup == NULL || (cpup->cpu_flags & CPU_READY) == 0) {
-			CPUSET_DEL(set, cix);
-		} else if (cix != lcx) {
-			CPU_STATS_ADDQ(CPU, sys, xcalls, 1);
-
-			ASSERT(cpup->cpu_m.xc_ack == 0);
-			ASSERT(cpup->cpu_m.xc_wait == 0);
-			ASSERT(cpup->cpu_m.xc_pend == 0);
-			cpup->cpu_m.xc_wait = (op == XC_SYNC_OP);
-			cpup->cpu_m.xc_state = op;
-			cpup->cpu_m.xc_pend = 1;
+	if (!xc_initialized) {
+		if (BT_TEST(set, CPU->cpu_id) && (CPU->cpu_flags & CPU_READY) &&
+		    func != NULL) {
+			(void) (*func)(arg1, arg2, arg3);
 		}
-		CPUSET_DEL(cpuset, cix);
-	}
-
-	/*
-	 * Send IPI to requested remote cpus in selected set.
-	 */
-	cpuset = set;
-	CPUSET_DEL(cpuset, lcx);
-	if (!CPUSET_ISNULL(cpuset)) {
-		syspic_send_ipi(cpuset, IRQ_IPI_HI);
-	}
-
-	/*
-	 * Run service locally if we're in the set
-	 */
-	if (CPU_IN_SET(set, lcx) && func != NULL)
-		CPU->cpu_m.xc_retval = (*func)(arg0, arg1, arg2);
-
-	/*
-	 * Wait here until all remote calls acknowledge.
-	 *
-	 * XXXARM: Should we check if the cpu is quiesced as well, rather than
-	 * forcing the ack in panic_idle?
-	 */
-	dsb(ish);
-	cpuset = set;
-	while (!CPUSET_ISNULL(cpuset)) {
-		CPUSET_FIND(cpuset, cix);
-		struct cpu *cpup = cpu[cix];
-		if (cix != lcx) {
-			for (;;) {
-				if ((cpup->cpu_flags & CPU_READY) == 0 ||
-				    cpup->cpu_m.xc_ack != 0 ||
-				    (op == XC_ASYNC_OP &&
-				    cpup->cpu_m.xc_pend == 0)) {
-					cpup->cpu_m.xc_ack = 0;
-					break;
-				}
-			}
-		}
-		CPUSET_DEL(cpuset, cix);
-	}
-
-	if (op == XC_ASYNC_OP || op == XC_CALL_OP)
 		return;
+	}
 
-	dsb(ish);
-	cpuset = set;
-	while (!CPUSET_ISNULL(cpuset)) {
-		CPUSET_FIND(cpuset, cix);
-		struct cpu *cpup = cpu[cix];
-		if (cix != lcx) {
-			cpup->cpu_m.xc_wait = 0;
+	save_spl = splr(ipltospl(XC_HI_PIL));
+
+	/*
+	 * fill in cross call data
+	 */
+	data = &CPU->cpu_m.xc_data;
+	data->xc_func = func;
+	data->xc_a1 = arg1;
+	data->xc_a2 = arg2;
+	data->xc_a3 = arg3;
+
+	/*
+	 * Post messages to all CPUs involved that are CPU_READY
+	 */
+	CPU->cpu_m.xc_wait_cnt = 0;
+	for (c = 0; c < max_ncpus; ++c) {
+		if (!BT_TEST(set, c)) {
+			continue;
 		}
-		CPUSET_DEL(cpuset, cix);
+		cpup = cpu[c];
+		if (cpup == NULL || !(cpup->cpu_flags & CPU_READY)) {
+			continue;
+		}
+
+		/*
+		 * Fill out a new message.
+		 */
+		msg = xc_extract(&CPU->cpu_m.xc_free);
+		if (msg == NULL) {
+			panic("Ran out of free xc_msg_t's");
+		}
+		msg->xc_command = command;
+		if (msg->xc_master != CPU->cpu_id) {
+			panic("msg %p has wrong xc_master", (void *)msg);
+		}
+		msg->xc_slave = c;
+
+		/*
+		 * Increment my work count for all messages that I'll
+		 * transition from DONE to FREE.
+		 * Also remember how many XC_MSG_WAITINGs to look for.
+		 */
+		(void) xc_increment(&CPU->cpu_m);
+		if (command == XC_MSG_SYNC) {
+			++CPU->cpu_m.xc_wait_cnt;
+		}
+
+		/*
+		 * Increment the target CPU work count then insert the
+		 * message in the target msgbox.  If I post the first
+		 * bit of work for the target to do, send an IPI to the
+		 * target CPU.
+		 *
+		 * Note: armv8 send_dirint() takes an SGI INTID, not a
+		 * PIL number.  We use IRQ_IPI_HI directly.
+		 */
+		cnt = xc_increment(&cpup->cpu_m);
+		xc_insert(&cpup->cpu_m.xc_msgbox, msg);
+		if (cpup != CPU) {
+			if (cnt == 0) {
+				CPU_STATS_ADDQ(CPU, sys, xcalls, 1);
+				send_dirint(c, IRQ_IPI_HI);
+			}
+		}
 	}
 
 	/*
-	 * Wait here until all remote calls acknowledge.
+	 * Now drop into the message handler until all work is done.
 	 */
-	dsb(ish);
-	cpuset = set;
-	while (!CPUSET_ISNULL(cpuset)) {
-		CPUSET_FIND(cpuset, cix);
-		struct cpu *cpup = cpu[cix];
-		if (cix != lcx) {
-			for (;;) {
-				if ((cpup->cpu_flags & CPU_READY) == 0 ||
-				    cpup->cpu_m.xc_ack != 0) {
-					cpup->cpu_m.xc_ack = 0;
-					break;
-				}
+	(void) xc_serv(NULL, NULL);
+	splx(save_spl);
+}
+
+/*
+ * Push out a priority cross call.
+ */
+static void
+xc_priority_common(
+	xc_func_t func,
+	xc_arg_t arg1,
+	xc_arg_t arg2,
+	xc_arg_t arg3,
+	ulong_t *set)
+{
+	int i;
+	int c;
+	struct cpu *cpup;
+
+	/*
+	 * Wait briefly for any previous xc_priority to have finished.
+	 */
+	for (c = 0; c < max_ncpus; ++c) {
+		cpup = cpu[c];
+		if (cpup == NULL || !(cpup->cpu_flags & CPU_READY)) {
+			continue;
+		}
+
+		/*
+		 * The value of 40000 here is from old kernel code. It
+		 * really should be changed to some time based value, since
+		 * under a hypervisor, there's no guarantee a remote CPU
+		 * is even scheduled.
+		 */
+		for (i = 0; BT_TEST(xc_priority_set, c) && i < 40000; ++i) {
+			SMT_PAUSE();
+		}
+
+		/*
+		 * Some CPU did not respond to a previous priority request.
+		 * It's probably deadlocked with interrupts blocked or some such
+		 * problem.  We'll just erase the previous request - which was
+		 * most likely a kmdb_enter that has already expired - and plow
+		 * ahead.
+		 */
+		if (BT_TEST(xc_priority_set, c)) {
+			BT_ATOMIC_CLEAR(xc_priority_set, c);
+			if (cpup->cpu_m.xc_work_cnt > 0) {
+				xc_decrement(&cpup->cpu_m);
 			}
 		}
-		CPUSET_DEL(cpuset, cix);
+	}
+
+	/*
+	 * fill in cross call data
+	 */
+	xc_priority_data.xc_func = func;
+	xc_priority_data.xc_a1 = arg1;
+	xc_priority_data.xc_a2 = arg2;
+	xc_priority_data.xc_a3 = arg3;
+
+	/*
+	 * On aarch64, we need an explicit barrier here to ensure targets
+	 * observe the xc_priority_data stores before the xc_priority_set
+	 * bit.  x86 LOCK-prefixed instructions provide this implicitly,
+	 * but aarch64 atomics only guarantee acquire-release ordering.
+	 */
+	membar_enter();
+
+	/*
+	 * Post messages to all CPUs involved that are CPU_READY.
+	 */
+	for (c = 0; c < max_ncpus; ++c) {
+		if (!BT_TEST(set, c)) {
+			continue;
+		}
+		cpup = cpu[c];
+		if (cpup == NULL || !(cpup->cpu_flags & CPU_READY) ||
+		    cpup == CPU) {
+			continue;
+		}
+		(void) xc_increment(&cpup->cpu_m);
+		BT_ATOMIC_SET(xc_priority_set, c);
+		send_dirint(c, IRQ_IPI_HI);
 	}
 }
 
+/*
+ * Do cross call to all other CPUs with absolutely no waiting or handshaking.
+ * This should only be used for extraordinary operations, like panic(), which
+ * need to work, in some fashion, in a not completely functional system.
+ * All other uses that want minimal waiting should use xc_call_nowait().
+ */
 void
-xc_call(
-	xc_arg_t arg0,
+xc_priority(
 	xc_arg_t arg1,
 	xc_arg_t arg2,
-	cpuset_t set,
+	xc_arg_t arg3,
+	ulong_t *set,
 	xc_func_t func)
 {
-	mutex_enter(&xc_mbox_lock);
-	xc_common(func, arg0, arg1, arg2, set, XC_CALL_OP);
-	mutex_exit(&xc_mbox_lock);
-}
+	extern int IGNORE_KERNEL_PREEMPTION;
+	int save_spl = splr(ipltospl(XC_HI_PIL));
+	int save_kernel_preemption = IGNORE_KERNEL_PREEMPTION;
 
-void
-xc_sync(
-	xc_arg_t arg0,
-	xc_arg_t arg1,
-	xc_arg_t arg2,
-	cpuset_t set,
-	xc_func_t func)
-{
-	mutex_enter(&xc_mbox_lock);
-	xc_common(func, arg0, arg1, arg2, set, XC_SYNC_OP);
-	mutex_exit(&xc_mbox_lock);
-}
-
-void
-xc_call_nowait(
-	xc_arg_t arg0,
-	xc_arg_t arg1,
-	xc_arg_t arg2,
-	cpuset_t set,
-	xc_func_t func)
-{
-	mutex_enter(&xc_mbox_lock);
-	xc_common(func, arg0, arg1, arg2, set, XC_ASYNC_OP);
-	mutex_exit(&xc_mbox_lock);
+	IGNORE_KERNEL_PREEMPTION = 1;
+	xc_priority_common((xc_func_t)func, arg1, arg2, arg3, set);
+	IGNORE_KERNEL_PREEMPTION = save_kernel_preemption;
+	splx(save_spl);
 }
 
 /*
@@ -350,15 +678,60 @@ kdi_xc_others(int this_cpu, void (*func)(void))
 	int save_kernel_preemption;
 	cpuset_t set;
 
-	if (!xc_initialized)
+	if (!xc_initialized) {
 		return;
+	}
 
 	save_kernel_preemption = IGNORE_KERNEL_PREEMPTION;
 	IGNORE_KERNEL_PREEMPTION = 1;
 	CPUSET_ALL_BUT(set, this_cpu);
-	/*
-	 * XXXKDI: I think this should wait, but our xcall facilities are poor
-	 */
-	xc_call_nowait(0, 0, 0, set, (xc_func_t)func);
+	xc_priority_common((xc_func_t)func, 0, 0, 0, CPUSET2BV(set));
 	IGNORE_KERNEL_PREEMPTION = save_kernel_preemption;
+}
+
+
+
+/*
+ * Invoke function on specified processors.  Remotes may continue after
+ * service with no waiting.  xc_call_nowait() may return immediately too.
+ */
+void
+xc_call_nowait(
+	xc_arg_t arg1,
+	xc_arg_t arg2,
+	xc_arg_t arg3,
+	ulong_t *set,
+	xc_func_t func)
+{
+	xc_common(func, arg1, arg2, arg3, set, XC_MSG_ASYNC);
+}
+
+/*
+ * Invoke function on specified processors.  Remotes may continue after
+ * service with no waiting.  xc_call() returns only after remotes have finished.
+ */
+void
+xc_call(
+	xc_arg_t arg1,
+	xc_arg_t arg2,
+	xc_arg_t arg3,
+	ulong_t *set,
+	xc_func_t func)
+{
+	xc_common(func, arg1, arg2, arg3, set, XC_MSG_CALL);
+}
+
+/*
+ * Invoke function on specified processors.  Remotes wait until all have
+ * finished.  xc_sync() also waits until all remotes have finished.
+ */
+void
+xc_sync(
+	xc_arg_t arg1,
+	xc_arg_t arg2,
+	xc_arg_t arg3,
+	ulong_t *set,
+	xc_func_t func)
+{
+	xc_common(func, arg1, arg2, arg3, set, XC_MSG_SYNC);
 }
