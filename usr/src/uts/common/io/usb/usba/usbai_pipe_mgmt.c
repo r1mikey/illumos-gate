@@ -900,6 +900,17 @@ usb_pipe_xopen(
 		}
 	}
 
+	if (usb_flags & USB_FLAGS_START_NEXT_FIRST) {
+		if ((ep->bmAttributes & USB_EP_ATTR_MASK) !=
+		    USB_EP_ATTR_BULK) {
+			USB_DPRINTF_L2(DPRINT_MASK_USBAI, usbai_log_handle,
+			    "usb_pipe_open: start-next-first only valid "
+			    "for bulk pipes");
+
+			return (USB_INVALID_ARGS);
+		}
+	}
+
 	kmflag	= (usb_flags & USB_FLAGS_SLEEP) ? KM_SLEEP : KM_NOSLEEP;
 	size	= sizeof (usba_pipe_handle_data_t);
 
@@ -933,6 +944,12 @@ usb_pipe_xopen(
 	if (usb_flags & USB_FLAGS_SERIALIZED_CB) {
 		mutex_enter(&ph_data->p_mutex);
 		ph_data->p_spec_flag |= USBA_PH_FLAG_TQ_SHARE;
+		mutex_exit(&ph_data->p_mutex);
+	}
+
+	if (usb_flags & USB_FLAGS_START_NEXT_FIRST) {
+		mutex_enter(&ph_data->p_mutex);
+		ph_data->p_spec_flag |= USBA_PH_FLAG_START_NEXT_FIRST;
 		mutex_exit(&ph_data->p_mutex);
 	}
 

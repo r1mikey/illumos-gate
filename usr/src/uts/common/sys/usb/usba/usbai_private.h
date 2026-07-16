@@ -83,7 +83,15 @@ int		usb_rval2errno(int rval);
 /* Status C and D for whole section. */
 
 /* Serialize callbacks per interface or device. */
-#define	USB_FLAGS_SERIALIZED_CB	0x8000
+#define	USB_FLAGS_SERIALIZED_CB		0x8000
+
+/*
+ * Start the next queued request on a bulk pipe before calling the driver
+ * completion callback.  This keeps the wire busy during the callback and
+ * avoids a dead window where no transfer is active.  Only valid for bulk
+ * pipes opened with usb_pipe_open/usb_pipe_xopen.
+ */
+#define	USB_FLAGS_START_NEXT_FIRST	0x10000
 
 /* default timeout for control requests (in seconds) */
 #define	USB_PIPE_TIMEOUT	3

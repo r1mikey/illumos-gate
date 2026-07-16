@@ -751,7 +751,12 @@ usba_req_normal_cb(usba_req_wrapper_t *req_wrp)
 	    (void *)ph_data, pipe_state, (void *)req_wrp,
 	    usba_get_ph_ref_count(ph_data), ph_data->p_req_count);
 
+	/* active or closing, or idle with start-next-first set */
 	ASSERT((pipe_state == USB_PIPE_STATE_ACTIVE) ||
+	    ((pipe_state == USB_PIPE_STATE_IDLE) &&
+	    ((req_wrp->wr_ph_data->p_ep.bmAttributes &
+	    USB_EP_ATTR_MASK) == USB_EP_ATTR_BULK) &&
+	    (ph_data->p_spec_flag & USBA_PH_FLAG_START_NEXT_FIRST)) ||
 	    (pipe_state == USB_PIPE_STATE_CLOSING));
 
 	/* set done to indicate that we will do callback or cv_signal */
@@ -762,8 +767,13 @@ usba_req_normal_cb(usba_req_wrapper_t *req_wrp)
 	switch (req_wrp->wr_ph_data->p_ep.bmAttributes &
 	    USB_EP_ATTR_MASK) {
 	case USB_EP_ATTR_CONTROL:
-	case USB_EP_ATTR_BULK:
 		usba_pipe_new_state(ph_data, USB_PIPE_STATE_IDLE);
+		break;
+	case USB_EP_ATTR_BULK:
+		if (!(ph_data->p_spec_flag &
+		    USBA_PH_FLAG_START_NEXT_FIRST)) {
+			usba_pipe_new_state(ph_data, USB_PIPE_STATE_IDLE);
+		}
 		break;
 	case USB_EP_ATTR_INTR:
 		if ((direction == USB_EP_DIR_IN) &&

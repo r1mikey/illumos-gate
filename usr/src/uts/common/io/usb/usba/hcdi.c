@@ -688,9 +688,24 @@ hcdi_do_cb(usba_pipe_handle_data_t *ph_data, usba_req_wrapper_t *req_wrp,
 	 * Normal callbacks:
 	 */
 	if (completion_reason == USB_CR_OK) {
-		mutex_exit(&ph_data->p_mutex);
-		usba_req_normal_cb(req_wrp);
-		mutex_enter(&ph_data->p_mutex);
+		if ((ph_data->p_spec_flag &
+		    USBA_PH_FLAG_START_NEXT_FIRST) &&
+		    ((req_wrp->wr_ph_data->p_ep.bmAttributes &
+		    USB_EP_ATTR_MASK) == USB_EP_ATTR_BULK)) {
+			/*
+			 * Eager pipelining starts the next queued request
+			 * before calling the driver completion callback.
+			 */
+			usba_pipe_new_state(ph_data, USB_PIPE_STATE_IDLE);
+			mutex_exit(&ph_data->p_mutex);
+			usba_start_next_req(ph_data);
+			usba_req_normal_cb(req_wrp);
+			mutex_enter(&ph_data->p_mutex);
+		} else {
+			mutex_exit(&ph_data->p_mutex);
+			usba_req_normal_cb(req_wrp);
+			mutex_enter(&ph_data->p_mutex);
+		}
 	} else {
 		usb_pipe_state_t pipe_state;
 

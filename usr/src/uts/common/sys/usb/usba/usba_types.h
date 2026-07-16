@@ -143,6 +143,7 @@ typedef struct	usba_pipe_handle_data {
 
 #define	USBA_PH_FLAG_USE_SOFT_INTR	0x1
 #define	USBA_PH_FLAG_TQ_SHARE		0x2	/* Shared TaskQ for callbacks */
+#define	USBA_PH_FLAG_START_NEXT_FIRST	0x4	/* Start next req before cb */
 
 
 
