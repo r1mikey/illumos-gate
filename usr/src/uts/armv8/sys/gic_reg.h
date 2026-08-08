@@ -734,6 +734,16 @@ extern "C" {
  */
 #define	ICC_SGInR_EL1_HAS_RS(v)			(((v) & (0xFul << 44)) != 0)
 
+/*
+ * Mask for the affinity routing fields of ICC_SGI1R_EL1:
+ *
+ * Aff3 [55:48], RS [47:44], Aff2 [39:32], Aff1 [23:16].
+ *
+ * TargetList [15:0] and INTID [27:24] are excluded.
+ */
+#define	ICC_SGInR_EL1_ROUTE_MASK		0x00FFF0FF00FF0000ul
+#define	ICC_SGInR_EL1_TARGET_MASK		0xFFFFul
+
 #define	ICC_SRE_EL1_DIB				0x0000000000000004
 #define	ICC_SRE_EL1_DFB				0x0000000000000002
 #define	ICC_SRE_EL1_SRE				0x0000000000000001

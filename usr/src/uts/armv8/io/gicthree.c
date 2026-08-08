@@ -1433,23 +1433,67 @@ gicv3_send_ipi(spo_ctx_t ctx, cpuset_t cpuset, intr_intid_t intid)
 	dsb(ish);
 
 	/*
-	 * There is almost definitely a better way to do this, populating
-	 * targetlist/RS and issuing SGI with CPUs clustered by AFF3-1+RS.
+	 * Coalesce SGI writes by batching CPUs that share the same
+	 * affinity routing (Aff3, Aff2, Aff1, and RS).  Each
+	 * ICC_SGI1R_EL1 write can target up to 16 CPUs via the
+	 * TargetList field (bits [15:0]), so we OR TargetList bits
+	 * from CPUs in the same group and issue a single write.
 	 *
-	 * However, this is obviously correct, which will do for now.
+	 * A single SGI write can target up to 16 CPUs at a time, so
+	 * a 128 CPU system could IPI all CPUs with 8 register writes.
+	 *
+	 * On a fully populated cpuset with pathological behaviour (where
+	 * every CPU is in a separate group, highly unlikely in practice),
+	 * this approach is O(N**2), but in reality the scan shrinks by the
+	 * number of batched CPUs as the outer loop progresses, so it's
+	 * never as bad as that.
+	 *
+	 * The inner scan itself is O(remaining CPUs), paid per batch.
+	 *
+	 * In most cases, the system requests a single IPI at a time,
+	 * so in practice this algorithmic complexity does not surface.
+	 *
+	 * When sending to a large subset of online CPUs, the algorithmic
+	 * complexity of this code is still a win when compared to the cost
+	 * of sending that many IPIs individually.
 	 */
 	CPUSET_AND(cpuset, gc->gc_cpuset);
 	CPUSET_DEL(cpuset, CPU->cpu_id);
 	while (!CPUSET_ISNULL(cpuset)) {
 		uint_t cpun;
+		uint64_t key;
+		cpuset_t scan;
+
 		CPUSET_FIND(cpuset, cpun);
 		sgir = gc->gc_redist[cpun].gr_sgir;
+		key = sgir & ICC_SGInR_EL1_ROUTE_MASK;
+		CPUSET_DEL(cpuset, cpun);
+
 		if (!has_rss && ICC_SGInR_EL1_HAS_RS(sgir)) {
 			panic("cpu%d: Need range selector support to target "
 			    "cpu%d with an SGI", CPU->cpu_id, cpun);
 		}
+
+		/*
+		 * Scan remaining CPUs for the same affinity group
+		 * and merge their TargetList bits.
+		 */
+		scan = cpuset;
+		while (!CPUSET_ISNULL(scan)) {
+			uint_t other;
+
+			CPUSET_FIND(scan, other);
+			CPUSET_DEL(scan, other);
+
+			if ((gc->gc_redist[other].gr_sgir &
+			    ICC_SGInR_EL1_ROUTE_MASK) == key) {
+				sgir |= (gc->gc_redist[other].gr_sgir &
+				    ICC_SGInR_EL1_TARGET_MASK);
+				CPUSET_DEL(cpuset, other);
+			}
+		}
+
 		write_icc_sgi1r_el1(sgir | ICC_SGInR_EL1_MAKE_INTID(intid));
-		CPUSET_DEL(cpuset, cpun);
 	}
 }
 
