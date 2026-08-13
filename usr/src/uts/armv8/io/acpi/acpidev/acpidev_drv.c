@@ -70,6 +70,7 @@
 #include <sys/acpidev_mcfg.h>
 #include <sys/acpidev_osc.h>
 #include <sys/acpidev_impl.h>
+#include <sys/acpipcc.h>
 
 /* Patchable through /etc/system */
 int acpidev_options = 0;
@@ -508,6 +509,16 @@ acpidev_initialize(void)
 		    "!acpidev: failed to initialize acpica subsystem.");
 		acpidev_status = ACPIDEV_STATUS_FAILED;
 		return;
+	}
+
+	/* Initialize the platform communication channel */
+	if (pcc_init() == DDI_SUCCESS) {
+		if (pcc_opregion_register() != DDI_SUCCESS) {
+			cmn_err(CE_WARN,
+			    "acpidev: ACPI PCC OpRegion registration failed");
+		}
+	} else {
+		cmn_err(CE_WARN, "acpidev: ACPI PCC initialization failed");
 	}
 
 	/* Check ACPICA subsystem status. */

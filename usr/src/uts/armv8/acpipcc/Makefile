@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2025 Michael van der Westhuizen
+# Copyright 2026 Michael van der Westhuizen
 #
 
 #
@@ -21,8 +21,8 @@ UTSBASE	= ../..
 #
 #	Define the module and object file sets.
 #
-MODULE		= acpidev
-OBJECTS		= $(ACPIDEV_OBJS:%=$(OBJS_DIR)/%)
+MODULE		= acpipcc
+OBJECTS		= $(ACPIPCC_OBJS:%=$(OBJS_DIR)/%)
 ROOTMODULE	= $(ROOT_PSM_MISC_DIR)/$(MODULE)
 
 #
@@ -39,7 +39,7 @@ INSTALL_TARGET	= $(BINARY) $(ROOTMODULE)
 #
 # Depends on the acpica ACPI interpreter and support module
 #
-LDFLAGS		+= -N misc/acpica -N misc/acpipcc
+LDFLAGS		+= -N misc/acpica
 
 #
 #	Default build targets.
@@ -55,7 +55,6 @@ clean:		$(CLEAN_DEPS)
 clobber:	$(CLOBBER_DEPS)
 
 install:	$(INSTALL_DEPS)
-
 
 #
 #	Include common targets.
