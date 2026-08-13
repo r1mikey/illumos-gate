@@ -255,3 +255,5 @@ ACPIPCC_OBJS +=			\
 	pcc_reg.o		\
 	pcc_shmem.o		\
 	pcc_chan.o
+
+ACPICPPC_OBJS += acpicppc.o
