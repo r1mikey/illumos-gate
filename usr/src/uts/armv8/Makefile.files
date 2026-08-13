@@ -247,3 +247,5 @@ PCICFG_OBJS += pcicfg.o
 FFA_OBJS += ffa.o
 
 ACPIPCC_OBJS += acpipcc.o
+
+ACPICPPC_OBJS += acpicppc.o
