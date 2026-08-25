@@ -41,6 +41,10 @@
 #	Section 1a: C object build rules
 #
 
+$(OBJS_DIR)/%.o:	$(UTSBASE)/armv8/sbbr/io/pciex/hotplug/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 $(OBJS_DIR)/%.o:	$(UTSBASE)/armv8/sbbr/os/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
