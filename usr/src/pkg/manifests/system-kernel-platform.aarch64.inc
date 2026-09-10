@@ -57,10 +57,12 @@ file path=platform/armv8/kernel/drv/$(ARCH)/gicv3_its
 file path=platform/armv8/kernel/drv/$(ARCH)/ns16550a
 file path=platform/armv8/kernel/drv/$(ARCH)/rootnex
 file path=platform/armv8/kernel/drv/$(ARCH)/simple-bus
+file path=platform/armv8/kernel/drv/$(ARCH)/trng_smccc
 file path=platform/armv8/kernel/drv/acpiged.conf
 file path=platform/armv8/kernel/drv/acpipwrbtn.conf
 file path=platform/armv8/kernel/drv/cpudrv.conf
 file path=platform/armv8/kernel/drv/ns16550a.conf
+file path=platform/armv8/kernel/drv/trng_smccc.conf
 dir  path=platform/armv8/kernel/misc
 dir  path=platform/armv8/kernel/misc/$(ARCH)
 file path=platform/armv8/kernel/misc/$(ARCH)/acpicppc group=sys mode=0755
@@ -144,3 +146,4 @@ driver name=ns16550a \
     alias=arm,pl011 perms="* 0666 root sys" perms="*,cu 0600 uucp uucp"
 driver name=rootnex
 driver name=simple-bus
+driver name=trng_smccc
