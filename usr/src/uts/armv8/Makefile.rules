@@ -163,3 +163,7 @@ install_h:
 $(OBJS_DIR)/%.o:		$(SRC)/common/atomic/aarch64/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/armv8/io/trng_smccc/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
