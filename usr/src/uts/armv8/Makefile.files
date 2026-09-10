@@ -224,6 +224,10 @@ ACPINEX_OBJS +=			\
 
 ACPIPWRBTN_OBJS +=	acpipwrbtn.o
 
+TRNG_SMCCC_OBJS +=	trng_smccc.o
+TRNG_SMCCC_OBJS +=	trng_smccc_kcf.o
+TRNG_SMCCC_OBJS +=	trng_smccc_provider.o
+
 ASSYM_DEPS +=			\
 	aarch64_subr.o		\
 	copy.o			\
