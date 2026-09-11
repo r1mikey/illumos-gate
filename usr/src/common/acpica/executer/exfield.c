@@ -159,6 +159,17 @@
 #define _COMPONENT          ACPI_EXECUTER
         ACPI_MODULE_NAME    ("exfield")
 
+/*
+ * The following macros determine if a given offset is a COMD field.
+ * According to the specification, the PCC OperationRegion begins after
+ * the PCC signature. The raw shared memory COMD offsets of 4 for generic
+ * subspaces (types 0-2) and 12 for master subspaces (type 3) therefore
+ * appear at OperationRegion offsets 0 and 8.
+ */
+#define GENERIC_SUBSPACE_COMMAND(a)     (0 == (a) || (a) == 1)
+#define MASTER_SUBSPACE_COMMAND(a)      (8 <= (a) && (a) <= 11)
+
+
 /* Local prototypes */
 
 static UINT32
@@ -425,6 +436,40 @@ AcpiExReadDataFromField (
         }
         return_ACPI_STATUS (Status);
     }
+    else if ((ObjDesc->Common.Type == ACPI_TYPE_LOCAL_REGION_FIELD) &&
+        (ObjDesc->Field.RegionObj->Region.SpaceId == ACPI_ADR_SPACE_PLATFORM_COMM))
+    {
+        /*
+         * Reading from a PCC field unit does not require the handler because
+         * it only requires reading from the InternalPccBuffer.
+         */
+        ACPI_DEBUG_PRINT ((ACPI_DB_BFIELD,
+            "PCC FieldRead bits %u\n", ObjDesc->Field.BitLength));
+
+        Length = (ACPI_SIZE) ACPI_ROUND_BITS_UP_TO_BYTES (
+            ObjDesc->Field.BitLength);
+
+        if (!ObjDesc->Field.RegionObj->Field.InternalPccBuffer)
+        {
+            return_ACPI_STATUS (AE_AML_NO_OPERAND);
+        }
+
+        if (ObjDesc->Field.BaseByteOffset + Length >
+            ObjDesc->Field.RegionObj->Region.Length)
+        {
+            ACPI_ERROR ((AE_INFO,
+                "PCC field at offset %u length %u exceeds region size %u",
+                ObjDesc->Field.BaseByteOffset, (UINT32) Length,
+                ObjDesc->Field.RegionObj->Region.Length));
+            return_ACPI_STATUS (AE_AML_BUFFER_LIMIT);
+        }
+
+        memcpy (Buffer, ObjDesc->Field.RegionObj->Field.InternalPccBuffer +
+            ObjDesc->Field.BaseByteOffset, Length);
+
+        *RetBufferDesc = BufferDesc;
+        return (AE_OK);
+    }
 
     ACPI_DEBUG_PRINT ((ACPI_DB_BFIELD,
         "FieldRead [TO]:   Obj %p, Type %X, Buf %p, ByteLen %X\n",
@@ -481,6 +526,7 @@ AcpiExWriteDataToField (
 {
     ACPI_STATUS             Status;
     UINT32                  Length;
+    UINT32                  DataLength;
     void                    *Buffer;
     ACPI_OPERAND_OBJECT     *BufferDesc;
     UINT32                  Function;
@@ -646,6 +692,54 @@ AcpiExWriteDataToField (
             ObjDesc, 0, (UINT64 *) Buffer, ACPI_WRITE);
         AcpiExReleaseGlobalLock (ObjDesc->CommonField.FieldFlags);
         return_ACPI_STATUS (Status);
+    }
+    else if ((ObjDesc->Common.Type == ACPI_TYPE_LOCAL_REGION_FIELD) &&
+             (ObjDesc->Field.RegionObj->Region.SpaceId == ACPI_ADR_SPACE_PLATFORM_COMM))
+    {
+        /*
+         * According to the spec a write to the COMD field will invoke the
+         * region handler. Otherwise, write to the PccInternal buffer. This
+         * implementation will use the offsets specified rather than the name
+         * of the field. This is considered safer because some firmware tools
+         * are known to obfuscate named objects.
+         *
+         * Ensure the field access does not exceed the bounds of the
+         * InternalPccBuffer.
+         */
+        DataLength = (ACPI_SIZE) ACPI_ROUND_BITS_UP_TO_BYTES (
+            ObjDesc->Field.BitLength);
+
+        if (!ObjDesc->Field.RegionObj->Field.InternalPccBuffer)
+        {
+            return_ACPI_STATUS (AE_AML_NO_OPERAND);
+        }
+
+        if (ObjDesc->Field.BaseByteOffset + DataLength >
+            ObjDesc->Field.RegionObj->Region.Length)
+        {
+            ACPI_ERROR ((AE_INFO,
+                "PCC field at offset %u length %u exceeds region size %u",
+                ObjDesc->Field.BaseByteOffset, DataLength,
+                ObjDesc->Field.RegionObj->Region.Length));
+            return_ACPI_STATUS (AE_AML_BUFFER_LIMIT);
+        }
+
+        memcpy (ObjDesc->Field.RegionObj->Field.InternalPccBuffer +
+            ObjDesc->Field.BaseByteOffset,
+            SourceDesc->Buffer.Pointer, DataLength);
+        if (MASTER_SUBSPACE_COMMAND (ObjDesc->Field.BaseByteOffset))
+        {
+            /* Perform the write */
+
+            ACPI_DEBUG_PRINT ((ACPI_DB_BFIELD,
+                "PCC COMD field has been written. Invoking PCC handler now.\n"));
+
+            Status = AcpiExAccessRegion (
+                ObjDesc, 0, (UINT64 *) ObjDesc->Field.RegionObj->Field.InternalPccBuffer,
+                ACPI_WRITE);
+            return_ACPI_STATUS (Status);
+        }
+        return (AE_OK);
     }
 
     /* Get a pointer to the data to be written */
