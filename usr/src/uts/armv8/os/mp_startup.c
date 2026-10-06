@@ -625,6 +625,10 @@ mp_startup_boot(void)
 	unlock_oslock();
 	write_cntkctl(read_cntkctl() | 0x3);
 
+	write_tcr(read_tcr() | TCR_EPD0);
+	isb();
+	write_ttbr0(0);
+
 	/*
 	 * Now we are done with the startup thread, so free it up.
 	 */

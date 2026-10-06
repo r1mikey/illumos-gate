@@ -3442,13 +3442,14 @@ clear_page_table(pte_t *ptbl, uint_t level)
 			    level));
 
 			ASSERT3P(pp, !=, NULL);
-			ASSERT(!PP_ISFREE(pp));
-			ASSERT3P(pp->p_vnode, ==, &kvp);
 
 			if (page_tryupgrade(pp) == 0) {
 				panic("%s: couldn't upgrade ttbr0-ish PT "
 				    "lock, pp: %p", __func__, pp);
 			}
+
+			ASSERT(!PP_ISFREE(pp));
+			ASSERT3P(pp->p_vnode, ==, &kvp);
 
 			/*
 			 * Clear the entry from the tables, and let the CPUs
@@ -3478,7 +3479,34 @@ clear_page_table(pte_t *ptbl, uint_t level)
 void
 clear_user_mappings(void)
 {
+	page_t *pp;
+
 	clear_page_table((pte_t *)read_ttbr0(), mmu.max_level);
+
+	write_tcr(read_tcr() | TCR_EPD0);
+	isb();
+
+	pp = page_numtopp_nolock(mmu_btop(TTBR_BADDR48(read_ttbr0())));
+	ASSERT3P(pp, !=, NULL);
+
+	if (page_tryupgrade(pp) == 0) {
+		panic("%s: couldn't upgrade ttbr0 root lock, pp: %p",
+		    __func__, pp);
+	}
+
+	ASSERT(!PP_ISFREE(pp));
+	ASSERT3P(pp->p_vnode, ==, &kvp);
+
+	pp->p_lckcnt = 0;
+	page_unresv(1);
+	page_destroy(pp, 0);
+
+	write_ttbr0(0);
+
+	dsb(ish);
+	tlbi_allis();
+	dsb(ish);
+	isb();
 }
 
 /*
