@@ -3484,8 +3484,11 @@ clear_page_table(pte_t *ptbl, uint_t level)
 static int
 clear_ttbr0(xc_arg_t a0 __unused, xc_arg_t a1 __unused, xc_arg_t a2 __unused)
 {
-	/* A toxic value that can't ever refer to a page */
-	write_ttbr0(-1UL);
+	/* Disable TTBR0 access and reset TTBR0 */
+	write_tcr(read_tcr() | TCR_EPD0);
+	isb();
+	write_ttbr0(0UL);
+	isb();
 	return (0);
 }
 
@@ -3499,12 +3502,15 @@ clear_user_mappings(void)
 	pfn_t root = btop(TTBR_BADDR48(read_ttbr0()));
 	cpuset_t all;
 
-	ASSERT3U(root, !=, 0xffffffff);
 	ASSERT3U(root, !=, 0);
 
-	/* Remove the TTBR0 table from all CPUs */
+	/* Remove the TTBR0 table from all CPUs and sync */
 	CPUSET_ALL(all);
 	xc_sync(0, 0, 0, CPUSET2BV(all), clear_ttbr0);
+	dsb(ish);
+	tlbi_allis();
+	dsb(ish);
+	isb();
 
 	/* Walk the table freeing subordinate pages */
 	clear_page_table((pte_t *)hat_kpm_pfn2va(root), mmu.max_level);
