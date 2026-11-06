@@ -3471,52 +3471,99 @@ clear_page_table(pte_t *ptbl, uint_t level)
 }
 
 /*
- * Kick the low page table out of TTBR0 on every CPU.
+ * Minimal identity-mapped page table for secondary CPU bringup.
  *
- * Each cpu needs to carry the initial identity mapping at least until all are
- * booted, and we can't be sure on which CPU `main` will enter
- * `release_bootstrap` and `clear_user_mappings` as in some very small
- * percentage of cases cpu0 has been preempted out of main.
- *
- * XXXARM: When booting additional PEs is tidier, it is likely this can be
- * cleaned up and avoided.
+ * Assumes that the startup code does not cross a 2MiB boundary.  These tables
+ * are static, as they will be used to awaken CPUs after sleep.
  */
-static int
-clear_ttbr0(xc_arg_t a0 __unused, xc_arg_t a1 __unused, xc_arg_t a2 __unused)
+static pte_t min_ttbr0_l0[NPTEPERPT] __attribute__((aligned(PAGESIZE)));
+static pte_t min_ttbr0_l1[NPTEPERPT] __attribute__((aligned(PAGESIZE)));
+static pte_t min_ttbr0_l2[NPTEPERPT] __attribute__((aligned(PAGESIZE)));
+static pte_t min_ttbr0_l3[NPTEPERPT] __attribute__((aligned(PAGESIZE)));
+
+/*
+ * The firmware-provided bootstrap identity mappings address.  This is
+ * saved by the boot CPU immediately prior to bringing up secondaries.
+ */
+uint64_t hat_boot_ttbr0 = 0;
+
+/*
+ * Build a minimal identity mapping page table for the provided address
+ * with the provided number of pages.
+ *
+ * Used for startup of secondary CPUs.
+ *
+ * XXXARM: Assumes a 4KiB translation granule and four-level translation.
+ */
+uint64_t
+hat_build_min_ttbr0(uint64_t entry_pa, uint_t npages)
 {
-	/* Disable TTBR0 access and reset TTBR0 */
+	pfn_t l0_pfn, l1_pfn, l2_pfn, l3_pfn;
+	uint64_t pa;
+	uint_t i;
+
+	l0_pfn = hat_getpfnum(kas.a_hat, (caddr_t)min_ttbr0_l0);
+	l1_pfn = hat_getpfnum(kas.a_hat, (caddr_t)min_ttbr0_l1);
+	l2_pfn = hat_getpfnum(kas.a_hat, (caddr_t)min_ttbr0_l2);
+	l3_pfn = hat_getpfnum(kas.a_hat, (caddr_t)min_ttbr0_l3);
+	if (l0_pfn == PFN_INVALID || l1_pfn == PFN_INVALID ||
+	    l2_pfn == PFN_INVALID || l3_pfn == PFN_INVALID) {
+		return (0);
+	}
+
+	pa = entry_pa & ~MMU_PAGEOFFSET;
+
+	ASSERT3U(LEVEL_INDEX(pa, 0) + npages, <=, NPTEPERPT);
+
+	min_ttbr0_l0[LEVEL_INDEX(pa, mmu.max_level)] =
+	    MAKEPTP(l1_pfn, mmu.max_level, 1);
+	min_ttbr0_l1[LEVEL_INDEX(pa, 2)] = MAKEPTP(l2_pfn, 2, 1);
+	min_ttbr0_l2[LEVEL_INDEX(pa, 1)] = MAKEPTP(l3_pfn, 1, 1);
+
+	for (i = 0; i < npages; i++) {
+		uint64_t p = pa + i * PAGESIZE;
+		min_ttbr0_l3[LEVEL_INDEX(p, 0)] =
+		    MAKEPTE(btop(p), PAGE_LEVEL) |
+		    PTE_AF | PTE_AP_KROUNA | PTE_ATTR_NORMEM | PTE_UXN;
+	}
+
+	dsb(ish);
+	return (ptob(l0_pfn));
+}
+
+/*
+ * Disable TTBR0 walks on this CPU.
+ */
+void
+hat_teardown_ttbr0(void)
+{
 	write_tcr(read_tcr() | TCR_EPD0);
 	isb();
 	write_ttbr0(0UL);
 	isb();
-	return (0);
-}
-
-/*
- * Function called after all CPUs are online to clean up mappings through
- * TTBR0.
- */
-void
-clear_user_mappings(void)
-{
-	pfn_t root = btop(TTBR_BADDR48(read_ttbr0()));
-	cpuset_t all;
-
-	ASSERT3U(root, !=, 0);
-
-	/* Remove the TTBR0 table from all CPUs and sync */
-	CPUSET_ALL(all);
-	xc_sync(0, 0, 0, CPUSET2BV(all), clear_ttbr0);
 	dsb(ish);
 	tlbi_allis();
 	dsb(ish);
 	isb();
+}
+
+/*
+ * Function called after all CPUs are online to clean up the firmware-provided
+ * TTBR0, which is expected to be unreferenced by the time this code runs.
+ */
+void
+clear_user_mappings(void)
+{
+	pfn_t root = btop(TTBR_BADDR48(hat_boot_ttbr0));
+
+	ASSERT3U(root, !=, 0);
 
 	/* Walk the table freeing subordinate pages */
 	clear_page_table((pte_t *)hat_kpm_pfn2va(root), mmu.max_level);
 
 	/* And now we can free the actual root page */
 	free_boot_page(root);
+	hat_boot_ttbr0 = 0;
 }
 
 /*

@@ -104,6 +104,11 @@ static struct cpu_startup_data cpu_startup_data = {
 static uint64_t secondary_vec_pa = 0xdeadbeefdeadbeef;
 static uint64_t cpu_startup_data_pa = 0xdeadbeefdeadbeef;
 
+/* minimal identity mapping for secondary CPU bringup */
+extern uint64_t hat_boot_ttbr0;
+extern uint64_t hat_build_min_ttbr0(uint64_t entry_pa, uint_t npages);
+extern void hat_teardown_ttbr0(void);
+
 static void
 mp_startup_wait(cpuset_t *sp, processorid_t cpuid)
 {
@@ -619,6 +624,12 @@ mp_startup_boot(void)
 	(void) mach_cpu_create_device_node(cp, NULL);
 
 	/*
+	 * We're safely running in KVA and no longer need the identity
+	 * mappings used in CPU bringup.
+	 */
+	hat_teardown_ttbr0();
+
+	/*
 	 * Setting the bit in cpu_ready_set must be the last operation in
 	 * processor initialization; the boot CPU will continue to boot once
 	 * it sees this bit set for all active CPUs.
@@ -864,7 +875,6 @@ start_other_cpus(int flag __unused)
 	processorid_t bootcpu = CPU->cpu_id;
 
 	CPUSET_DEL(mp_cpus, bootcpu);
-	CPUSET_ADD(cpu_ready_set, bootcpu);
 
 	cpu_pause_init();
 
@@ -872,6 +882,28 @@ start_other_cpus(int flag __unused)
 
 	if (mach_cpucontext_init() != 0)
 		prom_panic("mach_cpucontext_init fail");
+
+	/*
+	 * Stash the bootstrap identity mappings for later cleanup.
+	 */
+	hat_boot_ttbr0 = read_ttbr0();
+
+	/*
+	 * Use a minimal identity mapping for CPU bringup.
+	 */
+	cpu_startup_data.ttbr0 = hat_build_min_ttbr0(secondary_vec_pa, 2);
+	if (cpu_startup_data.ttbr0 == 0) {
+		prom_panic("hat_build_min_ttbr0 fail");
+	}
+
+	/*
+	 * We (the boot CPU) are running in KVA now and no longer need the
+	 * lower mappings provided by the firmware.  Tear down our own TTBR0
+	 * before reporting ready.
+	 */
+	hat_teardown_ttbr0();
+
+	CPUSET_ADD(cpu_ready_set, bootcpu);
 
 	affinity_set(CPU_CURRENT);
 
